@@ -15,6 +15,7 @@ SKY.Settings = (function () {
     renderScale: 1.0,   // multiplier on pixel ratio
     shadows: 'high',    // high | low | off  (applies on next round)
     vignette: true,
+    shafts: true,       // cinematic sun rays (applies on next map load)
     showFps: false,
     rawInput: true,     // unadjusted mouse + spike filter; OFF = classic feel
     binds: {
@@ -99,6 +100,7 @@ SKY.Settings = (function () {
           <option value="off" ${data.shadows === 'off' ? 'selected' : ''}>Off</option>
         </select></div>
       ${check('Vignette', 'vignette')}
+      ${check('Light shafts', 'shafts', 'cinematic sun rays — applies next map load')}
       ${check('Show FPS', 'showFps')}
       <h4>CONTROLS <small>click a key, then press the new one (Esc cancels)</small></h4>
       <div class="bind-grid">${Object.keys(DEFAULTS.binds).map(a => `

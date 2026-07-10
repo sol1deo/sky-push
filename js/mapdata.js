@@ -37,6 +37,15 @@ SKY.MapData = (function () {
     forge: { label: 'Amber forge',
       sun: [0xffd0a0, 1.25, [28, 55, 12]], hemi: [0xb09076, 0x453228, 0.8],
       fill: [0xff8a4a, 0.3, [-30, -10, 20]], fog: ['#54301f', 50, 200], clouds: null },
+    dawn: { label: 'Pale dawn',
+      sun: [0xffc4d8, 1.15, [55, 18, 30]], hemi: [0xa8b8e0, 0x4a4552, 0.5],
+      fill: [0xffa8c0, 0.25, null], fog: ['#b8a8c8', 70, 240], clouds: '#ffd8e8' },
+    dusk: { label: 'Deep dusk',
+      sun: [0xff9a5a, 0.85, [-50, 14, 20]], hemi: [0x5a6494, 0x3a3440, 0.45],
+      fill: [0x7a6ab8, 0.25, null], fog: ['#4a4468', 55, 200], clouds: null },
+    midnight: { label: 'Midnight',
+      sun: [0xaac4ff, 0.55, [25, 60, -30]], hemi: [0x2a3a64, 0x14161f, 0.4],
+      fill: [0x4a5a9a, 0.18, null], fog: ['#10141f', 40, 160], clouds: null },
   };
   const SKIES = {
     golden: ['#2f5da8', '#7ba4d8', '#ffd9a4', false],
@@ -45,6 +54,14 @@ SKY.MapData = (function () {
     sea: ['#1e6ac0', '#66aade', '#d8f0ff', false],
     night: ['#101c3c', '#283c74', '#5a70ac', true],
     forge: ['#241820', '#4a2a20', '#8a4522', false],
+    dawn: ['#6a5a9a', '#c88aa8', '#ffd8c0', false],
+    dusk: ['#241c3c', '#4a3c6a', '#c86a4a', true],
+    midnight: ['#05070f', '#0c1224', '#1a2440', true],
+  };
+  /* the sky that matches each mood — picking a mood applies it */
+  const SKY_FOR_MOOD = {
+    golden: 'golden', day: 'day', afternoon: 'sunset', sea: 'sea',
+    night: 'night', forge: 'forge', dawn: 'dawn', dusk: 'dusk', midnight: 'midnight',
   };
 
   /* checker palettes from the built-in maps (id -> [colorA, colorB]) */
@@ -78,6 +95,8 @@ SKY.MapData = (function () {
         { p: [0, 0.1, 8], yaw: Math.PI }, { p: [0, 0.1, -8], yaw: 0 },
       ],
       items: [],
+      props: [],
+      assets: {},
     };
   }
 
@@ -86,6 +105,8 @@ SKY.MapData = (function () {
     def.pads = def.pads || [];
     def.spawns = def.spawns || [];
     def.items = def.items || [];
+    def.props = def.props || [];     // placed 3D assets
+    def.assets = def.assets || {};   // embedded asset payloads (id -> {name,type,data})
     def.mood = MOODS[def.mood] ? def.mood : 'golden';
     def.sky = SKIES[def.sky] ? def.sky : 'golden';
     if (typeof def.killY !== 'number') def.killY = -22;
@@ -105,7 +126,7 @@ SKY.MapData = (function () {
   }
 
   const api = {
-    MOODS, SKIES, PALETTES,
+    MOODS, SKIES, PALETTES, SKY_FOR_MOOD,
     blank, normalize,
 
     register(def) {

@@ -1,36 +1,35 @@
 /* =============================================================================
  * SKY PUSH — MAP EDITOR (dev tool, menu ▸ EDITOR)
- * Blender-ish block-out editor for custom maps:
- *   camera   — hold RMB to look, WASD + E/Q to fly, wheel = speed
- *   select   — LMB click; Esc deselects
- *   G / S / R— grab / scale / rotate the selection with the mouse;
- *              X / Y / Z constrain to an axis, hold CTRL to snap,
- *              LMB/Enter commits, Esc cancels
- *   F        — drop the block onto whatever is below it (no floaters)
- *   Shift+D  — duplicate · Del — delete · Ctrl+Z — undo
- * Blocks get palettes / flat colors / dropped image textures, optional
- * mover paths (elevator, line, orbit) and a crumble flag. Pads, player
- * spawns and item-spawn points are placed the same way. TEST jumps into a
- * bot match on the draft; SAVE keeps it in the browser; EXPORT downloads
- * the JSON (deployable via maps/index.json — then it's in everyone's list).
+ * Unity-ish scene editing for custom maps:
+ *   camera    — hold RMB to look + WASD/E/Q to fly (wheel = speed)
+ *   select    — LMB click (viewport) or the OUTLINER list
+ *   gizmo     — drag the arrows/rings/boxes; G/R/S switch move/rotate/scale,
+ *               hold CTRL to snap (0.5 m / 15°)
+ *   F         — drop the selection onto whatever is below (no floaters)
+ *   Shift+D   — duplicate · Del — delete · Ctrl+Z — undo
+ *   numbers   — every inspector field drag-scrubs (grab the label, drag ⇆)
+ * ASSETS panel = the project library (IndexedDB): drop .glb models and images
+ * into it, organize in folders, then drag onto the viewport — models become
+ * solid props, images texture the block under the cursor. Assets used by a
+ * map are embedded in its def, so saved/hosted maps stay self-contained.
  * ============================================================================= */
 window.SKY = window.SKY || {};
 
 SKY.Editor = (function () {
   const $ = (id) => document.getElementById(id);
   let scene = null, camera = null;
-  let def = null;                 // the working map def
-  let group = null;               // all editor meshes
+  let def = null;
+  let group = null;
   let grid = null, lights = [];
   let objects = [];               // [{ kind, data, mesh }]
   let sel = -1;
-  let selBox = null;              // THREE.BoxHelper highlight
+  let selBox = null;
   let history = [];
   let camYaw = 0.6, camPitch = -0.45;
   const camPos = new THREE.Vector3(24, 18, 24);
   let flySpeed = 14;
   let looking = false;
-  let xform = null;               // { mode, axis, startData, lastX, lastY }
+  let gizmo = null, gizmoDrag = false;
   let previewT = 0, previewOn = true;
   let ui = null;
   const ray = new THREE.Raycaster();
@@ -38,10 +37,7 @@ SKY.Editor = (function () {
   const _v = new THREE.Vector3();
   const _v2 = new THREE.Vector3();
 
-  const api = {
-    active: false,
-    pendingReturn: null,          // draft id to reopen after a TEST match
-  };
+  const api = { active: false, pendingReturn: null };
 
   /* ================= materials & meshes ================= */
   function blockMaterial(b) {
@@ -75,8 +71,8 @@ SKY.Editor = (function () {
       new THREE.MeshLambertMaterial({ color: 0x49e07f, emissive: 0x49e07f, emissiveIntensity: 0.5 }));
     g.add(disc);
     const dir = new THREE.Vector3(pd.launch[0], pd.launch[1], pd.launch[2]);
-    const len = Math.max(1, dir.length() * 0.22);
-    g.add(new THREE.ArrowHelper(dir.clone().normalize(), new THREE.Vector3(0, 0.2, 0), len, 0x49e07f, 0.6, 0.35));
+    g.add(new THREE.ArrowHelper(dir.clone().normalize(), new THREE.Vector3(0, 0.2, 0),
+      Math.max(1, dir.length() * 0.22), 0x49e07f, 0.6, 0.35));
     g.position.set(pd.p[0], pd.p[1] + 0.11, pd.p[2]);
     return g;
   }
@@ -97,9 +93,32 @@ SKY.Editor = (function () {
     m.position.set(it.p[0], it.p[1] + 1, it.p[2]);
     return m;
   }
+  function buildPropMesh(pr, entry) {
+    // placeholder box until the GLB parses, then swapped in place
+    const holder = new THREE.Group();
+    holder.position.set(pr.p[0], pr.p[1], pr.p[2]);
+    const rot = pr.r || [0, 0, 0];
+    holder.rotation.set(rot[0], rot[1], rot[2]);
+    holder.scale.setScalar(pr.scale || 1);
+    const ph = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshLambertMaterial({ color: 0x8a5aff, wireframe: true }));
+    holder.add(ph);
+    const embed = def.assets[pr.asset];
+    if (embed) {
+      SKY.Assets.instantiate(embed, (obj) => {
+        if (!obj || !holder.parent) return;
+        holder.remove(ph);
+        holder.add(obj);
+        if (entry && objects[sel] === entry && selBox) selBox.update();
+        refreshOutliner();
+      });
+    }
+    return holder;
+  }
 
   function rebuild(keepSel) {
     const oldSel = keepSel ? sel : -1;
+    if (gizmo) gizmo.detach();
     if (group) scene.remove(group);
     group = new THREE.Group();
     scene.add(group);
@@ -108,56 +127,104 @@ SKY.Editor = (function () {
     for (const pd of def.pads) { const mesh = buildPadMesh(pd); group.add(mesh); objects.push({ kind: 'pad', data: pd, mesh }); }
     for (const s of def.spawns) { const mesh = buildSpawnMesh(s); group.add(mesh); objects.push({ kind: 'spawn', data: s, mesh }); }
     for (const it of def.items) { const mesh = buildItemMesh(it); group.add(mesh); objects.push({ kind: 'item', data: it, mesh }); }
+    for (const pr of def.props) { const entry = { kind: 'prop', data: pr, mesh: null }; entry.mesh = buildPropMesh(pr, entry); group.add(entry.mesh); objects.push(entry); }
     if (!grid) grid = new THREE.GridHelper(160, 160, 0x557799, 0x2a3244);
     group.add(grid);
-    select(oldSel >= 0 && oldSel < objects.length ? oldSel : -1);
     applyMood();
+    select(oldSel >= 0 && oldSel < objects.length ? oldSel : -1);
+    refreshOutliner();
   }
 
   function applyMood() {
     for (const l of lights) scene.remove(l);
     lights = [];
     const M = SKY.MapData.MOODS[def.mood];
-    const hemi = new THREE.HemisphereLight(M.hemi[0], M.hemi[1], M.hemi[2] + 0.15);
+    const hemi = new THREE.HemisphereLight(M.hemi[0], M.hemi[1], M.hemi[2]);
     const sun = new THREE.DirectionalLight(M.sun[0], M.sun[1]);
     sun.position.set(M.sun[2][0], M.sun[2][1], M.sun[2][2]);
+    sun.castShadow = true;                       // the preview matches the game
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.left = -70; sun.shadow.camera.right = 70;
+    sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
+    sun.shadow.camera.far = 240;
+    sun.shadow.bias = -0.0004;
     lights.push(hemi, sun);
     scene.add(hemi, sun);
     const S = SKY.MapData.SKIES[def.sky];
     scene.background = new THREE.Color(S[1]);
-    scene.fog = null;
+    scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
   }
 
-  /* refresh one object's mesh from its data (cheap per-frame edits) */
-  function syncMesh(o) {
+  function labelOf(o, i) {
+    if (o.kind === 'block') return 'Block · ' + o.data.s.map(v => +v.toFixed(1)).join('×');
+    if (o.kind === 'pad') return 'Jump pad';
+    if (o.kind === 'spawn') return 'Spawn';
+    if (o.kind === 'item') return 'Item point';
+    const a = def.assets[o.data.asset];
+    return 'Prop · ' + (a ? a.name : '?');
+  }
+
+  /* ================= outliner ================= */
+  function refreshOutliner() {
+    ui.outliner.innerHTML = `<div class="ed-obj${sel < 0 ? ' sel' : ''}" data-i="-1">⚙ Map settings</div>` +
+      objects.map((o, i) =>
+        `<div class="ed-obj${i === sel ? ' sel' : ''}" data-i="${i}">${labelOf(o, i)}</div>`).join('');
+  }
+
+  /* ================= selection & gizmo ================= */
+  function writeBack(o) {
+    const m = o.mesh, d = o.data;
     if (o.kind === 'block') {
-      o.mesh.position.set(o.data.p[0], o.data.p[1], o.data.p[2]);
-      o.mesh.rotation.set(o.data.r[0], o.data.r[1], o.data.r[2]);
-      // size changes need new geometry
-      const g = o.mesh.geometry.parameters;
-      if (g.width !== o.data.s[0] || g.height !== o.data.s[1] || g.depth !== o.data.s[2]) {
-        o.mesh.geometry.dispose();
-        o.mesh.geometry = new THREE.BoxGeometry(o.data.s[0], o.data.s[1], o.data.s[2]);
-      }
+      d.p = [m.position.x, m.position.y, m.position.z];
+      d.r = [m.rotation.x, m.rotation.y, m.rotation.z];
     } else if (o.kind === 'pad') {
-      o.mesh.position.set(o.data.p[0], o.data.p[1] + 0.11, o.data.p[2]);
+      d.p = [m.position.x, m.position.y - 0.11, m.position.z];
+      m.rotation.set(0, 0, 0); m.scale.setScalar(1);
     } else if (o.kind === 'spawn') {
-      o.mesh.position.set(o.data.p[0], o.data.p[1], o.data.p[2]);
-    } else {
-      o.mesh.position.set(o.data.p[0], o.data.p[1] + 1, o.data.p[2]);
+      d.p = [m.position.x, m.position.y, m.position.z];
+      d.yaw = m.rotation.y;
+      m.rotation.x = m.rotation.z = 0; m.scale.setScalar(1);
+    } else if (o.kind === 'item') {
+      d.p = [m.position.x, m.position.y - 1, m.position.z];
+      m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+    } else if (o.kind === 'prop') {
+      d.p = [m.position.x, m.position.y, m.position.z];
+      d.r = [m.rotation.x, m.rotation.y, m.rotation.z];
+      d.scale = m.scale.x;
+      m.scale.setScalar(d.scale);
     }
-    if (selBox && objects[sel] === o) selBox.update();
+    if (selBox) selBox.update();
   }
 
-  /* ================= selection ================= */
+  /* blocks bake gizmo-scale into their size (geometry, not mesh.scale) */
+  function bakeBlockScale(o) {
+    if (o.kind !== 'block') return;
+    const m = o.mesh, d = o.data;
+    if (m.scale.x === 1 && m.scale.y === 1 && m.scale.z === 1) return;
+    d.s = [Math.max(0.25, d.s[0] * m.scale.x), Math.max(0.25, d.s[1] * m.scale.y), Math.max(0.25, d.s[2] * m.scale.z)];
+    m.scale.setScalar(1);
+    m.geometry.dispose();
+    m.geometry = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
+    if (selBox) selBox.update();
+  }
+
   function select(i) {
     sel = i;
     if (selBox) { group.remove(selBox); selBox = null; }
-    if (sel >= 0 && objects[sel]) {
-      selBox = new THREE.BoxHelper(objects[sel].mesh, 0xffd34d);
+    if (gizmo) gizmo.detach();
+    const o = objects[sel];
+    if (o) {
+      selBox = new THREE.BoxHelper(o.mesh, 0xffd34d);
       group.add(selBox);
+      if (gizmo) {
+        gizmo.attach(o.mesh);
+        if (o.kind !== 'block' && o.kind !== 'prop' && gizmo.mode !== 'translate') {
+          gizmo.setMode(o.kind === 'spawn' ? gizmo.mode === 'rotate' ? 'rotate' : 'translate' : 'translate');
+        }
+      }
     }
     syncInspector();
+    refreshOutliner();
   }
 
   function pick(clientX, clientY) {
@@ -171,7 +238,24 @@ SKY.Editor = (function () {
     return best;
   }
 
-  /* point 12m in front of the camera, clamped above the grid */
+  /* ray from a screen point to the first block (or the ground plane) */
+  function dropPoint(clientX, clientY, out) {
+    _m.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+    ray.setFromCamera(_m, camera);
+    let bestD = Infinity, hitObj = null;
+    for (const o of objects) {
+      if (o.kind !== 'block') continue;
+      const hits = ray.intersectObject(o.mesh, false);
+      if (hits.length && hits[0].distance < bestD) { bestD = hits[0].distance; out.copy(hits[0].point); hitObj = o; }
+    }
+    if (!hitObj) {
+      // ground plane y=0
+      const t = -ray.ray.origin.y / ray.ray.direction.y;
+      if (t > 0) { ray.ray.at(t, out); hitObj = 'grid'; }
+    }
+    return hitObj;
+  }
+
   function focusPoint(out) {
     SKY.U.dirFromYawPitch(camYaw, camPitch, out);
     out.multiplyScalar(14).add(camPos);
@@ -191,45 +275,29 @@ SKY.Editor = (function () {
     status('undo');
   }
 
-  /* ================= add / duplicate / delete ================= */
+  /* ================= add / duplicate / delete / drop ================= */
+  function addAndSelect(arr, item) {
+    push();
+    arr.push(item);
+    rebuild();
+    select(objects.findIndex(o => o.data === item));
+  }
   function addBlock() {
-    push();
     focusPoint(_v);
-    def.blocks.push({ p: [_v.x, _v.y, _v.z], s: [4, 1, 4], r: [0, 0, 0], pal: 'pearl', crumble: false, mover: null });
-    rebuild();
-    select(objects.findIndex(o => o.data === def.blocks[def.blocks.length - 1]));
+    addAndSelect(def.blocks, { p: [_v.x, _v.y, _v.z], s: [4, 1, 4], r: [0, 0, 0], pal: 'pearl', crumble: false, mover: null });
   }
-  function addPad() {
-    push();
-    focusPoint(_v);
-    def.pads.push({ p: [_v.x, _v.y, _v.z], launch: [0, 16, 0] });
-    rebuild();
-    select(objects.findIndex(o => o.data === def.pads[def.pads.length - 1]));
-  }
-  function addSpawn() {
-    push();
-    focusPoint(_v);
-    def.spawns.push({ p: [_v.x, _v.y, _v.z], yaw: 0 });
-    rebuild();
-    select(objects.findIndex(o => o.data === def.spawns[def.spawns.length - 1]));
-  }
-  function addItem() {
-    push();
-    focusPoint(_v);
-    def.items.push({ p: [_v.x, _v.y, _v.z] });
-    rebuild();
-    select(objects.findIndex(o => o.data === def.items[def.items.length - 1]));
-  }
+  function addPad() { focusPoint(_v); addAndSelect(def.pads, { p: [_v.x, _v.y, _v.z], launch: [0, 16, 0] }); }
+  function addSpawn() { focusPoint(_v); addAndSelect(def.spawns, { p: [_v.x, _v.y, _v.z], yaw: 0 }); }
+  function addItem() { focusPoint(_v); addAndSelect(def.items, { p: [_v.x, _v.y, _v.z] }); }
+
+  function arrOf(o) { return { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props }[o.kind]; }
+
   function duplicateSel() {
     const o = objects[sel];
     if (!o) return;
-    push();
     const copy = JSON.parse(JSON.stringify(o.data));
     copy.p = [copy.p[0] + 2, copy.p[1], copy.p[2] + 2];
-    const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items }[o.kind];
-    arr.push(copy);
-    rebuild();
-    select(objects.findIndex(q => q.data === copy));
+    addAndSelect(arrOf(o), copy);
     status('duplicated');
   }
   function deleteSel() {
@@ -238,124 +306,62 @@ SKY.Editor = (function () {
     if (o.kind === 'block' && def.blocks.length <= 1) { status('a map needs at least one block'); return; }
     if (o.kind === 'spawn' && def.spawns.length <= 2) { status('keep at least 2 spawns'); return; }
     push();
-    const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items }[o.kind];
-    arr.splice(arr.indexOf(o.data), 1);
+    arrOf(o).splice(arrOf(o).indexOf(o.data), 1);
     rebuild();
     select(-1);
   }
-
-  /* F — sit the selection on whatever is directly below it (stacking) */
   function dropSel() {
     const o = objects[sel];
     if (!o) return;
     push();
-    const halfH = o.kind === 'block' ? o.data.s[1] / 2 : 0;
+    const halfH = o.kind === 'block' ? (o.data.s[1] / 2) : 0;
     _v.set(o.data.p[0], o.data.p[1] + (o.kind === 'block' ? 0 : 1), o.data.p[2]);
     ray.set(_v, new THREE.Vector3(0, -1, 0));
-    let top = 0;   // fall back to the grid plane
+    let top = 0;
     for (const q of objects) {
       if (q === o || q.kind !== 'block') continue;
       const hits = ray.intersectObject(q.mesh, false);
       if (hits.length) top = Math.max(top, hits[0].point.y);
     }
     o.data.p[1] = +(top + halfH).toFixed(2);
-    syncMesh(o);
+    syncMeshFromData(o);
     syncInspector();
     status('dropped');
   }
 
-  /* ================= transform modal (G/S/R) ================= */
-  function startXform(mode) {
-    const o = objects[sel];
-    if (!o || xform) return;
-    xform = {
-      mode, axis: null,
-      startData: JSON.stringify(o.data),
-      obj: o,
-    };
-    status(mode === 'g' ? 'move — X/Y/Z axis · CTRL snap · click/Enter OK · Esc cancel'
-      : mode === 's' ? 'scale — X/Y/Z axis · CTRL snap · click/Enter OK'
-      : 'rotate — X/Y/Z axis (default Y) · CTRL snap 15° · click/Enter OK');
-  }
-  function cancelXform() {
-    if (!xform) return;
-    const o = xform.obj;
-    Object.assign(o.data, JSON.parse(xform.startData));
-    syncMesh(o);
-    syncInspector();
-    xform = null;
-    status('cancelled');
-  }
-  function commitXform(snap) {
-    if (!xform) return;
-    const o = xform.obj;
-    if (snap) {
-      if (o.data.p) o.data.p = o.data.p.map(v => Math.round(v * 2) / 2);
-      if (o.data.s && xform.mode === 's') o.data.s = o.data.s.map(v => Math.max(0.25, Math.round(v * 2) / 2));
-      if (o.data.r && xform.mode === 'r') {
-        o.data.r = o.data.r.map(v => Math.round(v / (Math.PI / 12)) * (Math.PI / 12));
+  function syncMeshFromData(o) {
+    const d = o.data, m = o.mesh;
+    if (o.kind === 'block') {
+      m.position.set(d.p[0], d.p[1], d.p[2]);
+      m.rotation.set(d.r[0], d.r[1], d.r[2]);
+      const g = m.geometry.parameters;
+      if (g.width !== d.s[0] || g.height !== d.s[1] || g.depth !== d.s[2]) {
+        m.geometry.dispose();
+        m.geometry = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
       }
+    } else if (o.kind === 'pad') m.position.set(d.p[0], d.p[1] + 0.11, d.p[2]);
+    else if (o.kind === 'item') m.position.set(d.p[0], d.p[1] + 1, d.p[2]);
+    else if (o.kind === 'spawn') m.position.set(d.p[0], d.p[1], d.p[2]);
+    else if (o.kind === 'prop') {
+      m.position.set(d.p[0], d.p[1], d.p[2]);
+      const r = d.r || [0, 0, 0];
+      m.rotation.set(r[0], r[1], r[2]);
+      m.scale.setScalar(d.scale || 1);
     }
-    push();   // (history holds the PRE-edit state via startData? no — push post
-    // states stack fine: undo returns to previous committed state)
-    syncMesh(o);
-    syncInspector();
-    xform = null;
-    status('ok');
-  }
-  function applyXformDelta(dx, dy) {
-    const o = xform.obj;
-    const d = o.data;
-    const k = Math.max(2, camera.position.distanceTo(o.mesh.position)) * 0.0016;
-    if (xform.mode === 'g') {
-      if (xform.axis === 'x') d.p[0] += dx * k;
-      else if (xform.axis === 'y') d.p[1] -= dy * k;
-      else if (xform.axis === 'z') d.p[2] += dx * k;
-      else {
-        // view-plane move: camera right + world up
-        _v.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
-        d.p[0] += _v.x * dx * k;
-        d.p[2] += _v.z * dx * k;
-        d.p[1] -= dy * k;
-      }
-    } else if (xform.mode === 's' && d.s) {
-      const f = 1 + dx * 0.004;
-      if (xform.axis === 'x') d.s[0] = Math.max(0.25, d.s[0] * f);
-      else if (xform.axis === 'y') d.s[1] = Math.max(0.25, d.s[1] * f);
-      else if (xform.axis === 'z') d.s[2] = Math.max(0.25, d.s[2] * f);
-      else for (let i = 0; i < 3; i++) d.s[i] = Math.max(0.25, d.s[i] * f);
-    } else if (xform.mode === 'r') {
-      if (d.r) {
-        const ax = xform.axis === 'x' ? 0 : xform.axis === 'z' ? 2 : 1;
-        d.r[ax] += dx * 0.01;
-      } else if (d.yaw !== undefined) {
-        d.yaw += dx * 0.01;
-        // spawns need the arrow refreshed
-        rebuildSpawnArrow(o);
-      }
-    }
-    syncMesh(o);
-  }
-  function rebuildSpawnArrow(o) {
-    if (o.kind !== 'spawn') return;
-    const i = objects.indexOf(o);
-    group.remove(o.mesh);
-    o.mesh = buildSpawnMesh(o.data);
-    group.add(o.mesh);
-    if (i === sel && selBox) { group.remove(selBox); selBox = new THREE.BoxHelper(o.mesh, 0xffd34d); group.add(selBox); }
+    if (selBox) selBox.update();
   }
 
   /* ================= inspector ================= */
   function status(s) { ui.status.textContent = s || ''; }
 
   function numRow(label, val, key, step) {
-    return `<div class="ed-row"><span>${label}</span>
+    return `<div class="ed-row"><span class="ed-scrub" data-for="${key}">${label}</span>
       <input type="number" data-k="${key}" value="${(+val).toFixed(2)}" step="${step || 0.5}"></div>`;
   }
 
   function syncInspector() {
     const o = objects[sel];
-    ui.insTitle.textContent = o ? o.kind.toUpperCase() : 'MAP';
+    ui.insTitle.textContent = o ? labelOf(o).toUpperCase() : 'MAP SETTINGS';
     if (!o) {
       ui.ins.innerHTML = `
         <div class="ed-row"><span>Name</span><input type="text" data-k="name" value="${def.name}" maxlength="18"></div>
@@ -364,12 +370,11 @@ SKY.Editor = (function () {
         <div class="ed-row"><span>Sky</span><select data-k="sky">${Object.keys(SKY.MapData.SKIES).map(s =>
           `<option value="${s}"${s === def.sky ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
         ${numRow('Kill height', def.killY, 'killY', 1)}
-        <div class="ed-hint">Select an object to edit it. Nothing selected = map settings.</div>`;
+        <div class="ed-hint">Picking a mood also sets its matching sky (change the sky after to override).</div>`;
       return;
     }
     const d = o.data;
-    let h = '';
-    h += numRow('X', d.p[0], 'p0') + numRow('Y', d.p[1], 'p1') + numRow('Z', d.p[2], 'p2');
+    let h = numRow('X', d.p[0], 'p0') + numRow('Y', d.p[1], 'p1') + numRow('Z', d.p[2], 'p2');
     if (o.kind === 'block') {
       h += numRow('Width', d.s[0], 's0') + numRow('Height', d.s[1], 's1') + numRow('Depth', d.s[2], 's2');
       h += numRow('Rot X°', d.r[0] * 180 / Math.PI, 'r0', 5) + numRow('Rot Y°', d.r[1] * 180 / Math.PI, 'r1', 5) + numRow('Rot Z°', d.r[2] * 180 / Math.PI, 'r2', 5);
@@ -378,8 +383,7 @@ SKY.Editor = (function () {
         ${Object.keys(SKY.MapData.PALETTES).map(p => `<option value="${p}"${d.pal === p ? ' selected' : ''}>${p}</option>`).join('')}
       </select></div>`;
       h += `<div class="ed-row"><span>Color</span><input type="color" data-k="color" value="${d.color || '#8a94a8'}"></div>`;
-      h += `<div class="ed-row"><span>Texture</span><input type="file" accept="image/*" data-k="texfile"></div>`;
-      if (d.tex) h += `<div class="ed-row"><span></span><button class="ed-mini" data-k="cleartex">remove texture</button></div>`;
+      if (d.tex) h += `<div class="ed-row"><span>Texture</span><button class="ed-mini" data-k="cleartex">remove</button></div>`;
       h += `<div class="ed-row"><span>Crumble</span><input type="checkbox" data-k="crumble"${d.crumble ? ' checked' : ''}></div>`;
       const mt = d.mover ? d.mover.type : '';
       h += `<div class="ed-row"><span>Mover</span><select data-k="movertype">
@@ -404,6 +408,10 @@ SKY.Editor = (function () {
       h += numRow('Launch X', d.launch[0], 'l0') + numRow('Launch Y', d.launch[1], 'l1') + numRow('Launch Z', d.launch[2], 'l2');
     } else if (o.kind === 'spawn') {
       h += numRow('Yaw°', (d.yaw || 0) * 180 / Math.PI, 'yaw', 15);
+    } else if (o.kind === 'prop') {
+      h += numRow('Rot Y°', (d.r ? d.r[1] : 0) * 180 / Math.PI, 'pr1', 5);
+      h += numRow('Scale', d.scale || 1, 'pscale', 0.1);
+      h += `<div class="ed-row"><span>Solid</span><input type="checkbox" data-k="psolid"${d.solid !== false ? ' checked' : ''}></div>`;
     }
     ui.ins.innerHTML = h;
   }
@@ -412,21 +420,28 @@ SKY.Editor = (function () {
     const k = e.target.dataset.k;
     if (!k) return;
     const o = objects[sel];
-    // map settings (no selection)
     if (!o) {
       if (k === 'name') def.name = e.target.value.toUpperCase();
-      else if (k === 'mood') { def.mood = e.target.value; applyMood(); }
+      else if (k === 'mood') {
+        def.mood = e.target.value;
+        def.sky = SKY.MapData.SKY_FOR_MOOD[def.mood] || def.sky;
+        applyMood();
+        syncInspector();
+      }
       else if (k === 'sky') { def.sky = e.target.value; applyMood(); }
       else if (k === 'killY') def.killY = parseFloat(e.target.value) || -22;
       return;
     }
     const d = o.data;
     const num = parseFloat(e.target.value) || 0;
-    if (k[0] === 'p') d.p[+k[1]] = num;
+    if (k[0] === 'p' && k.length === 2 && !isNaN(+k[1])) d.p[+k[1]] = num;
     else if (k[0] === 's' && k.length === 2) d.s[+k[1]] = Math.max(0.25, num);
     else if (k[0] === 'r' && k.length === 2) d.r[+k[1]] = num * Math.PI / 180;
     else if (k[0] === 'l') d.launch[+k[1]] = num;
-    else if (k === 'yaw') { d.yaw = num * Math.PI / 180; rebuildSpawnArrow(o); }
+    else if (k === 'yaw') { d.yaw = num * Math.PI / 180; rebuildMarker(o); }
+    else if (k === 'pr1') { d.r = d.r || [0, 0, 0]; d.r[1] = num * Math.PI / 180; }
+    else if (k === 'pscale') d.scale = Math.max(0.05, num);
+    else if (k === 'psolid') d.solid = e.target.checked;
     else if (k === 'pal') { d.pal = e.target.value || null; o.mesh.material = blockMaterial(d); }
     else if (k === 'color') { d.color = e.target.value; if (!d.pal && !d.tex) o.mesh.material = blockMaterial(d); }
     else if (k === 'crumble') d.crumble = e.target.checked;
@@ -441,32 +456,70 @@ SKY.Editor = (function () {
     else if (k === 'mamp') d.mover.amp = num;
     else if (k.indexOf('moff') === 0) { d.mover.off = d.mover.off || [6, 0, 0]; d.mover.off[+k[4]] = num; }
     else if (k.indexOf('mc') === 0) { d.mover.c = d.mover.c || [0, 0]; d.mover.c[+k[2]] = num; }
-    else if (k === 'texfile') {
-      const f = e.target.files && e.target.files[0];
-      if (f) applyTextureFile(f, o);
-      return;
-    }
     else if (k === 'cleartex') { d.tex = null; o.mesh.material = blockMaterial(d); syncInspector(); return; }
-    syncMesh(o);
+    syncMeshFromData(o);
+    refreshOutliner();
   }
 
-  function applyTextureFile(file, o) {
-    const fr = new FileReader();
-    fr.onload = () => {
+  function rebuildMarker(o) {
+    const i = objects.indexOf(o);
+    group.remove(o.mesh);
+    o.mesh = o.kind === 'spawn' ? buildSpawnMesh(o.data) : buildPadMesh(o.data);
+    group.add(o.mesh);
+    if (i === sel) {
+      if (selBox) group.remove(selBox);
+      selBox = new THREE.BoxHelper(o.mesh, 0xffd34d);
+      group.add(selBox);
+      if (gizmo) gizmo.attach(o.mesh);
+    }
+  }
+
+  /* ================= assets panel ================= */
+  let curFolder = 'assets';
+  function refreshAssets() {
+    const folders = SKY.Assets.folders();
+    if (folders.indexOf(curFolder) < 0) curFolder = folders[0];
+    ui.folderSel.innerHTML = folders.map(f =>
+      `<option value="${f}"${f === curFolder ? ' selected' : ''}>📁 ${f}</option>`).join('');
+    const list = SKY.Assets.list().filter(a => (a.folder || 'assets') === curFolder);
+    ui.assetGrid.innerHTML = list.length ? list.map(a => `
+      <div class="ed-asset" draggable="true" data-id="${a.id}" title="${a.name} — drag into the scene">
+        ${a.thumb ? `<img src="${a.thumb}" alt="">` : `<span class="ed-asset-ph">${a.type === 'model' ? '◆' : '🖼'}</span>`}
+        <i>${a.name}</i><b class="ed-asset-x" data-x="${a.id}">×</b>
+      </div>`).join('')
+      : '<div class="ed-hint">Drop .glb models or images here, or use ADD FILES.</div>';
+  }
+
+  function placeAsset(assetId, clientX, clientY) {
+    const a = SKY.Assets.get(assetId);
+    if (!a) return;
+    const hit = dropPoint(clientX, clientY, _v);
+    if (!hit) { status('drop it over the map'); return; }
+    if (a.type === 'image') {
+      const o = typeof hit === 'object' ? hit : null;
+      if (!o) { status('drop images ONTO a block to texture it'); return; }
       push();
-      o.data.tex = fr.result;
+      o.data.tex = a.data;
       o.mesh.material = blockMaterial(o.data);
-      syncInspector();
-      status('texture applied (rides inside the map file)');
-    };
-    fr.readAsDataURL(file);
+      status('textured with ' + a.name);
+      return;
+    }
+    // model → a solid prop
+    push();
+    SKY.Assets.embed(def, assetId);
+    const pr = { asset: assetId, p: [+_v.x.toFixed(2), +_v.y.toFixed(2), +_v.z.toFixed(2)], r: [0, 0, 0], scale: 1, solid: true };
+    def.props.push(pr);
+    rebuild();
+    select(objects.findIndex(o => o.data === pr));
+    status(a.name + ' placed — G/R/S to adjust');
   }
 
   /* ================= save / load / export / test ================= */
   function save() {
     def.name = def.name || 'CUSTOM MAP';
     const ok = SKY.MapData.saveDraft(def);
-    status(ok ? 'saved — the map is now in the PLAY map list' : 'saved to session (localStorage full — use EXPORT)');
+    refreshLoadList();
+    status(ok ? 'saved — the map is in the PLAY list' : 'saved to session only (storage full — use EXPORT)');
   }
   function exportJson() {
     const blob = new Blob([JSON.stringify(def)], { type: 'application/json' });
@@ -475,7 +528,7 @@ SKY.Editor = (function () {
     a.download = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '.json';
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    status('exported — drop the file in maps/ + list it in maps/index.json to deploy');
+    status('exported — put it in maps/ + maps/index.json to deploy for everyone');
   }
   function importJson(file) {
     const fr = new FileReader();
@@ -490,56 +543,57 @@ SKY.Editor = (function () {
     fr.readAsText(file);
   }
   function refreshLoadList() {
-    const drafts = SKY.MapData.drafts();
-    ui.loadSel.innerHTML = '<option value="">load draft…</option>' +
-      drafts.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    ui.loadSel.innerHTML = '<option value="">Load draft…</option>' +
+      SKY.MapData.drafts().map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    ui.loadSel.value = '';
+  }
+  function clearSceneOwned() {
+    if (gizmo) { gizmo.detach(); scene.remove(gizmo); }
+    if (group) { scene.remove(group); group = null; }
+    for (const l of lights) scene.remove(l);
+    lights = [];
+    objects = [];
+    scene.background = null;
+    scene.fog = null;
   }
   function testPlay() {
     save();
     api.pendingReturn = def.id;
-    closeUi();
+    ui.root.classList.add('hidden');
+    api.active = false;
+    clearSceneOwned();                 // no grid / ghost meshes in the match
     SKY.SFX.init();
     SKY.Game.startMatch(2, def.id, 'lbs', { rounds: 9, lives: 5 });
     SKY.Input.requestLock();
   }
 
   /* ================= open / close ================= */
-  function openUi() {
-    ui.root.classList.remove('hidden');
-    document.getElementById('menu').classList.add('hidden');
-  }
-  function closeUi() {
-    ui.root.classList.add('hidden');
-    api.active = false;
-  }
-
   function open(defOrId) {
     if (api.active) return;
     api.active = true;
-    def = typeof defOrId === 'string'
+    def = SKY.MapData.normalize(typeof defOrId === 'string'
       ? JSON.parse(JSON.stringify(SKY.MapData.get(defOrId) || SKY.MapData.blank()))
-      : (defOrId ? SKY.MapData.normalize(defOrId) : SKY.MapData.blank());
+      : (defOrId || SKY.MapData.blank()));
     history = [];
     SKY.Map.unload();
+    if (gizmo) scene.add(gizmo);
     rebuild(false);
     refreshLoadList();
-    openUi();
+    refreshAssets();
+    ui.root.classList.remove('hidden');
+    document.getElementById('menu').classList.add('hidden');
     select(-1);
-    status('RMB — look around · G/S/R — transform · F — drop · TEST to play it');
+    status('RMB — fly · click — select · drag the gizmo · TEST to play it');
   }
 
   function exit() {
-    closeUi();
-    if (group) { scene.remove(group); group = null; }
-    for (const l of lights) scene.remove(l);
-    lights = [];
-    objects = [];
-    scene.background = null;
-    SKY.Map.load(scene, 'sky');       // restore the menu backdrop
+    ui.root.classList.add('hidden');
+    api.active = false;
+    clearSceneOwned();
+    SKY.Map.load(scene, 'sky');
     SKY.HUD.showMenu();
   }
 
-  /* back from a TEST match */
   function resume() {
     const id = api.pendingReturn;
     api.pendingReturn = null;
@@ -550,25 +604,27 @@ SKY.Editor = (function () {
   /* ================= per-frame ================= */
   function frame(rdt) {
     const In = SKY.Input;
-    SKY.Effects.tick(rdt);   // let leftover particles fade out
-    // fly
-    const sp = flySpeed * rdt * (In.isDown('ShiftLeft') ? 2.6 : 1);
-    SKY.U.dirFromYawPitch(camYaw, camPitch, _v);
-    _v2.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
-    const mz = (In.isDown('KeyW') ? 1 : 0) - (In.isDown('KeyS') ? 1 : 0);
-    const mx = (In.isDown('KeyD') ? 1 : 0) - (In.isDown('KeyA') ? 1 : 0);
-    const my = (In.isDown('KeyE') ? 1 : 0) - (In.isDown('KeyQ') ? 1 : 0);
-    camPos.addScaledVector(_v, mz * sp).addScaledVector(_v2, mx * sp);
-    camPos.y += my * sp;
+    SKY.Effects.tick(rdt);
+    // Unity-style: WASD flies ONLY while RMB is held (keys stay free for hotkeys)
+    if (looking) {
+      const sp = flySpeed * rdt * (In.isDown('ShiftLeft') ? 2.6 : 1);
+      SKY.U.dirFromYawPitch(camYaw, camPitch, _v);
+      _v2.set(Math.cos(camYaw), 0, -Math.sin(camYaw));
+      const mz = (In.isDown('KeyW') ? 1 : 0) - (In.isDown('KeyS') ? 1 : 0);
+      const mx = (In.isDown('KeyD') ? 1 : 0) - (In.isDown('KeyA') ? 1 : 0);
+      const my = (In.isDown('KeyE') ? 1 : 0) - (In.isDown('KeyQ') ? 1 : 0);
+      camPos.addScaledVector(_v, mz * sp).addScaledVector(_v2, mx * sp);
+      camPos.y += my * sp;
+    }
     camera.position.copy(camPos);
     camera.rotation.set(camPitch, camYaw, 0, 'YXZ');
     camera.fov = 80;
     camera.updateProjectionMatrix();
     // mover preview
-    if (previewOn) {
+    if (previewOn && !gizmoDrag) {
       previewT += rdt;
       for (const o of objects) {
-        if (o.kind !== 'block' || !o.data.mover) continue;
+        if (o.kind !== 'block' || !o.data.mover || objects[sel] === o) continue;
         const m = o.data.mover;
         const period = Math.max(1, m.period || 6);
         const s = (Math.sin(previewT * Math.PI * 2 / period) + 1) / 2;
@@ -576,14 +632,13 @@ SKY.Editor = (function () {
         else if (m.type === 'line') {
           const off = m.off || [6, 0, 0];
           o.mesh.position.set(o.data.p[0] + off[0] * s, o.data.p[1] + off[1] * s, o.data.p[2] + off[2] * s);
-        } else if (m.type === 'orbit') {
+        } else {
           const c = m.c || [0, 0];
           const a = previewT * Math.PI * 2 / period;
           const rx = o.data.p[0] - c[0], rz = o.data.p[2] - c[1];
           o.mesh.position.set(c[0] + rx * Math.cos(a) - rz * Math.sin(a), o.data.p[1],
             c[1] + rx * Math.sin(a) + rz * Math.cos(a));
         }
-        if (selBox && objects[sel] === o) selBox.update();
       }
     }
   }
@@ -593,8 +648,27 @@ SKY.Editor = (function () {
     scene = sc; camera = cam;
     ui = {
       root: $('editor-ov'), ins: $('ed-inspector'), insTitle: $('ed-ins-title'),
-      status: $('ed-status'), loadSel: $('ed-load'),
+      status: $('ed-status'), loadSel: $('ed-load'), outliner: $('ed-outliner'),
+      folderSel: $('ed-folder'), assetGrid: $('ed-assets'),
     };
+
+    if (THREE.TransformControls) {
+      gizmo = new THREE.TransformControls(camera, SKY.Input._canvas);
+      gizmo.setSize(0.9);
+      gizmo.addEventListener('dragging-changed', (e) => {
+        gizmoDrag = e.value;
+        if (e.value) push();                       // undo point at drag start
+        else {
+          const o = objects[sel];
+          if (o) { bakeBlockScale(o); writeBack(o); syncInspector(); refreshOutliner(); }
+        }
+      });
+      gizmo.addEventListener('objectChange', () => {
+        const o = objects[sel];
+        if (o) writeBack(o);
+      });
+    }
+
     $('tab-editor').onclick = () => { if (!SKY.Net.online) open(null); };
     $('ed-exit').onclick = exit;
     $('ed-new').onclick = () => { api.active = false; open(null); };
@@ -605,83 +679,136 @@ SKY.Editor = (function () {
     $('ed-addpad').onclick = addPad;
     $('ed-addspawn').onclick = addSpawn;
     $('ed-additem').onclick = addItem;
-    $('ed-anim').onclick = (e) => { previewOn = !previewOn; e.target.classList.toggle('sel', previewOn); if (!previewOn) rebuild(true); };
-    ui.loadSel.onchange = () => { if (ui.loadSel.value) { api.active = false; open(ui.loadSel.value); } };
+    $('ed-anim').onclick = (e) => {
+      previewOn = !previewOn;
+      e.target.classList.toggle('sel', previewOn);
+      if (!previewOn) for (const o of objects) syncMeshFromData(o);
+    };
+    ui.loadSel.onchange = () => {
+      const id = ui.loadSel.value;
+      if (id) { api.active = false; open(id); }
+    };
     $('ed-import').onchange = (e) => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; };
     ui.ins.addEventListener('input', onInspectorInput);
     ui.ins.addEventListener('click', (e) => { if (e.target.dataset.k === 'cleartex') onInspectorInput(e); });
 
+    /* outliner clicks */
+    ui.outliner.addEventListener('click', (e) => {
+      const row = e.target.closest('.ed-obj');
+      if (row) select(+row.dataset.i);
+    });
+
+    /* drag-scrub the number labels (Blender/Unity style) */
+    let scrub = null;
+    ui.ins.addEventListener('mousedown', (e) => {
+      const span = e.target.closest('.ed-scrub');
+      if (!span) return;
+      const input = span.parentNode.querySelector('input[type=number]');
+      if (!input) return;
+      scrub = { input, lastX: e.clientX, step: parseFloat(input.step) || 0.5 };
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!scrub) return;
+      const dx = e.clientX - scrub.lastX;
+      scrub.lastX = e.clientX;
+      scrub.input.value = (parseFloat(scrub.input.value) + dx * scrub.step * 0.25).toFixed(2);
+      scrub.input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    window.addEventListener('mouseup', () => { scrub = null; });
+
+    /* assets panel */
+    SKY.Assets.onChange = () => { if (api.active) refreshAssets(); };
+    ui.folderSel.onchange = () => { curFolder = ui.folderSel.value; refreshAssets(); };
+    $('ed-newfolder').onclick = () => {
+      const n = prompt('Folder name:');
+      if (n) { curFolder = n.trim().toLowerCase().replace(/[^a-z0-9/_-]+/g, '-'); refreshAssets(); }
+    };
+    $('ed-addasset').onchange = (e) => {
+      SKY.Assets.addFiles([...e.target.files], curFolder, () => refreshAssets());
+      e.target.value = '';
+    };
+    ui.assetGrid.addEventListener('click', (e) => {
+      const x = e.target.dataset.x;
+      if (x && confirm('Delete this asset from the library?')) SKY.Assets.remove(x);
+    });
+    ui.assetGrid.addEventListener('dragstart', (e) => {
+      const card = e.target.closest('.ed-asset');
+      if (card) e.dataTransfer.setData('text/skyasset', card.dataset.id);
+    });
+
+    /* viewport mouse */
     const canvas = SKY.Input._canvas;
     let lastX = 0, lastY = 0, downX = 0, downY = 0;
     canvas.addEventListener('mousedown', (e) => {
       if (!api.active) return;
       if (e.button === 2) { looking = true; lastX = e.clientX; lastY = e.clientY; }
-      if (e.button === 0) {
-        if (xform) { commitXform(false); return; }
-        downX = e.clientX; downY = e.clientY;
-      }
+      if (e.button === 0) { downX = e.clientX; downY = e.clientY; }
     });
     window.addEventListener('mouseup', (e) => {
       if (!api.active) return;
       if (e.button === 2) looking = false;
-      if (e.button === 0 && !xform &&
+      if (e.button === 0 && !gizmoDrag && (!gizmo || !gizmo.axis) &&
           Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4 &&
           !e.target.closest('#editor-ov')) {
         select(pick(e.clientX, e.clientY));
       }
     });
     window.addEventListener('mousemove', (e) => {
-      if (!api.active) return;
-      if (looking) {
-        camYaw -= (e.clientX - lastX) * 0.004;
-        camPitch = SKY.U.clamp(camPitch - (e.clientY - lastY) * 0.004, -1.5, 1.5);
-        lastX = e.clientX; lastY = e.clientY;
-      } else if (xform) {
-        applyXformDelta(e.movementX, e.movementY);
-      }
+      if (!api.active || !looking) return;
+      camYaw -= (e.clientX - lastX) * 0.004;
+      camPitch = SKY.U.clamp(camPitch - (e.clientY - lastY) * 0.004, -1.5, 1.5);
+      lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener('wheel', (e) => {
       if (!api.active || e.target.closest('#editor-ov')) return;
       flySpeed = SKY.U.clamp(flySpeed * (e.deltaY > 0 ? 0.85 : 1.18), 3, 80);
       status('fly speed ' + flySpeed.toFixed(0));
     }, { passive: true });
+
+    /* hotkeys — never while flying (RMB) or typing */
     window.addEventListener('keydown', (e) => {
-      if (!api.active) return;
+      if (!api.active || looking) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-      if (xform) {
-        if (e.code === 'Escape') { cancelXform(); return; }
-        if (e.code === 'Enter') { commitXform(e.ctrlKey); return; }
-        if (e.code === 'KeyX') xform.axis = 'x';
-        if (e.code === 'KeyY') xform.axis = 'y';
-        if (e.code === 'KeyZ' && !e.ctrlKey) xform.axis = 'z';
-        if (e.ctrlKey && e.code === 'KeyZ') { cancelXform(); undo(); }
-        return;
-      }
       if (e.ctrlKey && e.code === 'KeyZ') { undo(); return; }
-      if (e.code === 'KeyG') startXform('g');
-      if (e.code === 'KeyS' && !e.ctrlKey) startXform('s');
-      if (e.code === 'KeyR') startXform('r');
+      if (e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); save(); return; }
+      if (gizmo && sel >= 0) {
+        if (e.code === 'KeyG') gizmo.setMode('translate');
+        if (e.code === 'KeyR') gizmo.setMode('rotate');
+        if (e.code === 'KeyS') gizmo.setMode('scale');
+      }
       if (e.code === 'KeyF') dropSel();
       if (e.code === 'KeyD' && e.shiftKey) duplicateSel();
       if (e.code === 'Delete' || e.code === 'Backspace') deleteSel();
       if (e.code === 'Escape') select(-1);
-      if (e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); save(); }
-    });
-    // commit transforms with a click anywhere (incl. over UI guard above)
-    window.addEventListener('mousedown', (e) => {
-      if (api.active && xform && e.button === 0 && !e.target.closest('#editor-ov')) {
-        commitXform(e.ctrlKey);
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
+        if (gizmo) {
+          gizmo.setTranslationSnap(0.5);
+          gizmo.setRotationSnap(Math.PI / 12);
+          gizmo.setScaleSnap(0.25);
+        }
       }
-    }, true);
-    // drop an image anywhere = texture the selected block
+    });
+    window.addEventListener('keyup', (e) => {
+      if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && gizmo) {
+        gizmo.setTranslationSnap(null);
+        gizmo.setRotationSnap(null);
+        gizmo.setScaleSnap(null);
+      }
+    });
+
+    /* dropping things on the viewport: library assets, raw files */
     window.addEventListener('dragover', (e) => { if (api.active) e.preventDefault(); });
     window.addEventListener('drop', (e) => {
       if (!api.active) return;
       e.preventDefault();
-      const f = e.dataTransfer.files && e.dataTransfer.files[0];
-      const o = objects[sel];
-      if (f && f.type.indexOf('image/') === 0 && o && o.kind === 'block') applyTextureFile(f, o);
-      else if (f && f.name.endsWith('.json')) importJson(f);
+      const assetId = e.dataTransfer.getData('text/skyasset');
+      if (assetId && !e.target.closest('#editor-ov')) { placeAsset(assetId, e.clientX, e.clientY); return; }
+      const files = [...(e.dataTransfer.files || [])];
+      if (!files.length) return;
+      if (files[0].name.endsWith('.json')) { importJson(files[0]); return; }
+      // raw files land in the asset library (current folder)
+      SKY.Assets.addFiles(files, curFolder, () => { refreshAssets(); status('added to ' + curFolder); });
     });
   }
 

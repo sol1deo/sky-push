@@ -117,7 +117,28 @@ SKY.Map = (function () {
       fill.position.copy(o.fillPos || new THREE.Vector3(-40, 30, -35));
       group.add(fill);
     }
+    lightShafts(o.sunPos, o.sunColor);
     return { hemi, sun };
+  }
+
+  /* cinematic light shafts angled from the sun — cheap additive planes,
+     toggleable in ⚙ settings ("Light shafts") */
+  function lightShafts(sunPos, color) {
+    if (SKY.Settings && SKY.Settings.data.shafts === false) return;
+    const dir = sunPos.clone().normalize();
+    for (let i = 0; i < 4; i++) {
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(SKY.U.rand(8, 16), SKY.U.rand(45, 70)),
+        new THREE.MeshBasicMaterial({
+          map: SKY.U.shaftTexture(), color, transparent: true,
+          opacity: SKY.U.rand(0.045, 0.09), blending: THREE.AdditiveBlending,
+          depthWrite: false, side: THREE.DoubleSide, fog: false,
+        }));
+      plane.position.set(SKY.U.rand(-22, 22), SKY.U.rand(14, 22), SKY.U.rand(-22, 22));
+      plane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      plane.rotateY(SKY.U.rand(0, Math.PI));
+      group.add(plane);
+    }
   }
 
   /* gradient sky dome (+ optional stars) */
@@ -1151,6 +1172,30 @@ SKY.Map = (function () {
     }
     for (const it of def.items) {
       SKY.World.itemPoints.push(new THREE.Vector3(it.p[0], it.p[1], it.p[2]));
+    }
+    // 3D asset props (GLB payloads embedded in the def) — async parse, the
+    // meshes pop in within a frame or two; collision = their bounding box
+    for (const pr of def.props || []) {
+      const embed = (def.assets || {})[pr.asset];
+      if (!embed || !SKY.Assets) continue;
+      const g = group;
+      SKY.Assets.instantiate(embed, (obj) => {
+        if (!obj || group !== g) return;   // map changed while parsing
+        obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
+        const rot = pr.r || [0, 0, 0];
+        obj.rotation.set(rot[0], rot[1], rot[2]);
+        obj.scale.setScalar(pr.scale || 1);
+        group.add(obj);
+        if (pr.solid !== false) {
+          obj.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(obj);
+          const c = box.getCenter(new THREE.Vector3());
+          const s = box.getSize(new THREE.Vector3());
+          if (isFinite(s.x) && s.x > 0.2 && s.y > 0.05 && s.z > 0.2) {
+            SKY.World.addSolid({ x: c.x, y: c.y, z: c.z, sx: s.x, sy: s.y, sz: s.z });
+          }
+        }
+      });
     }
     // bots: auto roam/anchor points — big static block tops + spawns
     for (const b of def.blocks) {

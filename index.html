@@ -508,6 +508,33 @@
   .ed-btn.sel { background:#fff; color:#0d0f13; }
   .ed-primary { background:#7dff9e; color:#0d0f13; border-color:transparent; }
   select.ed-btn { max-width:130px; }
+  #ed-left { position:absolute; left:0; top:52px; bottom:40px; width:230px; overflow-y:auto;
+    background:linear-gradient(90deg, rgba(10,12,16,.92), rgba(10,12,16,.6));
+    backdrop-filter:blur(10px); border-right:1px solid var(--line2); padding:16px 14px 30px;
+    pointer-events:auto; }
+  #ed-left::-webkit-scrollbar { width:5px; }
+  #ed-left::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); }
+  .ed-obj { padding:5px 9px; margin:1px 0; border-radius:5px; font-size:11px; color:var(--dim);
+    cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ed-obj:hover { background:rgba(255,255,255,.06); color:var(--txt); }
+  .ed-obj.sel { background:rgba(255,211,77,.16); color:#ffd34d; }
+  #ed-assets { display:grid; grid-template-columns:repeat(2, 1fr); gap:7px; margin-top:4px; }
+  .ed-asset { position:relative; border:1px solid var(--line2); border-radius:7px;
+    background:rgba(255,255,255,.04); padding:6px; text-align:center; cursor:grab; }
+  .ed-asset:hover { border-color:rgba(255,255,255,.35); }
+  .ed-asset img { width:100%; height:62px; object-fit:contain; border-radius:4px;
+    pointer-events:none; }
+  .ed-asset-ph { display:flex; align-items:center; justify-content:center; height:62px;
+    font-size:26px; color:var(--faint); pointer-events:none; }
+  .ed-asset i { display:block; font-style:normal; font-size:9.5px; color:var(--dim);
+    margin-top:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    pointer-events:none; }
+  .ed-asset-x { position:absolute; top:2px; right:5px; font-size:11px; color:var(--faint);
+    cursor:pointer; font-weight:400; }
+  .ed-asset-x:hover { color:var(--danger); }
+  .ed-scrub { cursor:ew-resize; user-select:none; }
+  .ed-scrub:hover { color:var(--txt); }
+  #editor-ov select, #editor-ov option { background:#14181f; color:var(--txt); }
   #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px; overflow-y:auto;
     background:linear-gradient(270deg, rgba(10,12,16,.92), rgba(10,12,16,.6));
     backdrop-filter:blur(10px); border-left:1px solid var(--line2); padding:16px 16px 30px;
@@ -681,7 +708,7 @@
     <button class="rail-btn" id="tab-matches">Matches</button>
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
-    <div class="rail-foot">prototype · build 19</div>
+    <div class="rail-foot">prototype · build 20</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -862,6 +889,18 @@
     <button class="ed-btn ed-primary" id="ed-test">▶ Test</button>
     <button class="ed-btn" id="ed-exit">Exit</button>
   </div>
+  <div id="ed-left">
+    <div class="panel-title">Scene</div>
+    <div id="ed-outliner"></div>
+    <div class="panel-title" style="margin-top:16px">Assets</div>
+    <div class="ed-row" style="padding:2px 0 6px">
+      <select id="ed-folder" style="flex:1;width:auto"></select>
+      <button class="ed-mini" id="ed-newfolder">+ folder</button>
+    </div>
+    <label class="ed-btn" for="ed-addasset" style="display:block;text-align:center;margin-bottom:8px">Add files (.glb / images)</label>
+    <input type="file" id="ed-addasset" multiple accept=".glb,image/*" class="hidden">
+    <div id="ed-assets"></div>
+  </div>
   <div id="ed-side">
     <div class="panel-title" id="ed-ins-title">MAP</div>
     <div id="ed-inspector"></div>
@@ -908,31 +947,34 @@
 <div id="boot-status"></div>
 
 <script src="lib/three.min.js"></script>
+<script src="lib/TransformControls.js"></script>
+<script src="lib/GLTFLoader.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=19"></script>
-<script src="js/utils.js?v=19"></script>
-<script src="js/mapdata.js?v=19"></script>
-<script src="js/audio.js?v=19"></script>
-<script src="js/settings.js?v=19"></script>
-<script src="js/input.js?v=19"></script>
-<script src="js/world.js?v=19"></script>
-<script src="js/effects.js?v=19"></script>
-<script src="js/map.js?v=19"></script>
-<script src="js/characters.js?v=19"></script>
-<script src="js/pawn.js?v=19"></script>
-<script src="js/weapons.js?v=19"></script>
-<script src="js/loot.js?v=19"></script>
-<script src="js/pickups.js?v=19"></script>
-<script src="js/grenades.js?v=19"></script>
-<script src="js/grapple.js?v=19"></script>
-<script src="js/bots.js?v=19"></script>
-<script src="js/hud.js?v=19"></script>
-<script src="js/game.js?v=19"></script>
-<script src="js/net.js?v=19"></script>
-<script src="js/dof.js?v=19"></script>
-<script src="js/replay.js?v=19"></script>
-<script src="js/demos.js?v=19"></script>
-<script src="js/editor.js?v=19"></script>
-<script src="js/main.js?v=19"></script>
+<script src="js/config.js?v=20"></script>
+<script src="js/utils.js?v=20"></script>
+<script src="js/mapdata.js?v=20"></script>
+<script src="js/audio.js?v=20"></script>
+<script src="js/settings.js?v=20"></script>
+<script src="js/input.js?v=20"></script>
+<script src="js/world.js?v=20"></script>
+<script src="js/effects.js?v=20"></script>
+<script src="js/map.js?v=20"></script>
+<script src="js/characters.js?v=20"></script>
+<script src="js/pawn.js?v=20"></script>
+<script src="js/weapons.js?v=20"></script>
+<script src="js/loot.js?v=20"></script>
+<script src="js/pickups.js?v=20"></script>
+<script src="js/grenades.js?v=20"></script>
+<script src="js/grapple.js?v=20"></script>
+<script src="js/bots.js?v=20"></script>
+<script src="js/hud.js?v=20"></script>
+<script src="js/game.js?v=20"></script>
+<script src="js/net.js?v=20"></script>
+<script src="js/dof.js?v=20"></script>
+<script src="js/replay.js?v=20"></script>
+<script src="js/demos.js?v=20"></script>
+<script src="js/assets.js?v=20"></script>
+<script src="js/editor.js?v=20"></script>
+<script src="js/main.js?v=20"></script>
 </body>
 </html>

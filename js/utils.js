@@ -65,6 +65,26 @@ SKY.U = {
     return SKY.U._blob;
   },
 
+  /* --- soft vertical light-shaft streaks (cinematic sun rays) --- */
+  shaftTexture() {
+    if (SKY.U._shaft) return SKY.U._shaft;
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 256;
+    const g = c.getContext('2d');
+    for (let i = 0; i < 5; i++) {
+      const x = 12 + Math.random() * 104, w = 6 + Math.random() * 22;
+      const grad = g.createLinearGradient(0, 0, 0, 256);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.35, 'rgba(255,255,255,' + (0.25 + Math.random() * 0.4) + ')');
+      grad.addColorStop(0.75, 'rgba(255,255,255,' + (0.15 + Math.random() * 0.25) + ')');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad;
+      g.fillRect(x - w / 2, 0, w, 256);
+    }
+    SKY.U._shaft = new THREE.CanvasTexture(c);
+    return SKY.U._shaft;
+  },
+
   ringTexture() {
     if (SKY.U._ring) return SKY.U._ring;
     const c = document.createElement('canvas');
