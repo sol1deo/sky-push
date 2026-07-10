@@ -256,9 +256,7 @@ window.SKY = window.SKY || {};
         if (wishLen > 1e-4 && !this.pounding) {
           if (T.airForwardAccel > 0) this._accelerate(_wish, maxRun, T.airForwardAccel, dt); // party steering
           this._accelerate(_wish, T.airMaxWishSpeed, T.airAccel, dt);  // strafe gains
-          // mouse-steering on any SINGLE direction key: pure W steering (CPM)
-          // AND pure A/D strafe turns — smooth curves keep momentum (CS feel)
-          if (cmd.mx === 0 || cmd.mz === 0) this._airControl(_wish, dt);
+          if (cmd.mx === 0 && cmd.mz !== 0) this._airControl(_wish, dt); // W-steering
         }
         this.vel.y -= T.gravity * this.mods.gravMult * dt;
         if (this.vel.y < -T.maxFallSpeed) this.vel.y = -T.maxFallSpeed;

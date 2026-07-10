@@ -35,7 +35,15 @@ SKY.Input = (function () {
       window.addEventListener('keyup', (e) => down.delete(e.code));
       window.addEventListener('blur', () => { down.clear(); mouse[0] = mouse[1] = mouse[2] = false; });
 
-      canvas.addEventListener('mousedown', (e) => { mouse[e.button] = true; clicked.add(e.button); });
+      canvas.addEventListener('mousedown', (e) => {
+        mouse[e.button] = true; clicked.add(e.button);
+        // clicking the world while unlocked mid-match jumps straight back in
+        if (!api.locked && SKY.Game && !SKY.Game.lootOpen &&
+            !(SKY.Replay && SKY.Replay.active) &&
+            (SKY.Game.state === 'playing' || SKY.Game.state === 'countdown')) {
+          api.requestLock();
+        }
+      });
       window.addEventListener('mouseup', (e) => { mouse[e.button] = false; });
       window.addEventListener('contextmenu', (e) => e.preventDefault());
       window.addEventListener('wheel', (e) => {

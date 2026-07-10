@@ -50,11 +50,11 @@ SKY.TUNING = {
     // --- air movement (this is where the skill ceiling lives) ---
     airForwardAccel: 2.2,   // direct mid-air steering, capped at walkSpeed. Lets hold-W+Space
                             // bhop reach run speed (party-friendly). Set 0 for hardcore Quake.
-    airAccel:        85.0,  // how hard air-strafing accelerates you (Quake airaccelerate)
-    airMaxWishSpeed: 1.15,  // classic 30-unit style cap: speed gain per strafe direction (m/s)
-    airControlTurn:  6.5,   // CPM-style velocity steering with the mouse — applies on any
-                            // SINGLE held direction key (W, or A/D strafe turns), so smooth
-                            // 180° strafe curves keep momentum like CS instead of bleeding
+    airAccel:        70.0,  // how hard air-strafing accelerates you (Quake airaccelerate)
+    airMaxWishSpeed: 1.0,   // classic 30-unit style cap: speed gain per strafe direction (m/s)
+    airControlTurn:  5.0,   // CPM-style: holding only W lets you steer velocity with the mouse.
+                            // W-only ON PURPOSE — applying it to A/D yanks velocity sideways
+                            // and feels like braking (tried, reverted)
     bhopSoftCap:     20.0,  // above this horizontal speed, extra drag kicks in
     bhopSoftCapDrag: 2.4,   // strength of that drag (prevents infinite snowballing)
 

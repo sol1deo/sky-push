@@ -488,6 +488,11 @@
   #rp-pname { min-width:74px; text-align:center; font-size:10.5px; font-weight:700;
     letter-spacing:.12em; text-transform:uppercase; }
 
+  #relock-hint { position:absolute; left:50%; bottom:20%; transform:translateX(-50%);
+    z-index:16; padding:9px 22px; border-radius:6px; background:var(--bg);
+    backdrop-filter:blur(8px); border:1px solid var(--line); color:var(--txt);
+    font-size:11px; font-weight:700; letter-spacing:.24em; text-indent:.24em;
+    text-transform:uppercase; pointer-events:none; animation:bannerin .25s ease-out; }
   #fps { position:absolute; top:16px; left:18px; z-index:12; font-size:11px; font-weight:600;
     letter-spacing:.1em; color:var(--dim); font-variant-numeric:tabular-nums;
     text-shadow:0 1px 2px rgba(0,0,0,.6); }
@@ -823,6 +828,7 @@
   </div>
 </div>
 
+<div id="relock-hint" class="hidden">Click to play</div>
 <div id="fps" class="hidden"></div>
 <div id="error-overlay" class="hidden"></div>
 <div id="boot-status"></div>

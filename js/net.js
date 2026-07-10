@@ -207,7 +207,9 @@ SKY.Net = (function () {
   let sendTimer = null;
   let pingTimer = null;
   const lastStates = new Map();  // host: peerId -> state array
-  const pendingLoot = new Map(); // host: pawnId -> true (waiting for pick)
+  const pendingLoot = new Map(); // host: pawnId -> {choices, seq, at}
+  let lootSeq = 0;               // host: KO counter — clients dedup loot by it
+  let lootSeenSeq = 0;           // client: highest loot seq already handled
   const pings = {};              // id -> ms (host-collected, broadcast to all)
   const _v = new THREE.Vector3();
 
@@ -235,6 +237,7 @@ SKY.Net = (function () {
     pendingDirect = null;
     conns.clear(); hostConn = null;
     lastStates.clear(); pendingLoot.clear();
+    lootSeenSeq = 0;
     for (const k of Object.keys(pings)) delete pings[k];
     api.online = false; api.role = null; api.code = null; api.roster = [];
     api.inGame = false;
@@ -753,8 +756,13 @@ SKY.Net = (function () {
         break;
       }
       case 'loot': {
+        // seq dedup: a 3s resend can CROSS our 'pick' on the wire at high
+        // ping — same-seq repeats must never re-open (= the double-reward bug)
+        if (m.seq !== undefined) {
+          if (m.seq <= lootSeenSeq) break;
+          lootSeenSeq = m.seq;
+        } else if (G.lootOpen && G.lootChoices) break;
         const items = m.choices.map(id => SKY.Loot.ITEMS.find(it => it.id === id)).filter(Boolean);
-        if (G.lootOpen && G.lootChoices) break;   // resend while already showing — ignore
         G.lootChoices = items;
         G.lootOpen = true;
         let picked = false;                        // double-click guard (laggy fingers)
@@ -1294,20 +1302,22 @@ SKY.Net = (function () {
       });
       if (pawn.isRemote && !pawn.eliminated) {
         const choices = SKY.Loot.roll(pawn).map(it => it.id);
-        pendingLoot.set(pawn.netId, { choices, at: performance.now() });
+        lootSeq++;
+        pendingLoot.set(pawn.netId, { choices, seq: lootSeq, at: performance.now() });
         const conn = conns.get(pawn.netId);
-        if (conn) conn.send({ t: 'loot', choices });
+        if (conn) conn.send({ t: 'loot', choices, seq: lootSeq });
       }
     },
     hostWaitingLoot(pawn) {
       const entry = pendingLoot.get(pawn.netId);
       if (!entry) return false;
       // belt & braces: the 'loot' message could get lost in a reconnect blip —
-      // re-send while the victim still hasn't picked (client ignores repeats)
+      // re-send while the victim still hasn't picked. The seq lets the client
+      // drop repeats even when the resend crosses their 'pick' on the wire.
       if (performance.now() - entry.at > 3000) {
         entry.at = performance.now();
         const conn = conns.get(pawn.netId);
-        if (conn) conn.send({ t: 'loot', choices: entry.choices });
+        if (conn) conn.send({ t: 'loot', choices: entry.choices, seq: entry.seq });
       }
       return true;
     },

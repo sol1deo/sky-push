@@ -64,9 +64,16 @@ SKY.HUD = (function () {
       $('pause-settings').addEventListener('click', () => SKY.Settings.open());
     },
 
-    showMenu() { el.menu.classList.remove('hidden'); el.hud.classList.add('hidden'); },
+    showMenu() { el.menu.classList.remove('hidden'); el.hud.classList.add('hidden'); api.relockHint(false); },
     hideMenu() { el.menu.classList.add('hidden'); el.hud.classList.remove('hidden'); },
-    setPause(on) { el.pause.classList.toggle('hidden', !on); },
+    setPause(on) {
+      el.pause.classList.toggle('hidden', !on);
+      if (on) api.relockHint(false);
+    },
+    relockHint(on) {
+      const h = $('relock-hint');
+      if (h) h.classList.toggle('hidden', !on);
+    },
     /* hide crosshair/ammo/chips/speedo while dead, eliminated or in menus */
     combat(on) { el.hud.classList.toggle('spectating', !on); },
 

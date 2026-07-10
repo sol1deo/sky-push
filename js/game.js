@@ -75,11 +75,20 @@ SKY.Game = (function () {
         if (api.state !== 'playing' && api.state !== 'countdown') return;
         if (!locked) {
           if (api.lootOpen) return;              // reward picker owns the cursor
-          // ONLINE never pauses — the match runs on; you just get the menu
-          // overlay until you click back in
-          if (SKY.Net.online) { SKY.HUD.setPause(true); return; }
+          if (SKY.Net.online) {
+            // ONLINE never pauses. ESC (window still focused) opens the menu;
+            // alt-tab shows only a small "click to play" hint — no menu in
+            // your face when you tab back.
+            if (document.hasFocus()) SKY.HUD.setPause(true);
+            else SKY.HUD.relockHint(true);
+            return;
+          }
           api.paused = true; SKY.HUD.setPause(true);
-        } else { api.paused = false; SKY.HUD.setPause(false); }
+        } else {
+          api.paused = false;
+          SKY.HUD.setPause(false);
+          SKY.HUD.relockHint(false);
+        }
       };
     },
 
