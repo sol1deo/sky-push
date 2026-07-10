@@ -51,8 +51,18 @@ SKY.HUD = (function () {
         });
       };
       bindSel('bot-btn', 'n', v => { api.botCount = parseInt(v, 10); });
-      bindSel('map-btn', 'm', v => { api.mapSel = v; SKY.Game.previewMap(v); });
+      // map row is DELEGATED (custom maps get added dynamically)
+      $('map-row').addEventListener('click', (e) => {
+        const b = e.target.closest('.map-btn');
+        if (!b) return;
+        $('map-row').querySelectorAll('.map-btn').forEach(x => x.classList.remove('sel'));
+        b.classList.add('sel');
+        api.mapSel = b.dataset.m;
+        SKY.Game.previewMap(b.dataset.m);
+      });
       bindSel('mode-btn', 'm', v => { api.modeSel = v; });
+      SKY.MapData.onListChange = () => api.refreshCustomMaps();
+      api.refreshCustomMaps();
       bindSel('rounds-btn', 'v', v => { api.roundsSel = parseInt(v, 10); });
       bindSel('lives-btn', 'v', v => { api.livesSel = parseInt(v, 10); });
       bindSel('crown-btn', 'v', v => { api.crownSel = parseInt(v, 10); });
@@ -62,6 +72,22 @@ SKY.HUD = (function () {
       $('quit-btn').addEventListener('click', () => api.onQuit && api.onQuit());
       $('open-settings').addEventListener('click', () => SKY.Settings.open());
       $('pause-settings').addEventListener('click', () => SKY.Settings.open());
+    },
+
+    /* custom maps (editor drafts / deployed / net) appear as extra buttons */
+    refreshCustomMaps() {
+      for (const rowId of ['map-row', 'lmap-row']) {
+        const row = $(rowId);
+        if (!row) continue;
+        row.querySelectorAll('.custom-map').forEach(b => b.remove());
+        for (const d of SKY.MapData.list()) {
+          const b = document.createElement('button');
+          b.className = 'sel-btn custom-map ' + (rowId === 'map-row' ? 'map-btn' : 'lmap-btn');
+          b.dataset.m = d.id;
+          b.textContent = d.name;
+          row.appendChild(b);
+        }
+      }
     },
 
     showMenu() { el.menu.classList.remove('hidden'); el.hud.classList.add('hidden'); api.relockHint(false); },

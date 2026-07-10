@@ -74,9 +74,11 @@
   SKY.Grapple.init(scene);
   SKY.Pickups.init(scene);
   SKY.HUD.init();
+  SKY.MapData.init();
   SKY.Game.init(scene, camera);
   SKY.Replay.init(scene, camera);
   SKY.Demos.init();
+  SKY.Editor.init(scene, camera);
   SKY.Net.init();
 
   const STEP = 1 / 120;
@@ -94,7 +96,9 @@
 
     let rendered = false;
     if (!window.__autodrive) {
-      if (SKY.Replay.active) {
+      if (SKY.Editor.active) {
+        SKY.Editor.frame(rdt);      // map editor owns the camera
+      } else if (SKY.Replay.active) {
         SKY.Replay.frame(rdt);      // editor drives camera + effects itself
         rendered = SKY.Replay.render(renderer, scene, camera);   // DoF pass
       } else {
@@ -140,7 +144,19 @@
     }
     const mapM = location.search.match(/map=(\w+)/);
     const modeM = location.search.match(/mode=(\w+)/);
-    SKY.Game.startMatch(3, mapM ? mapM[1] : 'sky', modeM ? modeM[1] : 'lbs');
+    let testMap = mapM ? mapM[1] : 'sky';
+    if (/edmap/.test(location.search)) {
+      // play on a generated CUSTOM map (exercises the whole editor pipeline)
+      const d = SKY.MapData.blank();
+      d.id = 'edtest'; d.name = 'EDTEST';
+      d.blocks.push({ p: [14, 0.5, 0], s: [6, 1, 6], r: [0, 0.4, 0], pal: 'amber',
+        crumble: false, mover: { type: 'elevator', amp: 3, period: 5 } });
+      d.pads.push({ p: [6, 0.1, 6], launch: [0, 15, 0] });
+      d.items.push({ p: [-4, 0.1, -4] });
+      SKY.MapData.register(d);
+      testMap = 'edtest';
+    }
+    SKY.Game.startMatch(3, testMap, modeM ? modeM[1] : 'lbs');
     SKY.Input.locked = true;        // pretend pointer lock
     const m = location.search.match(/autotest=([\d.]+)/);
     const duration = m ? parseFloat(m[1]) : 9.5;
@@ -283,6 +299,31 @@
           renderer.render(scene, camera);
         }
       }
+      // &edui: leave the editor open with a fresh map (screenshots)
+      if (/edui/.test(location.search)) {
+        SKY.Editor.open(null);
+        document.getElementById('ed-addblock').click();
+        SKY.Editor.frame(0.05);
+        renderer.render(scene, camera);
+        boot.textContent = 'EDUI';
+        return;
+      }
+      // map-editor smoke: open, add a block, save a draft, close
+      let editorOk = false;
+      if (!/rpui/.test(location.search)) {
+        try {
+          SKY.Editor.open(null);
+          document.getElementById('ed-addblock').click();
+          SKY.Editor.frame(0.05);
+          renderer.render(scene, camera);
+          document.getElementById('ed-save').click();
+          editorOk = SKY.Editor.active === true;
+          SKY.Editor.exit();
+          editorOk = editorOk && !SKY.Editor.active;
+        } catch (err) {
+          editorOk = 'THROW: ' + (err.message || String(err));
+        }
+      }
       // &rpui: leave the editor open so a --screenshot shows its UI
       // (&dof additionally switches auto depth of field on)
       if (/rpui/.test(location.search)) {
@@ -309,7 +350,7 @@
         botsMoved: botsMovedAtEnd,
         nan: vals.some(v => !isFinite(v)),
         pickupsSpawned: SKY.Pickups.spawnedTotal(),
-        replayFrames, replayOk, dofOk, demoOk,
+        replayFrames, replayOk, dofOk, demoOk, editorOk,
       });
     }
 

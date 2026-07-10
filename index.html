@@ -493,6 +493,50 @@
     backdrop-filter:blur(8px); border:1px solid var(--line); color:var(--txt);
     font-size:11px; font-weight:700; letter-spacing:.24em; text-indent:.24em;
     text-transform:uppercase; pointer-events:none; animation:bannerin .25s ease-out; }
+  /* ---------- map editor ---------- */
+  #editor-ov { position:absolute; inset:0; z-index:22; pointer-events:none; color:var(--txt); }
+  #ed-top { position:absolute; top:0; left:0; right:0; display:flex; gap:6px; align-items:center;
+    padding:10px 14px; background:linear-gradient(rgba(10,12,16,.9), rgba(10,12,16,.55));
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--line2); pointer-events:auto; }
+  .ed-logo { font-size:11px; font-weight:800; letter-spacing:.3em; color:var(--dim);
+    margin-right:10px; }
+  .ed-flex { flex:1; }
+  .ed-btn { padding:7px 12px; border-radius:6px; border:1px solid var(--line2);
+    background:rgba(255,255,255,.04); color:var(--dim); font-family:inherit; font-size:10.5px;
+    font-weight:700; letter-spacing:.1em; text-transform:uppercase; cursor:pointer; }
+  .ed-btn:hover { color:var(--txt); background:rgba(255,255,255,.09); }
+  .ed-btn.sel { background:#fff; color:#0d0f13; }
+  .ed-primary { background:#7dff9e; color:#0d0f13; border-color:transparent; }
+  select.ed-btn { max-width:130px; }
+  #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px; overflow-y:auto;
+    background:linear-gradient(270deg, rgba(10,12,16,.92), rgba(10,12,16,.6));
+    backdrop-filter:blur(10px); border-left:1px solid var(--line2); padding:16px 16px 30px;
+    pointer-events:auto; }
+  #ed-side::-webkit-scrollbar { width:5px; }
+  #ed-side::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); }
+  .ed-row { display:flex; align-items:center; gap:8px; padding:3px 0; font-size:11px;
+    color:var(--dim); }
+  .ed-row span { flex:1; }
+  .ed-row input[type=number] { width:76px; background:rgba(255,255,255,.05); color:var(--txt);
+    border:1px solid var(--line2); border-radius:5px; padding:4px 7px; font-family:inherit;
+    font-size:11px; outline:none; }
+  .ed-row input[type=text] { width:130px; background:rgba(255,255,255,.05); color:var(--txt);
+    border:1px solid var(--line2); border-radius:5px; padding:4px 7px; font-family:inherit;
+    font-size:11px; outline:none; }
+  .ed-row select { width:130px; background:rgba(20,23,29,.9); color:var(--txt);
+    border:1px solid var(--line2); border-radius:5px; padding:4px; font-family:inherit;
+    font-size:11px; outline:none; }
+  .ed-row input[type=color] { width:40px; height:24px; border:none; background:none; padding:0; }
+  .ed-row input[type=file] { width:136px; font-size:9px; color:var(--faint); }
+  .ed-mini { font-size:9px; padding:3px 8px; border-radius:4px; border:1px solid var(--line2);
+    background:transparent; color:var(--dim); cursor:pointer; font-family:inherit; }
+  .ed-hint { margin-top:12px; font-size:10px; color:var(--faint); line-height:1.6; }
+  #ed-status { position:absolute; left:14px; bottom:44px; font-size:11px; color:var(--txt);
+    text-shadow:0 1px 3px rgba(0,0,0,.6); pointer-events:none; }
+  #ed-hint { position:absolute; left:0; right:0; bottom:0; padding:8px 14px; font-size:9.5px;
+    letter-spacing:.08em; color:var(--faint); background:rgba(10,12,16,.75);
+    border-top:1px solid var(--line2); text-transform:uppercase; pointer-events:none; }
+
   #fps { position:absolute; top:16px; left:18px; z-index:12; font-size:11px; font-weight:600;
     letter-spacing:.1em; color:var(--dim); font-variant-numeric:tabular-nums;
     text-shadow:0 1px 2px rgba(0,0,0,.6); }
@@ -635,8 +679,9 @@
     <button class="rail-btn" id="tab-online">Online</button>
     <button class="rail-btn" id="tab-servers">Servers</button>
     <button class="rail-btn" id="tab-matches">Matches</button>
+    <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
-    <div class="rail-foot">prototype · build 18</div>
+    <div class="rail-foot">prototype · build 19</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -649,7 +694,7 @@
         <button class="sel-btn bot-btn sel" data-n="3">3</button><button class="sel-btn bot-btn" data-n="4">4</button>
         <button class="sel-btn bot-btn" data-n="5">5</button>
       </div>
-      <div class="sel-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
+      <div class="sel-row" id="map-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
         <button class="sel-btn map-btn sel" data-m="sky">Sky</button>
         <button class="sel-btn map-btn" data-m="yacht">Yacht</button>
         <button class="sel-btn map-btn" data-m="convoy">Convoy</button>
@@ -735,7 +780,7 @@
           <small id="lobby-type"></small>
         </div>
         <div id="lobby-players"></div>
-        <div class="sel-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
+        <div class="sel-row" id="lmap-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
           <button class="sel-btn lmap-btn" data-m="sky">Sky</button>
           <button class="sel-btn lmap-btn" data-m="yacht">Yacht</button>
           <button class="sel-btn lmap-btn" data-m="convoy">Convoy</button>
@@ -798,6 +843,35 @@
   </div>
 </div>
 
+<!-- ============ map editor ============ -->
+<div id="editor-ov" class="hidden">
+  <div id="ed-top">
+    <span class="ed-logo">MAP EDITOR</span>
+    <button class="ed-btn" id="ed-addblock">+ Block</button>
+    <button class="ed-btn" id="ed-addpad">+ Pad</button>
+    <button class="ed-btn" id="ed-addspawn">+ Spawn</button>
+    <button class="ed-btn" id="ed-additem">+ Item</button>
+    <button class="ed-btn sel" id="ed-anim">Anim</button>
+    <span class="ed-flex"></span>
+    <button class="ed-btn" id="ed-new">New</button>
+    <select class="ed-btn" id="ed-load"><option value="">load draft…</option></select>
+    <label class="ed-btn" for="ed-import">Import</label>
+    <input type="file" id="ed-import" accept=".json" class="hidden">
+    <button class="ed-btn" id="ed-save">Save</button>
+    <button class="ed-btn" id="ed-export">Export</button>
+    <button class="ed-btn ed-primary" id="ed-test">▶ Test</button>
+    <button class="ed-btn" id="ed-exit">Exit</button>
+  </div>
+  <div id="ed-side">
+    <div class="panel-title" id="ed-ins-title">MAP</div>
+    <div id="ed-inspector"></div>
+  </div>
+  <div id="ed-status"></div>
+  <div id="ed-hint">rmb — look · wasd e/q — fly · wheel — speed · click — select ·
+    g/s/r — move/scale/rotate (x/y/z axis, ctrl snap) · f — drop on floor ·
+    shift+d — duplicate · del — delete · ctrl+z — undo · drag an image onto a block — texture</div>
+</div>
+
 <!-- ============ nickname modal ============ -->
 <div id="nick-modal" class="ov hidden" style="z-index:40">
   <div class="card" style="text-align:center">
@@ -835,28 +909,30 @@
 
 <script src="lib/three.min.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=18"></script>
-<script src="js/utils.js?v=18"></script>
-<script src="js/audio.js?v=18"></script>
-<script src="js/settings.js?v=18"></script>
-<script src="js/input.js?v=18"></script>
-<script src="js/world.js?v=18"></script>
-<script src="js/effects.js?v=18"></script>
-<script src="js/map.js?v=18"></script>
-<script src="js/characters.js?v=18"></script>
-<script src="js/pawn.js?v=18"></script>
-<script src="js/weapons.js?v=18"></script>
-<script src="js/loot.js?v=18"></script>
-<script src="js/pickups.js?v=18"></script>
-<script src="js/grenades.js?v=18"></script>
-<script src="js/grapple.js?v=18"></script>
-<script src="js/bots.js?v=18"></script>
-<script src="js/hud.js?v=18"></script>
-<script src="js/game.js?v=18"></script>
-<script src="js/net.js?v=18"></script>
-<script src="js/dof.js?v=18"></script>
-<script src="js/replay.js?v=18"></script>
-<script src="js/demos.js?v=18"></script>
-<script src="js/main.js?v=18"></script>
+<script src="js/config.js?v=19"></script>
+<script src="js/utils.js?v=19"></script>
+<script src="js/mapdata.js?v=19"></script>
+<script src="js/audio.js?v=19"></script>
+<script src="js/settings.js?v=19"></script>
+<script src="js/input.js?v=19"></script>
+<script src="js/world.js?v=19"></script>
+<script src="js/effects.js?v=19"></script>
+<script src="js/map.js?v=19"></script>
+<script src="js/characters.js?v=19"></script>
+<script src="js/pawn.js?v=19"></script>
+<script src="js/weapons.js?v=19"></script>
+<script src="js/loot.js?v=19"></script>
+<script src="js/pickups.js?v=19"></script>
+<script src="js/grenades.js?v=19"></script>
+<script src="js/grapple.js?v=19"></script>
+<script src="js/bots.js?v=19"></script>
+<script src="js/hud.js?v=19"></script>
+<script src="js/game.js?v=19"></script>
+<script src="js/net.js?v=19"></script>
+<script src="js/dof.js?v=19"></script>
+<script src="js/replay.js?v=19"></script>
+<script src="js/demos.js?v=19"></script>
+<script src="js/editor.js?v=19"></script>
+<script src="js/main.js?v=19"></script>
 </body>
 </html>

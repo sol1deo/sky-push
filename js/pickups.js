@@ -76,7 +76,8 @@ SKY.Pickups = (function () {
   }
 
   function hostSpawn() {
-    const pts = SKY.World.roamPoints;
+    // custom maps can place explicit item spots; otherwise use roam points
+    const pts = SKY.World.itemPoints.length ? SKY.World.itemPoints : SKY.World.roamPoints;
     if (!pts.length) return;
     let pos = null;
     for (let tries = 0; tries < 8 && !pos; tries++) {

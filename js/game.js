@@ -475,6 +475,8 @@ SKY.Game = (function () {
       SKY.HUD.setPause(false);
       SKY.HUD.showMenu();
       if (document.pointerLockElement) document.exitPointerLock();
+      // leaving a map-editor TEST match drops you back into the editor
+      if (SKY.Editor && SKY.Editor.pendingReturn) setTimeout(() => SKY.Editor.resume(), 0);
     },
 
     /* ---------------- reward picking ---------------- */

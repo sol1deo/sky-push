@@ -368,7 +368,7 @@ SKY.Net = (function () {
           t: 'info',
           players: api.roster.filter(r => !r.bot).length,
           cap: MAX_PLAYERS,
-          map: api.settings.map, mode: api.settings.mode,
+          map: SKY.Map.displayName(api.settings.map), mode: api.settings.mode,
           inGame: api.inGame,
         });
         setTimeout(() => { try { conn.close(); } catch (e) {} }, 800);
@@ -872,7 +872,10 @@ SKY.Net = (function () {
     api.roster = roster;
     api.inGame = true;
     const rules = { rounds: api.settings.rounds, lives: api.settings.lives, crown: api.settings.crown };
-    broadcast({ t: 'start', roster, map: api.settings.map, mode: api.settings.mode, rules });
+    // custom (editor) maps ride along in the start message — clients don't
+    // need the map deployed anywhere, the def IS the map
+    const mapDef = SKY.MapData.get(api.settings.map) || null;
+    broadcast({ t: 'start', roster, map: api.settings.map, mode: api.settings.mode, rules, mapDef });
     startGameLocal({ roster, map: api.settings.map, mode: api.settings.mode, rules });
   }
 
@@ -880,6 +883,7 @@ SKY.Net = (function () {
     api.roster = m.roster;
     api.inGame = true;
     hideLobby();
+    if (m.mapDef) SKY.MapData.register(m.mapDef);
     SKY.Game.applyRules(m.rules, m.mode);   // host-picked match rules
     SKY.Game.startMatchNet({ roster: m.roster, mapId: m.map, mode: m.mode, myId: api.myId });
     SKY.Input.requestLock();
@@ -1189,8 +1193,10 @@ SKY.Net = (function () {
       try { navigator.clipboard.writeText($('lobby-code').textContent); status('Code copied!'); } catch (e) {}
     };
     $('lobby-bots').onchange = (e) => { if (api.role === 'host') hostSetSettings({ fillBots: e.target.checked }); };
-    document.querySelectorAll('#mp-lobby .lmap-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ map: b.dataset.m }); };
+    // delegated: custom-map buttons get added to this row dynamically
+    $('lmap-row').addEventListener('click', (e) => {
+      const b = e.target.closest('.lmap-btn');
+      if (b && api.role === 'host') hostSetSettings({ map: b.dataset.m });
     });
     document.querySelectorAll('#mp-lobby .lrounds-btn').forEach(b => {
       b.onclick = () => { if (api.role === 'host') hostSetSettings({ rounds: +b.dataset.v }); };

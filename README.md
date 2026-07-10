@@ -210,6 +210,28 @@ cannon (blast-jump) · F dash (if earned) · 1/2/3 pick reward · T taunt ·
 V replay editor · P reset · Tab scoreboard · Esc pause — **all rebindable
 in ⚙ settings**.
 
+## Map editor (menu ▸ EDITOR — dev tool)
+
+Blender-ish block-out editor for custom maps, fully in-browser:
+
+- **Camera**: hold RMB to look, WASD + E/Q to fly, wheel = speed.
+- **Blocks**: `+ Block`, click to select, **G/S/R** move/scale/rotate with
+  the mouse (X/Y/Z constrains the axis, CTRL snaps), **F** drops the block
+  onto whatever is under it (no floaters), Shift+D duplicates, Del deletes,
+  Ctrl+Z undoes. The inspector has exact numbers for everything.
+- **Looks**: checker palettes from the built-in maps, flat colors, or drag
+  an image onto a block to use it as a texture (textures travel inside the
+  map file). Mood + sky presets per map.
+- **Gameplay**: movers (elevator / line / orbit with live preview), crumble
+  flags, jump pads with launch vectors, player spawns with yaw arrows, and
+  item points where weapon pickups appear.
+- **TEST** plays a bot match on the draft and returns to the editor on quit.
+- **SAVE** keeps drafts in the browser and adds them to the PLAY map list.
+  Custom maps work online with zero extra steps — the def travels to the
+  other players inside the start message. **EXPORT** downloads the JSON;
+  drop it in `maps/` and list it in `maps/index.json` to deploy it for
+  everyone permanently.
+
 ## Map pickups
 
 Weapons (and the odd powerup/ability) spawn around the arena every ~11 s

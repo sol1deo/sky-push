@@ -1068,6 +1068,102 @@ SKY.Map = (function () {
     eventCfg = null;   // no random events on the competitive map
   }
 
+  /* ============================================================
+   * CUSTOM MAPS — built from a SKY.MapData JSON def (the editor's output)
+   * ============================================================ */
+  const _texCache = {};
+  function texFromDataURL(url, repeat) {
+    const key = url.slice(0, 64) + url.length + '|' + repeat;
+    if (_texCache[key]) return _texCache[key];
+    const tex = new THREE.TextureLoader().load(url);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeat, repeat);
+    tex.anisotropy = 4;
+    _texCache[key] = tex;
+    return tex;
+  }
+
+  function customBlockMaterial(b) {
+    const rep = b.rep || Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
+    if (b.tex) return new THREE.MeshLambertMaterial({ map: texFromDataURL(b.tex, rep) });
+    const pal = SKY.MapData.PALETTES[b.pal];
+    if (pal) return mat(pal, rep);
+    return flat(b.color || '#8a94a8');
+  }
+
+  /* mover def -> plat() path function */
+  function moverPath(b) {
+    const m = b.mover;
+    if (!m) return null;
+    const base = new THREE.Vector3(b.p[0], b.p[1], b.p[2]);
+    const period = Math.max(1, m.period || 6);
+    if (m.type === 'orbit') {
+      const cx = m.c ? m.c[0] : 0, cz = m.c ? m.c[1] : 0;
+      const rx = base.x - cx, rz = base.z - cz;
+      return (t) => {
+        const a = t * Math.PI * 2 / period;
+        return new THREE.Vector3(
+          cx + rx * Math.cos(a) - rz * Math.sin(a), base.y,
+          cz + rx * Math.sin(a) + rz * Math.cos(a));
+      };
+    }
+    // 'line' (and 'elevator' = a vertical line) — glide base <-> base+off
+    const off = new THREE.Vector3(...(m.type === 'elevator'
+      ? [0, m.amp || 4, 0] : (m.off || [6, 0, 0])));
+    return (t) => {
+      const s = (Math.sin(t * Math.PI * 2 / period) + 1) / 2;
+      return base.clone().addScaledVector(off, s);
+    };
+  }
+
+  function buildCustomMap(def) {
+    const D = SKY.MapData;
+    SKY.World.killY = def.killY;
+    SKY.World.crownHome = new THREE.Vector3(def.crown[0], def.crown[1], def.crown[2]);
+    const M = D.MOODS[def.mood];
+    mood({
+      sunColor: M.sun[0], sunInt: M.sun[1], sunPos: new THREE.Vector3(...M.sun[2]),
+      hemiSky: M.hemi[0], hemiGround: M.hemi[1], hemiInt: M.hemi[2],
+      fillColor: M.fill[0], fillInt: M.fill[1],
+      fillPos: M.fill[2] ? new THREE.Vector3(...M.fill[2]) : undefined,
+    });
+    const S = D.SKIES[def.sky];
+    skyDome(S[0], S[1], S[2], S[3]);
+    scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+    if (M.clouds) cloudField(-10, 18, new THREE.Color(M.clouds).getHex(), 0.45);
+
+    for (const b of def.blocks) {
+      plat(b.p[0], b.p[1], b.p[2], b.s[0], b.s[1], b.s[2], {
+        material: customBlockMaterial(b),
+        rotX: b.r[0], rotY: b.r[1], rotZ: b.r[2],
+        crumble: !!b.crumble,
+        path: moverPath(b),
+        tag: b.mover ? 'mover' : '',
+      });
+    }
+    for (const pd of def.pads) {
+      jumpPad(pd.p[0], pd.p[1], pd.p[2],
+        new THREE.Vector3(pd.launch[0], pd.launch[1], pd.launch[2]));
+    }
+    for (const s of def.spawns) {
+      SKY.World.spawnPoints.push({ pos: new THREE.Vector3(s.p[0], s.p[1], s.p[2]), yaw: s.yaw || 0 });
+    }
+    for (const it of def.items) {
+      SKY.World.itemPoints.push(new THREE.Vector3(it.p[0], it.p[1], it.p[2]));
+    }
+    // bots: auto roam/anchor points — big static block tops + spawns
+    for (const b of def.blocks) {
+      if (b.mover || b.s[0] * b.s[2] < 9) continue;
+      const top = b.p[1] + b.s[1] / 2;
+      roam(b.p[0], top + 0.1, b.p[2]);
+      anchor(b.p[0], top - 0.2, b.p[2]);
+      if (SKY.World.roamPoints.length > 26) break;
+    }
+    for (const s of def.spawns) roam(s.p[0], s.p[1], s.p[2]);
+    eventCfg = null;
+  }
+
   /* ====================== lifecycle ====================== */
   function load(sc, id) {
     scene = sc;
@@ -1080,11 +1176,25 @@ SKY.Map = (function () {
     eventCfg = null; eventT = SKY.U.rand(8, 14);
     SKY.World.reset();
     SKY.World.rideSolids = [];
-    currentId = MAPS[id] ? id : 'sky';
     scene.background = null;   // sky domes handle the backdrop
+    const custom = SKY.MapData && SKY.MapData.get(id);
+    if (custom) {
+      currentId = id;
+      buildCustomMap(custom);
+      return;
+    }
+    currentId = MAPS[id] ? id : 'sky';
     ({ sky: buildSky, convoy: buildConvoy, foundry: buildFoundry,
        rooftop: buildRooftop, temple: buildTemple,
        yacht: buildYacht, terminal: buildTerminal })[currentId]();
+  }
+
+  /* the editor takes the stage over: remove the current map entirely */
+  function unload() {
+    if (group && scene) scene.remove(group);
+    group = null;
+    scene && (scene.fog = null);
+    SKY.World.reset();
   }
 
   function startOvertime() {
@@ -1098,7 +1208,16 @@ SKY.Map = (function () {
     if (dirty) load(scene, currentId);
   }
 
-  function overtimeMsg() { return MAPS[currentId].overtimeMsg; }
+  function overtimeMsg() {
+    return (MAPS[currentId] || { overtimeMsg: 'the arena is getting angry!' }).overtimeMsg;
+  }
+
+  /* display name for both built-in and custom maps */
+  function displayName(id) {
+    if (MAPS[id]) return MAPS[id].name;
+    const c = SKY.MapData && SKY.MapData.get(id);
+    return c ? c.name : id;
+  }
 
   function tick(dt, time) {
     for (const c of clouds) {
@@ -1167,7 +1286,7 @@ SKY.Map = (function () {
     }
   }
 
-  return { MAPS, load, tick, startOvertime, resetRound, overtimeMsg,
+  return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; } };
 })();
