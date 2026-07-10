@@ -126,14 +126,62 @@ SKY.MapData = (function () {
     return def;
   }
 
-  /* ---------- localStorage drafts ---------- */
+  /* ---------- persistent drafts ----------
+   * IndexedDB is the source of truth. localStorage (the old home) has a
+   * ~5MB quota that maps with embedded textures blow straight past — the
+   * save silently failed and the map VANISHED on reload. It is kept only
+   * as a legacy migration source + best-effort mirror for small maps.
+   * Records in 'skypush-maps' / 'maps' (key -> { key, id, def, t }):
+   *   draft:<id>       explicit saves
+   *   autosave:<id>    the editor's rolling autosave (cleared by a save)
+   *   backup:<id>:<n>  previous saved versions, newest first, rotated
+   */
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const BACKUPS = 3;
+  let db = null;
+  const draftCache = {};    // id -> { def, t }
+  const autoCache = {};     // id -> { def, t }
+  const backupCache = {};   // id -> [{ def, t }, ...] newest first
+  const deployedIds = new Set();
+
+  function idbPut(rec) {
+    if (!db) return;
+    try { db.transaction('maps', 'readwrite').objectStore('maps').put(rec); } catch (e) {}
+  }
+  function idbDel(key) {
+    if (!db) return;
+    try { db.transaction('maps', 'readwrite').objectStore('maps').delete(key); } catch (e) {}
+  }
+  function openDb(then) {
+    try {
+      const req = indexedDB.open('skypush-maps', 1);
+      req.onupgradeneeded = (e) => e.target.result.createObjectStore('maps', { keyPath: 'key' });
+      req.onsuccess = (e) => { db = e.target.result; then(); };
+      req.onerror = () => then();
+    } catch (e) { then(); }
+  }
+  function loadStores(then) {
+    if (!db) { then(); return; }
+    try {
+      db.transaction('maps', 'readonly').objectStore('maps').getAll().onsuccess = (e) => {
+        for (const rec of e.target.result || []) {
+          if (!rec || !rec.def) continue;
+          if (rec.key.indexOf('draft:') === 0) draftCache[rec.id] = { def: rec.def, t: rec.t || 0 };
+          else if (rec.key.indexOf('autosave:') === 0) autoCache[rec.id] = { def: rec.def, t: rec.t || 0 };
+          else if (rec.key.indexOf('backup:') === 0) {
+            (backupCache[rec.id] = backupCache[rec.id] || []).push({ def: rec.def, t: rec.t || 0 });
+          }
+        }
+        for (const id in backupCache) backupCache[id].sort((a, b) => b.t - a.t);
+        then();
+      };
+    } catch (e) { then(); }
+  }
+
+  /* legacy localStorage store (read for migration, written as a mirror) */
   function loadDraftStore() {
     try { return JSON.parse(localStorage.getItem(DRAFT_KEY)) || {}; }
     catch (e) { return {}; }
-  }
-  function saveDraftStore(st) {
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(st)); return true; }
-    catch (e) { return false; }   // quota (huge textures) — export instead
   }
 
   const api = {
@@ -150,31 +198,94 @@ SKY.MapData = (function () {
     list() { return [...registry.values()]; },
 
     saveDraft(def) {
-      const st = loadDraftStore();
-      st[def.id] = def;
-      const ok = saveDraftStore(st);
-      api.register(def);
-      return ok;
+      normalize(def);
+      const snap = clone(def);
+      const t = Date.now();
+      const prev = draftCache[def.id];
+      if (prev) {   // rotate the previous saved version into the backups
+        const list = backupCache[def.id] = backupCache[def.id] || [];
+        list.unshift(prev);
+        if (list.length > BACKUPS) list.length = BACKUPS;
+        list.forEach((b, i) => idbPut({ key: 'backup:' + def.id + ':' + i, id: def.id, def: b.def, t: b.t }));
+      }
+      draftCache[def.id] = { def: snap, t };
+      idbPut({ key: 'draft:' + def.id, id: def.id, def: snap, t });
+      delete autoCache[def.id];
+      idbDel('autosave:' + def.id);
+      // legacy mirror — quota failures are fine, IndexedDB is canonical
+      let lsOk = false;
+      try {
+        const st = loadDraftStore();
+        st[def.id] = snap;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(st));
+        lsOk = true;
+      } catch (e) {}
+      api.register(snap);
+      return !!db || lsOk;
     },
+
+    /* rolling autosave from the editor — recovery net, not a real save */
+    autosave(def) {
+      normalize(def);
+      const snap = clone(def);
+      autoCache[def.id] = { def: snap, t: Date.now() };
+      idbPut({ key: 'autosave:' + def.id, id: def.id, def: snap, t: Date.now() });
+      return !!db;
+    },
+    autosaveOf(id) { return autoCache[id] || null; },
+    draftMeta(id) { return draftCache[id] || null; },
+    backupsOf(id) { return backupCache[id] || []; },
+    isDeployed(id) { return deployedIds.has(id); },
+    /* autosaves with no draft, or newer than their draft — unsaved work */
+    recoverables() {
+      return Object.keys(autoCache)
+        .filter(id => !draftCache[id] || autoCache[id].t > draftCache[id].t)
+        .map(id => autoCache[id].def);
+    },
+
     deleteDraft(id) {
-      const st = loadDraftStore();
-      delete st[id];
-      saveDraftStore(st);
+      delete draftCache[id];
+      delete autoCache[id];
+      delete backupCache[id];
+      idbDel('draft:' + id);
+      idbDel('autosave:' + id);
+      for (let i = 0; i < BACKUPS; i++) idbDel('backup:' + id + ':' + i);
+      try {
+        const st = loadDraftStore();
+        delete st[id];
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(st));
+      } catch (e) {}
       registry.delete(id);
       if (api.onListChange) api.onListChange();
     },
-    drafts() { return Object.values(loadDraftStore()); },
+    drafts() { return Object.values(draftCache).map(r => r.def); },
 
     onListChange: null,   // menu hooks this to refresh map buttons
 
     init() {
-      for (const d of api.drafts()) api.register(d);
-      // deployed maps (https only — fetch fails silently from file://)
-      fetch('maps/index.json')
-        .then(r => r.json())
-        .then(list => Promise.all(list.map(u => fetch(u).then(r => r.json()))))
-        .then(defs => defs.forEach(d => api.register(d)))
-        .catch(() => {});
+      openDb(() => loadStores(() => {
+        // one-time migration: any localStorage draft IndexedDB doesn't know
+        for (const [id, def] of Object.entries(loadDraftStore())) {
+          if (!draftCache[id]) {
+            draftCache[id] = { def: clone(def), t: 0 };
+            idbPut({ key: 'draft:' + id, id, def: draftCache[id].def, t: 0 });
+          }
+        }
+        for (const r of Object.values(draftCache)) api.register(r.def);
+        // autosave-only maps (crash before the first save) stay visible too
+        for (const id of Object.keys(autoCache)) {
+          if (!draftCache[id]) api.register(autoCache[id].def);
+        }
+        // deployed maps (https only — fetch fails silently from file://)
+        fetch('maps/index.json')
+          .then(r => r.json())
+          .then(list => Promise.all(list.map(u => fetch(u).then(r => r.json()))))
+          .then(defs => defs.forEach(d => {
+            deployedIds.add(d.id);
+            if (!draftCache[d.id]) api.register(d);   // a local edit wins
+          }))
+          .catch(() => {});
+      }));
     },
   };
   return api;

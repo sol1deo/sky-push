@@ -95,6 +95,18 @@ SKY.HUD = (function () {
           b.className = 'sel-btn custom-map ' + (rowId === 'map-row' ? 'map-btn' : 'lmap-btn');
           b.dataset.m = d.id;
           b.textContent = d.name;
+          if (rowId === 'map-row') {   // ✎ opens the map in the editor
+            const e = document.createElement('span');
+            e.className = 'map-edit';
+            e.textContent = '✎';
+            e.title = 'Edit this map in the editor';
+            e.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              if (SKY.Net.online) return;
+              SKY.Editor.open(d.id);
+            });
+            b.appendChild(e);
+          }
           row.appendChild(b);
         }
       }

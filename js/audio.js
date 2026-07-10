@@ -10,6 +10,8 @@ SKY.SFX = (function () {
   let windGain = null, windFilter = null;
   let slideGain = null;
   let noiseBuf = null;
+  let watchdog = null, stuckTicks = 0, wired = false;
+  let windLevel = 0, slideOn = false;   // last requested values, survive a rebuild
 
   function makeNoiseBuffer() {
     const len = ctx.sampleRate * 2;
@@ -19,11 +21,46 @@ SKY.SFX = (function () {
     return buf;
   }
 
+  /* The context can silently stop mid-match: tab switch, bluetooth headset
+     reconnect, OS output-device change, mobile 'interrupted' state. Every
+     path below funnels into resumeCtx(); if the context refuses to come
+     back it is torn down and rebuilt on the next user gesture. */
+  function resumeCtx() {
+    if (!ctx || ctx.state === 'running') return;
+    if (ctx.state === 'closed') { rebuild(); return; }
+    ctx.resume().catch(() => {});
+  }
+
+  function rebuild() {
+    try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
+    ctx = null; master = null; windGain = null; windFilter = null; slideGain = null;
+    stuckTicks = 0;
+    init();
+  }
+
+  function wireRecovery() {
+    if (wired) return;
+    wired = true;
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeCtx(); });
+    window.addEventListener('focus', resumeCtx);
+    // any input counts as the user gesture browsers want for resume()
+    window.addEventListener('pointerdown', resumeCtx, true);
+    window.addEventListener('keydown', resumeCtx, true);
+    watchdog = setInterval(() => {
+      if (!ctx) return;
+      if (ctx.state === 'running') { stuckTicks = 0; return; }
+      stuckTicks++;
+      resumeCtx();
+      if (stuckTicks >= 4) rebuild();   // ~8s dead despite resume attempts
+    }, 2000);
+  }
+
   function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    if (ctx) { resumeCtx(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    ctx = new AC();
+    try { ctx = new AC(); } catch (e) { ctx = null; return; }
+    ctx.onstatechange = () => { if (ctx && ctx.state !== 'running') resumeCtx(); };
     master = ctx.createGain();
     master.gain.value = SKY.TUNING.audio.master;
     master.connect(ctx.destination);
@@ -46,11 +83,17 @@ SKY.SFX = (function () {
     slideGain = ctx.createGain(); slideGain.gain.value = 0;
     slideSrc.connect(slideFilter).connect(slideGain).connect(master);
     slideSrc.start();
+
+    // restore continuous levels after a mid-match rebuild
+    windGain.gain.value = windLevel * SKY.TUNING.audio.windMax;
+    slideGain.gain.value = slideOn ? 0.12 : 0;
+    wireRecovery();
   }
 
   /* one-shot tone helper: frequency slides f0 -> f1 over dur */
   function tone(f0, f1, dur, type, vol, delay) {
     if (!ctx) return;
+    if (!isFinite(f0) || !isFinite(vol) || vol <= 0.001) return;  // a NaN here mutes the whole graph
     const t0 = ctx.currentTime + (delay || 0);
     const o = ctx.createOscillator();
     o.type = type || 'sine';
@@ -66,6 +109,7 @@ SKY.SFX = (function () {
   /* one-shot filtered noise burst */
   function noise(dur, freq, vol, type, delay) {
     if (!ctx) return;
+    if (!isFinite(freq) || !isFinite(vol) || vol <= 0.001) return;
     const t0 = ctx.currentTime + (delay || 0);
     const s = ctx.createBufferSource();
     s.buffer = noiseBuf;
@@ -124,13 +168,17 @@ SKY.SFX = (function () {
 
     /* continuous feedback, called every frame */
     setWind(x01) {
+      if (!isFinite(x01)) return;
+      windLevel = SKY.U.clamp01(x01);
       if (!windGain) return;
-      windGain.gain.value = x01 * SKY.TUNING.audio.windMax;
-      windFilter.frequency.value = 380 + x01 * 950;
+      windGain.gain.value = windLevel * SKY.TUNING.audio.windMax;
+      windFilter.frequency.value = 380 + windLevel * 950;
     },
     setSlide(on) {
+      slideOn = !!on;
       if (!slideGain) return;
-      slideGain.gain.value = on ? 0.12 : 0;
+      slideGain.gain.value = slideOn ? 0.12 : 0;
     },
+    resume: resumeCtx,
   };
 })();

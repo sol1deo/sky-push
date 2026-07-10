@@ -538,6 +538,15 @@
     border-radius:5px; font-size:10px; font-weight:700; color:var(--dim);
     cursor:ew-resize; user-select:none; background:rgba(255,255,255,.03); }
   .ed-face:hover { color:var(--txt); border-color:rgba(255,255,255,.35); }
+  .ed-swatches { flex-wrap:wrap; gap:4px !important; }
+  .ed-swatch { width:26px; height:26px; border-radius:5px; border:1px solid var(--line2);
+    background-size:cover; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; font-size:10px; color:var(--faint); }
+  .ed-swatch:hover { border-color:rgba(255,255,255,.5); }
+  .ed-swatch.sel { border-color:#ffd34d; box-shadow:0 0 0 1px #ffd34d; }
+  .map-edit { margin-left:8px; opacity:.45; font-weight:400; }
+  .custom-map:hover .map-edit { opacity:1; }
+  .map-edit:hover { color:#ffd34d; }
   #editor-ov select, #editor-ov option { background:#14181f; color:var(--txt); }
   #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px; overflow-y:auto;
     background:linear-gradient(270deg, rgba(10,12,16,.92), rgba(10,12,16,.6));
@@ -706,7 +715,7 @@
     <button class="rail-btn" id="tab-matches">Matches</button>
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
-    <div class="rail-foot">prototype · build 24</div>
+    <div class="rail-foot">prototype · build 25</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -853,13 +862,14 @@
   <div id="ed-top">
     <span class="ed-logo">MAP EDITOR</span>
     <button class="ed-btn" id="ed-addblock">+ Block</button>
+    <button class="ed-btn" id="ed-addground">+ Ground</button>
     <button class="ed-btn" id="ed-addpad">+ Pad</button>
     <button class="ed-btn" id="ed-addspawn">+ Spawn</button>
     <button class="ed-btn" id="ed-additem">+ Item</button>
     <button class="ed-btn sel" id="ed-anim">Anim</button>
     <span class="ed-flex"></span>
     <button class="ed-btn" id="ed-new">New</button>
-    <select class="ed-btn" id="ed-load"><option value="">load draft…</option></select>
+    <select class="ed-btn" id="ed-load"><option value="">open map…</option></select>
     <label class="ed-btn" for="ed-import">Import</label>
     <input type="file" id="ed-import" accept=".json" class="hidden">
     <button class="ed-btn" id="ed-save">Save</button>
@@ -929,33 +939,33 @@
 <script src="lib/TransformControls.js"></script>
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=24"></script>
-<script src="js/utils.js?v=24"></script>
-<script src="js/mapdata.js?v=24"></script>
-<script src="js/audio.js?v=24"></script>
-<script src="js/settings.js?v=24"></script>
-<script src="js/input.js?v=24"></script>
-<script src="js/world.js?v=24"></script>
-<script src="js/effects.js?v=24"></script>
-<script src="js/map.js?v=24"></script>
-<script src="js/characters.js?v=24"></script>
-<script src="js/pawn.js?v=24"></script>
-<script src="js/weapons.js?v=24"></script>
-<script src="js/loot.js?v=24"></script>
-<script src="js/pickups.js?v=24"></script>
-<script src="js/sparks.js?v=24"></script>
-<script src="js/grenades.js?v=24"></script>
-<script src="js/grapple.js?v=24"></script>
-<script src="js/bots.js?v=24"></script>
-<script src="js/hud.js?v=24"></script>
-<script src="js/game.js?v=24"></script>
-<script src="js/attract.js?v=24"></script>
-<script src="js/net.js?v=24"></script>
-<script src="js/dof.js?v=24"></script>
-<script src="js/replay.js?v=24"></script>
-<script src="js/demos.js?v=24"></script>
-<script src="js/assets.js?v=24"></script>
-<script src="js/editor.js?v=24"></script>
-<script src="js/main.js?v=24"></script>
+<script src="js/config.js?v=25"></script>
+<script src="js/utils.js?v=25"></script>
+<script src="js/mapdata.js?v=25"></script>
+<script src="js/audio.js?v=25"></script>
+<script src="js/settings.js?v=25"></script>
+<script src="js/input.js?v=25"></script>
+<script src="js/world.js?v=25"></script>
+<script src="js/effects.js?v=25"></script>
+<script src="js/map.js?v=25"></script>
+<script src="js/characters.js?v=25"></script>
+<script src="js/pawn.js?v=25"></script>
+<script src="js/weapons.js?v=25"></script>
+<script src="js/loot.js?v=25"></script>
+<script src="js/pickups.js?v=25"></script>
+<script src="js/sparks.js?v=25"></script>
+<script src="js/grenades.js?v=25"></script>
+<script src="js/grapple.js?v=25"></script>
+<script src="js/bots.js?v=25"></script>
+<script src="js/hud.js?v=25"></script>
+<script src="js/game.js?v=25"></script>
+<script src="js/attract.js?v=25"></script>
+<script src="js/net.js?v=25"></script>
+<script src="js/dof.js?v=25"></script>
+<script src="js/replay.js?v=25"></script>
+<script src="js/demos.js?v=25"></script>
+<script src="js/assets.js?v=25"></script>
+<script src="js/editor.js?v=25"></script>
+<script src="js/main.js?v=25"></script>
 </body>
 </html>

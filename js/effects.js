@@ -365,55 +365,70 @@ SKY.Effects = (function () {
   }
 
   /* ---------------- speed lines ----------------
-   * Anime wind streaks around the screen edges when you're moving FAST —
-   * strongest in the air. Camera-space sprites sliding radially outward;
-   * the center stays clear so they never block aim. */
-  let spdGroup = null;
+   * Anime wind streaks pinned to the EDGES of the screen when you're moving
+   * FAST — strongest in the air. Lines live on an ellipse that matches the
+   * viewport (n = 1 is the screen border), so the middle 60% of the screen —
+   * and the crosshair — always stays clear. Intensity is damped so they
+   * build up gradually past ~16 m/s instead of popping into view. */
+  let spdGroup = null, spdIntensity = 0;
   const spdLines = [];
+  const SPD_N = 20;
   function resetSpeedLine(L, scatter) {
-    L.ang = Math.random() * Math.PI * 2;
-    L.r = scatter ? SKY.U.rand(0.5, 1.3) : SKY.U.rand(0.45, 0.7);
-    L.speed = SKY.U.rand(2.2, 4.5);
-    L.len = SKY.U.rand(0.5, 1.1);
-    L.o = SKY.U.rand(0.35, 0.85);
+    // stratified angles: each line owns a slice of the ring, so streaks
+    // spread around the whole border instead of clumping
+    L.ang = (L.slot / SPD_N) * Math.PI * 2 + SKY.U.rand(-0.3, 0.3);
+    L.n = scatter ? SKY.U.rand(0.62, 1.2) : SKY.U.rand(0.62, 0.78);
+    L.n0 = L.n;
+    L.speed = SKY.U.rand(1.4, 2.6);
+    L.len = SKY.U.rand(0.45, 1.0);
+    L.o = SKY.U.rand(0.3, 0.75);
   }
   function ensureSpeedLines() {
     if (spdGroup || !camera) return;
     spdGroup = new THREE.Group();
     spdGroup.visible = false;
     camera.add(spdGroup);
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < SPD_N; i++) {
       const spr = new THREE.Sprite(new THREE.SpriteMaterial({
         map: SKY.U.blobTexture(), color: 0xdcecff, transparent: true, opacity: 0,
         blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
       }));
       spr.renderOrder = 30;
-      const L = { spr, ang: 0, r: 0, speed: 1, len: 1, o: 0.5 };
+      const L = { spr, slot: i, ang: 0, n: 0, n0: 0, speed: 1, len: 1, o: 0.5 };
       resetSpeedLine(L, true);
       spdGroup.add(spr);
       spdLines.push(L);
     }
   }
   function speedLinesTick(dt, speed, grounded) {
+    let target = SKY.U.clamp01((speed - 16) / 14);   // starts ~16 m/s, full at 30
+    if (grounded) target *= 0.35;                    // subtle on foot, real in the air
+    spdIntensity = SKY.U.damp(spdIntensity, target, 2.2, dt);   // fade in/out, never pop
+    const k = spdIntensity;
     if (!spdGroup) {
-      if (speed > 17) ensureSpeedLines();
+      if (k > 0.02) ensureSpeedLines();
       if (!spdGroup) return;
     }
-    let k = SKY.U.clamp01((speed - 16) / 9);
-    if (grounded) k *= 0.35;               // subtle on foot, real in the air
     if (k <= 0.02) {
       if (spdGroup.visible) spdGroup.visible = false;
       return;
     }
     spdGroup.visible = true;
+    // half-extents of the viewport at the sprite plane (z = -1.5): n=1 = edge
+    const halfH = Math.tan(camera.fov * Math.PI / 360) * 1.5;
+    const halfW = halfH * camera.aspect;
     for (const L of spdLines) {
-      L.r += L.speed * dt * (0.6 + k);
-      if (L.r > 1.45) resetSpeedLine(L, false);
-      const fade = SKY.U.clamp01((L.r - 0.45) / 0.2) * SKY.U.clamp01((1.45 - L.r) / 0.3);
-      L.spr.material.opacity = k * L.o * fade * 0.5;
-      L.spr.material.rotation = L.ang - Math.PI / 2;   // long axis radial
-      L.spr.position.set(Math.cos(L.ang) * L.r, Math.sin(L.ang) * L.r, -1.5);
-      L.spr.scale.set(0.02 + 0.012 * k, L.len * (0.7 + k * 0.6), 1);
+      L.n += L.speed * dt * (0.55 + k * 0.75);
+      if (L.n > 1.35) resetSpeedLine(L, false);
+      const grow = SKY.U.clamp01((L.n - L.n0) / 0.1);    // ease in after spawn
+      const die = SKY.U.clamp01((1.35 - L.n) / 0.22);    // ease out past the border
+      const rim = SKY.U.clamp01((L.n - 0.55) / 0.25);    // hard-clear center zone
+      L.spr.material.opacity = k * L.o * grow * die * rim * 0.45;
+      const x = Math.cos(L.ang) * L.n * halfW;
+      const y = Math.sin(L.ang) * L.n * halfH;
+      L.spr.material.rotation = Math.atan2(y, x) - Math.PI / 2;   // long axis radial on screen
+      L.spr.position.set(x, y, -1.5);
+      L.spr.scale.set(0.016 + 0.01 * k, L.len * (0.55 + k * 0.65), 1);
     }
   }
 

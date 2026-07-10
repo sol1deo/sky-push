@@ -1133,6 +1133,9 @@ SKY.Map = (function () {
   function customBlockMaterial(b) {
     const rep = b.rep || Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
     if (b.tex) return new THREE.MeshLambertMaterial({ map: texFromDataURL(b.tex, rep) });
+    if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
+      return new THREE.MeshLambertMaterial({ map: SKY.U.procTexture(b.ptex, rep) });
+    }
     const pal = SKY.MapData.PALETTES[b.pal];
     if (pal) return mat(pal, rep);
     return flat(b.color || '#8a94a8');

@@ -26,6 +26,8 @@ SKY.Editor = (function () {
   let selBox = null;
   let history = [];               // undo stack
   let future = [];                // redo stack
+  let dirty = false;              // unsaved changes since last save/autosave
+  let autosaveTimer = null;
   let clipboard = null;           // { kind, json } — Ctrl+C/X/V
   let pasteCount = 0;
   let lastNudgeT = 0;
@@ -53,6 +55,9 @@ SKY.Editor = (function () {
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(rep, rep);
       return new THREE.MeshLambertMaterial({ map: tex });
+    }
+    if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
+      return new THREE.MeshLambertMaterial({ map: SKY.U.procTexture(b.ptex, rep) });
     }
     const pal = SKY.MapData.PALETTES[b.pal];
     if (pal) {
@@ -285,6 +290,7 @@ SKY.Editor = (function () {
       m.scale.setScalar(d.scale);
     }
     if (selBox) selBox.update();
+    markDirty();
   }
 
   /* blocks bake gizmo-scale into their size (geometry, not mesh.scale) */
@@ -357,17 +363,32 @@ SKY.Editor = (function () {
     return out;
   }
 
+  /* ================= autosave (the map must NEVER be lost) ================= */
+  function markDirty() {
+    dirty = true;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(autosaveNow, 2500);   // settle, then snapshot
+  }
+  function autosaveNow() {
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    if (!dirty || !def || !api.active) return;
+    SKY.MapData.autosave(def);
+  }
+
   /* ================= history (undo / redo) ================= */
   function push() {
     history.push(JSON.stringify(def));
     if (history.length > 60) history.shift();
     future.length = 0;                       // a new action clears redo
+    markDirty();
   }
   function undo() {
     if (!history.length) { status('nothing to undo'); return; }
     future.push(JSON.stringify(def));
     def = SKY.MapData.normalize(JSON.parse(history.pop()));
     rebuild(false);
+    markDirty();
     status('undo');
   }
   function redo() {
@@ -375,6 +396,7 @@ SKY.Editor = (function () {
     history.push(JSON.stringify(def));
     def = SKY.MapData.normalize(JSON.parse(future.pop()));
     rebuild(false);
+    markDirty();
     status('redo');
   }
 
@@ -420,6 +442,32 @@ SKY.Editor = (function () {
   function addBlock() {
     focusPoint(_v);
     addAndSelect(def.blocks, { p: [_v.x, _v.y, _v.z], s: [4, 1, 4], r: [0, 0, 0], pal: 'pearl', crumble: false, mover: null });
+  }
+  /* big textured base plate — the usual first step of a real map */
+  function addGround() {
+    addAndSelect(def.blocks, { p: [0, -1, 0], s: [80, 2, 80], r: [0, 0, 0], pal: null, ptex: 'grass', crumble: false, mover: null });
+    status('ground added — pick another texture in the inspector');
+  }
+  /* recenter the whole layout so the block bounds sit on the origin (XZ) */
+  function centerMap() {
+    if (!def.blocks.length) return;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const b of def.blocks) {
+      minX = Math.min(minX, b.p[0] - b.s[0] / 2); maxX = Math.max(maxX, b.p[0] + b.s[0] / 2);
+      minZ = Math.min(minZ, b.p[2] - b.s[2] / 2); maxZ = Math.max(maxZ, b.p[2] + b.s[2] / 2);
+    }
+    const cx = Math.round((minX + maxX) / 2), cz = Math.round((minZ + maxZ) / 2);
+    if (!cx && !cz) { status('already centered'); return; }
+    push();
+    for (const arr of [def.blocks, def.pads, def.spawns, def.items, def.props]) {
+      for (const o of arr) { o.p[0] -= cx; o.p[2] -= cz; }
+    }
+    for (const b of def.blocks) {
+      if (b.mover && b.mover.c) { b.mover.c[0] -= cx; b.mover.c[1] -= cz; }
+    }
+    def.crown[0] -= cx; def.crown[2] -= cz;
+    rebuild(false);
+    status(`map centered (shifted ${-cx}, ${-cz})`);
   }
   function addPad() { focusPoint(_v); addAndSelect(def.pads, { p: [_v.x, _v.y, _v.z], launch: [0, 16, 0] }); }
   function addSpawn() { focusPoint(_v); addAndSelect(def.spawns, { p: [_v.x, _v.y, _v.z], yaw: 0 }); }
@@ -500,6 +548,7 @@ SKY.Editor = (function () {
     const o = objects[sel];
     ui.insTitle.textContent = o ? labelOf(o).toUpperCase() : 'MAP SETTINGS';
     if (!o) {
+      const backups = SKY.MapData.backupsOf(def.id);
       ui.ins.innerHTML = `
         <div class="ed-row"><span>Name</span><input type="text" data-k="name" value="${def.name}" maxlength="18"></div>
         <div class="ed-row"><span>Mood</span><select data-k="mood">${Object.keys(SKY.MapData.MOODS).map(m =>
@@ -507,7 +556,14 @@ SKY.Editor = (function () {
         <div class="ed-row"><span>Sky</span><select data-k="sky">${Object.keys(SKY.MapData.SKIES).map(s =>
           `<option value="${s}"${s === def.sky ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
         ${numRow('Kill height', def.killY, 'killY', 1)}
-        <div class="ed-hint">Picking a mood also sets its matching sky (change the sky after to override).</div>`;
+        <div class="ed-row"><span>Layout</span><button class="ed-mini" data-k="centermap">center map XZ</button></div>` +
+        (backups.length ? `
+        <div class="ed-row"><span>Backups</span><select data-k="restorebackup">
+          <option value="">restore…</option>
+          ${backups.map((b, i) => `<option value="${i}">${b.t ? new Date(b.t).toLocaleString() : 'older save'}</option>`).join('')}
+        </select></div>` : '') + `
+        <div class="ed-hint">Picking a mood also sets its matching sky (change the sky after to override).
+        Autosave runs a few seconds after every change — even a crash can't eat the map.</div>`;
       return;
     }
     const d = o.data;
@@ -526,7 +582,14 @@ SKY.Editor = (function () {
         ${Object.keys(SKY.MapData.PALETTES).map(p => `<option value="${p}"${d.pal === p ? ' selected' : ''}>${p}</option>`).join('')}
       </select></div>`;
       h += `<div class="ed-row"><span>Color</span><input type="color" data-k="color" value="${d.color || '#8a94a8'}"></div>`;
-      if (d.tex) h += `<div class="ed-row"><span>Texture</span><button class="ed-mini" data-k="cleartex">remove</button></div>`;
+      h += `<div class="ed-row"><span>Texture</span></div>
+        <div class="ed-row ed-swatches">
+          <span class="ed-swatch${!d.ptex ? ' sel' : ''}" data-pt="" title="none">✕</span>
+          ${Object.keys(SKY.U.PROC_TEX).map(t =>
+            `<span class="ed-swatch${d.ptex === t ? ' sel' : ''}" data-pt="${t}" title="${t}" style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
+        </div>`;
+      h += numRow('Tiling', d.rep || 0, 'rep', 1);
+      if (d.tex) h += `<div class="ed-row"><span>Image tex</span><button class="ed-mini" data-k="cleartex">remove</button></div>`;
       h += `<div class="ed-row"><span>Crumble</span><input type="checkbox" data-k="crumble"${d.crumble ? ' checked' : ''}></div>`;
       const mt = d.mover ? d.mover.type : '';
       h += `<div class="ed-row"><span>Mover</span><select data-k="movertype">
@@ -573,6 +636,17 @@ SKY.Editor = (function () {
       }
       else if (k === 'sky') { def.sky = e.target.value; applyMood(); }
       else if (k === 'killY') def.killY = parseFloat(e.target.value) || -22;
+      else if (k === 'restorebackup') {
+        const b = SKY.MapData.backupsOf(def.id)[parseInt(e.target.value, 10)];
+        if (b) {
+          push();
+          def = SKY.MapData.normalize(JSON.parse(JSON.stringify(b.def)));
+          rebuild(false);
+          status('backup restored — Ctrl+Z to go back, Ctrl+S to keep');
+        }
+        return;
+      }
+      markDirty();
       return;
     }
     const d = o.data;
@@ -585,8 +659,9 @@ SKY.Editor = (function () {
     else if (k === 'pr1') { d.r = d.r || [0, 0, 0]; d.r[1] = num * Math.PI / 180; }
     else if (k === 'pscale') d.scale = Math.max(0.05, num);
     else if (k === 'psolid') d.solid = e.target.checked;
-    else if (k === 'pal') { d.pal = e.target.value || null; o.mesh.material = blockMaterial(d); }
-    else if (k === 'color') { d.color = e.target.value; if (!d.pal && !d.tex) o.mesh.material = blockMaterial(d); }
+    else if (k === 'pal') { d.pal = e.target.value || null; if (d.pal) d.ptex = null; o.mesh.material = blockMaterial(d); syncInspector(); }
+    else if (k === 'color') { d.color = e.target.value; if (!d.pal && !d.tex && !d.ptex) o.mesh.material = blockMaterial(d); }
+    else if (k === 'rep') { d.rep = Math.max(0, Math.round(num)) || null; o.mesh.material = blockMaterial(d); }
     else if (k === 'crumble') d.crumble = e.target.checked;
     else if (k === 'movertype') {
       const t = e.target.value;
@@ -599,7 +674,8 @@ SKY.Editor = (function () {
     else if (k === 'mamp') d.mover.amp = num;
     else if (k.indexOf('moff') === 0) { d.mover.off = d.mover.off || [6, 0, 0]; d.mover.off[+k[4]] = num; }
     else if (k.indexOf('mc') === 0) { d.mover.c = d.mover.c || [0, 0]; d.mover.c[+k[2]] = num; }
-    else if (k === 'cleartex') { d.tex = null; o.mesh.material = blockMaterial(d); syncInspector(); return; }
+    else if (k === 'cleartex') { d.tex = null; o.mesh.material = blockMaterial(d); markDirty(); syncInspector(); return; }
+    markDirty();
     syncMeshFromData(o);
     refreshOutliner();
   }
@@ -661,8 +737,11 @@ SKY.Editor = (function () {
   function save() {
     def.name = def.name || 'CUSTOM MAP';
     const ok = SKY.MapData.saveDraft(def);
+    dirty = false;
+    clearTimeout(autosaveTimer);
     refreshLoadList();
-    status(ok ? 'saved — the map is in the PLAY list' : 'saved to session only (storage full — use EXPORT)');
+    syncInspector();   // the backups row may have just appeared
+    status(ok ? 'saved ✓ — the map is in the PLAY list' : '⚠ SAVE FAILED — use EXPORT now so nothing is lost');
   }
   function exportJson() {
     const blob = new Blob([JSON.stringify(def)], { type: 'application/json' });
@@ -686,8 +765,17 @@ SKY.Editor = (function () {
     fr.readAsText(file);
   }
   function refreshLoadList() {
-    ui.loadSel.innerHTML = '<option value="">Load draft…</option>' +
-      SKY.MapData.drafts().map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    const D = SKY.MapData;
+    const drafts = D.drafts();
+    const isDraft = (id) => drafts.some(d => d.id === id);
+    const recovered = D.recoverables().filter(d => !isDraft(d.id));   // autosave-only maps
+    const deployed = D.list().filter(d => D.isDeployed(d.id) && !isDraft(d.id));
+    const opt = (d) => `<option value="${d.id}">${d.name}</option>`;
+    const grp = (label, list) => list.length ? `<optgroup label="${label}">${list.map(opt).join('')}</optgroup>` : '';
+    ui.loadSel.innerHTML = '<option value="">Open map…</option>' +
+      grp('⚠ Recovered (unsaved)', recovered) +
+      grp('My maps', drafts) +
+      grp('Server maps', deployed);
     ui.loadSel.value = '';
   }
   function clearSceneOwned() {
@@ -716,10 +804,20 @@ SKY.Editor = (function () {
     if (api.active) return;
     api.active = true;
     SKY.Attract.stop();   // the menu show must not leak into the editor scene
-    def = SKY.MapData.normalize(typeof defOrId === 'string'
-      ? JSON.parse(JSON.stringify(SKY.MapData.get(defOrId) || SKY.MapData.blank()))
-      : (defOrId || SKY.MapData.blank()));
+    if (def && dirty) SKY.MapData.autosave(def);   // outgoing map is never dropped
+    let source = defOrId, recovered = false;
+    if (typeof defOrId === 'string') {
+      const D = SKY.MapData;
+      source = D.get(defOrId) || (D.draftMeta(defOrId) || {}).def;
+      // a newer autosave than the last save = work that was about to be lost
+      const auto = D.autosaveOf(defOrId), meta = D.draftMeta(defOrId);
+      if (auto && (!meta || auto.t > meta.t)) { source = auto.def; recovered = !!meta; }
+      if (!source) status('map "' + defOrId + '" not found — opened a new one');
+    }
+    def = SKY.MapData.normalize(source
+      ? JSON.parse(JSON.stringify(source)) : SKY.MapData.blank());
     history = [];
+    dirty = false;
     SKY.Map.unload();
     if (gizmo) scene.add(gizmo);
     rebuild(false);
@@ -728,10 +826,13 @@ SKY.Editor = (function () {
     ui.root.classList.remove('hidden');
     document.getElementById('menu').classList.add('hidden');
     select(-1);
-    status('RMB — fly · click — select · drag the gizmo · TEST to play it');
+    status(recovered
+      ? '⚠ recovered unsaved changes — Ctrl+S to keep them'
+      : 'RMB — fly · click — select · drag the gizmo · TEST to play it');
   }
 
   function exit() {
+    autosaveNow();                     // leaving is never a data loss
     ui.root.classList.add('hidden');
     api.active = false;
     clearSceneOwned();
@@ -821,6 +922,7 @@ SKY.Editor = (function () {
     $('ed-export').onclick = exportJson;
     $('ed-test').onclick = testPlay;
     $('ed-addblock').onclick = addBlock;
+    $('ed-addground').onclick = addGround;
     $('ed-addpad').onclick = addPad;
     $('ed-addspawn').onclick = addSpawn;
     $('ed-additem').onclick = addItem;
@@ -835,7 +937,21 @@ SKY.Editor = (function () {
     };
     $('ed-import').onchange = (e) => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; };
     ui.ins.addEventListener('input', onInspectorInput);
-    ui.ins.addEventListener('click', (e) => { if (e.target.dataset.k === 'cleartex') onInspectorInput(e); });
+    ui.ins.addEventListener('click', (e) => {
+      if (e.target.dataset.k === 'cleartex') { onInspectorInput(e); return; }
+      if (e.target.dataset.k === 'centermap') { centerMap(); return; }
+      const sw = e.target.closest('.ed-swatch');
+      if (sw) {
+        const o = objects[sel];
+        if (o && o.kind === 'block') {
+          push();
+          o.data.ptex = sw.dataset.pt || null;
+          if (o.data.ptex) o.data.tex = null;   // a picked texture replaces a dropped image
+          o.mesh.material = blockMaterial(o.data);
+          syncInspector();
+        }
+      }
+    });
 
     /* outliner clicks */
     ui.outliner.addEventListener('click', (e) => {
