@@ -23,7 +23,7 @@ SKY.Settings = (function () {
       jump: 'Space', crouch: 'KeyC',
       fire: 'Mouse0', aim: 'Mouse2', reload: 'KeyR',
       grapple: 'KeyE', cannon: 'KeyQ', grenade: 'KeyG', dash: 'KeyF',
-      interact: 'KeyX', buymenu: 'KeyB',
+      interact: 'KeyX',
       taunt: 'KeyT', scoreboard: 'Tab', reset: 'KeyP',
       replay: 'KeyV',
     },
@@ -33,7 +33,7 @@ SKY.Settings = (function () {
     jump: 'Jump / bhop', crouch: 'Crouch / slide',
     fire: 'Fire', aim: 'Aim / zoom', reload: 'Reload',
     grapple: 'Grapple', cannon: 'Air cannon', grenade: 'Throw grenade', dash: 'Air dash',
-    interact: 'Plant / defuse', buymenu: 'Buy menu (bomb)',
+    interact: 'Interact',
     taunt: 'Taunt', scoreboard: 'Scoreboard', reset: 'Reset position',
     replay: 'Replay editor',
   };

@@ -103,7 +103,7 @@ SKY.Demos = (function () {
         list.innerHTML = '<div class="srv-empty">No matches recorded yet — play an offline round, then come back.</div>';
         return;
       }
-      const MODES = { lbs: 'Last Standing', crown: 'Crown Rush', bomb: 'Bomb' };
+      const MODES = { spark: 'Spark Rush', lbs: 'Last Standing', crown: 'Crown Rush', bomb: 'Bomb (retired)' };
       list.innerHTML = '';
       for (const rec of mem) {
         const row = document.createElement('div');

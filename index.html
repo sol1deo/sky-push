@@ -114,23 +114,6 @@
   .demo-row .sel-btn { position:absolute; right:2px; top:50%; transform:translateY(-50%);
     border:1px solid var(--line); }
 
-  /* bomb buy menu */
-  #buy-ov { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:14;
-    background:var(--bg); backdrop-filter:blur(18px); border:1px solid var(--line);
-    border-radius:12px; padding:22px 28px; min-width:340px; pointer-events:auto; }
-  #buy-ov h3 { font-size:11px; font-weight:700; letter-spacing:.3em; text-transform:uppercase;
-    color:var(--dim); display:flex; justify-content:space-between; margin-bottom:12px; }
-  #buy-money { color:var(--txt); }
-  .buy-row { display:flex; align-items:center; gap:12px; padding:6px 2px; font-size:13px;
-    color:var(--txt); cursor:pointer; border-radius:6px; }
-  .buy-row:hover { background:rgba(255,255,255,.06); }
-  .buy-row .keycap { width:18px; height:18px; line-height:16px; border:1px solid var(--line);
-    border-radius:4px; color:var(--dim); font-size:10px; font-weight:600; text-align:center; }
-  .buy-row .buy-name { flex:1; font-weight:600; }
-  .buy-row .buy-price { color:var(--dim); font-variant-numeric:tabular-nums; }
-  .buy-row.owned { opacity:.45; }
-  .buy-row.poor .buy-price { color:var(--danger); }
-
   .sel-row { margin-top:16px; display:flex; gap:6px; justify-content:center; align-items:center; }
   .sel-row .lbl { font-size:10px; font-weight:600; letter-spacing:.2em; color:var(--faint);
     width:58px; text-align:right; margin-right:8px; text-transform:uppercase; }
@@ -242,16 +225,20 @@
   #lives { position:absolute; left:26px; bottom:24px; font-size:15px; letter-spacing:8px;
     color:var(--txt); }
   #lives .lost { color:var(--faint); }
-  #money { position:absolute; left:26px; bottom:24px; font-size:22px; font-weight:700;
+  #sparks { position:absolute; left:26px; bottom:24px; }
+  #spark-num { font-size:22px; font-weight:700; color:#ffd34d;
     font-variant-numeric:tabular-nums; }
+  #spark-num small { font-size:11px; color:var(--dim); font-weight:600; }
+  #sparks .bar { margin-top:5px; height:2px; width:120px;
+    background:rgba(255,255,255,.14); border-radius:1px; overflow:hidden; }
+  #spark-fill { height:100%; width:0%; background:#ffd34d; }
+  /* SPARK RUSH live level-up: cards dock low + small, a bar counts down */
+  #loot-ov.quick { top:auto; bottom:9%; transform:translateX(-50%) scale(.72); }
+  #lv-timer { margin:10px auto 0; height:3px; width:300px;
+    background:rgba(255,255,255,.14); border-radius:2px; overflow:hidden; }
+  #lv-timer div { height:100%; width:100%; background:#ffd34d; }
   #nades { position:absolute; left:26px; bottom:52px; font-size:10.5px; font-weight:600;
     letter-spacing:.16em; text-transform:uppercase; color:var(--dim); }
-  #actbar { position:absolute; left:50%; bottom:34%; transform:translateX(-50%); width:200px;
-    text-align:center; }
-  #actlabel { font-size:10px; font-weight:600; letter-spacing:.3em; text-transform:uppercase;
-    color:var(--txt); margin-bottom:6px; }
-  #actbar .bar { height:3px; background:rgba(255,255,255,.14); border-radius:2px; overflow:hidden; }
-  #actfill { height:100%; width:0%; background:#fff; }
   .loot-card .loot-kind { font-size:8.5px; font-weight:700; letter-spacing:.3em; text-indent:.3em;
     text-transform:uppercase; color:var(--faint); }
 
@@ -629,16 +616,11 @@
   <div id="dmg-flash"></div>
   <div id="dmg-dir"></div>
   <div id="lives"></div>
-  <div id="money" class="hidden"></div>
+  <div id="sparks" class="hidden">
+    <div id="spark-num">✦ 0</div>
+    <div class="bar"><div id="spark-fill"></div></div>
+  </div>
   <div id="nades" class="hidden"></div>
-  <div id="actbar" class="hidden">
-    <div id="actlabel"></div>
-    <div class="bar"><div id="actfill"></div></div>
-  </div>
-  <div id="buy-ov" class="hidden">
-    <h3><span>Buy — B to close</span><span id="buy-money">$0</span></h3>
-    <div id="buy-body"></div>
-  </div>
   <div id="speedo">
     <div id="speed-num">0.0 <small>M/S</small></div>
     <div id="speed-bar"><div id="speed-bar-fill"></div></div>
@@ -660,6 +642,7 @@
   <div id="loot-ov" class="hidden">
     <div class="loot-title">Choose a reward</div>
     <div id="loot-cards"></div>
+    <div id="lv-timer" class="hidden"><div></div></div>
     <div class="loot-sub">click · or press 1 / 2 / 3</div>
   </div>
   <div id="center-msg"></div>
@@ -667,7 +650,7 @@
   <div id="respawn-ov" class="hidden"></div>
   <div id="scoreboard" class="hidden">
     <h3>Scoreboard</h3>
-    <table><thead><tr><th>Player</th><th>Wins</th><th>Lives</th><th>KOs</th><th>Ping</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>Player</th><th>Wins</th><th>Score</th><th>KOs</th><th>Ping</th><th>Status</th></tr></thead>
     <tbody id="sb-body"></tbody></table>
   </div>
 </div>
@@ -723,7 +706,7 @@
     <button class="rail-btn" id="tab-matches">Matches</button>
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
-    <div class="rail-foot">prototype · build 22</div>
+    <div class="rail-foot">prototype · build 23</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -752,10 +735,16 @@
           <button class="sel-btn map-btn" data-m="terminal">Terminal</button>
         </div>
         <div class="sel-row"><span class="lbl">Mode</span>
-          <button class="sel-btn mode-btn sel" data-m="lbs">Last Standing</button>
+          <button class="sel-btn mode-btn sel" data-m="spark">Spark Rush</button>
+          <button class="sel-btn mode-btn" data-m="lbs">Last Standing</button>
           <button class="sel-btn mode-btn" data-m="crown">Crown Rush</button>
         </div>
-        <div class="sel-row"><span class="lbl">First to</span>
+        <div class="sel-row" id="spark-row"><span class="lbl">Sparks</span>
+          <button class="sel-btn spark-btn" data-v="25">25</button>
+          <button class="sel-btn spark-btn sel" data-v="40">40</button>
+          <button class="sel-btn spark-btn" data-v="60">60</button>
+        </div>
+        <div class="sel-row hidden" id="rl-row"><span class="lbl">First to</span>
           <button class="sel-btn rounds-btn" data-v="1">1</button>
           <button class="sel-btn rounds-btn sel" data-v="2">2</button>
           <button class="sel-btn rounds-btn" data-v="3">3</button>
@@ -771,8 +760,8 @@
           <button class="sel-btn crown-btn" data-v="40">40s</button>
         </div>
         <button class="btn" id="play-btn">Play</button>
-        <div class="hint" style="margin-left:auto;margin-right:auto">Knockback scales with your speed:
-          go fast, hit hard, do not fall.</div>
+        <div class="hint" style="margin-left:auto;margin-right:auto">Knock rivals off — they burst into
+          sparks. Bank sparks to score and level up. Go fast: speed = power = a bigger loot magnet.</div>
       </div>
 
       <!-- ..... online: the server menu ..... -->
@@ -815,6 +804,7 @@
             <button class="sel-btn lmap-btn" data-m="terminal">Terminal</button>
           </div>
           <div class="sel-row"><span class="lbl">Mode</span>
+            <button class="sel-btn lmode-btn" data-m="spark">Spark Rush</button>
             <button class="sel-btn lmode-btn" data-m="lbs">Last Standing</button>
             <button class="sel-btn lmode-btn" data-m="crown">Crown Rush</button>
             <span class="lbl" style="width:auto;margin-left:10px">First to</span>
@@ -831,6 +821,10 @@
             <button class="sel-btn lcrown-btn" data-v="15">15s</button>
             <button class="sel-btn lcrown-btn" data-v="25">25s</button>
             <button class="sel-btn lcrown-btn" data-v="40">40s</button>
+            <span class="lbl" style="width:auto;margin-left:10px">Sparks</span>
+            <button class="sel-btn lsparks-btn" data-v="25">25</button>
+            <button class="sel-btn lsparks-btn" data-v="40">40</button>
+            <button class="sel-btn lsparks-btn" data-v="60">60</button>
             <label style="color:var(--dim);font-size:11px;margin-left:12px"><input type="checkbox" id="lobby-bots" checked> bots</label>
           </div>
           <button class="btn" id="lobby-start">Start Game</button><br>
@@ -934,32 +928,33 @@
 <script src="lib/TransformControls.js"></script>
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=22"></script>
-<script src="js/utils.js?v=22"></script>
-<script src="js/mapdata.js?v=22"></script>
-<script src="js/audio.js?v=22"></script>
-<script src="js/settings.js?v=22"></script>
-<script src="js/input.js?v=22"></script>
-<script src="js/world.js?v=22"></script>
-<script src="js/effects.js?v=22"></script>
-<script src="js/map.js?v=22"></script>
-<script src="js/characters.js?v=22"></script>
-<script src="js/pawn.js?v=22"></script>
-<script src="js/weapons.js?v=22"></script>
-<script src="js/loot.js?v=22"></script>
-<script src="js/pickups.js?v=22"></script>
-<script src="js/grenades.js?v=22"></script>
-<script src="js/grapple.js?v=22"></script>
-<script src="js/bots.js?v=22"></script>
-<script src="js/hud.js?v=22"></script>
-<script src="js/game.js?v=22"></script>
-<script src="js/attract.js?v=22"></script>
-<script src="js/net.js?v=22"></script>
-<script src="js/dof.js?v=22"></script>
-<script src="js/replay.js?v=22"></script>
-<script src="js/demos.js?v=22"></script>
-<script src="js/assets.js?v=22"></script>
-<script src="js/editor.js?v=22"></script>
-<script src="js/main.js?v=22"></script>
+<script src="js/config.js?v=23"></script>
+<script src="js/utils.js?v=23"></script>
+<script src="js/mapdata.js?v=23"></script>
+<script src="js/audio.js?v=23"></script>
+<script src="js/settings.js?v=23"></script>
+<script src="js/input.js?v=23"></script>
+<script src="js/world.js?v=23"></script>
+<script src="js/effects.js?v=23"></script>
+<script src="js/map.js?v=23"></script>
+<script src="js/characters.js?v=23"></script>
+<script src="js/pawn.js?v=23"></script>
+<script src="js/weapons.js?v=23"></script>
+<script src="js/loot.js?v=23"></script>
+<script src="js/pickups.js?v=23"></script>
+<script src="js/sparks.js?v=23"></script>
+<script src="js/grenades.js?v=23"></script>
+<script src="js/grapple.js?v=23"></script>
+<script src="js/bots.js?v=23"></script>
+<script src="js/hud.js?v=23"></script>
+<script src="js/game.js?v=23"></script>
+<script src="js/attract.js?v=23"></script>
+<script src="js/net.js?v=23"></script>
+<script src="js/dof.js?v=23"></script>
+<script src="js/replay.js?v=23"></script>
+<script src="js/demos.js?v=23"></script>
+<script src="js/assets.js?v=23"></script>
+<script src="js/editor.js?v=23"></script>
+<script src="js/main.js?v=23"></script>
 </body>
 </html>

@@ -26,8 +26,8 @@ SKY.World = (function () {
       api.solids.length = 0; api.movers.length = 0; api.pads.length = 0;
       api.spawnPoints.length = 0; api.roamPoints.length = 0; api.recoveryAnchors.length = 0;
       api.itemPoints.length = 0;
-      api.teamSpawns = { atk: [], def: [] };   // bomb mode
-      api.bombSites = [];                       // [{name, pos, r}]
+      api.teamSpawns = { atk: [], def: [] };   // legacy (team maps)
+      api.bombSites = [];                       // legacy (kept: map defs still set it)
     },
 
     /* Register a collision box. rot* in radians.

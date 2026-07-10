@@ -5,7 +5,7 @@
  * from the map's roam points (spread across every platform), away from
  * players. Walk over one to grab it.
  * Online: the host decides spawns/grabs and broadcasts them ('pkspawn' /
- * 'pktake'); clients only render. Disabled in BOMB mode (it has an economy).
+ * 'pktake'); clients only render.
  * ============================================================================= */
 window.SKY = window.SKY || {};
 
@@ -150,7 +150,6 @@ SKY.Pickups = (function () {
 
     /* fixed tick — only the authority spawns and arbitrates grabs */
     tick(dt) {
-      if (SKY.Game.mode === 'bomb') return;
       if (!SKY.Net.authority) return;
       nextT -= dt;
       if (nextT <= 0) {

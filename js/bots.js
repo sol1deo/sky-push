@@ -48,54 +48,22 @@ window.SKY = window.SKY || {};
       // nearest safe point (static roam points + moving rides), for recovery
       this.safePoint.copy(this._nearestSafe());
 
-      // enemy: crown holder first (Crown Rush), else nearest visible
-      // (bomb mode: only the other team counts)
+      // enemy: crown holder first (Crown Rush), spark leader (Spark Rush —
+      // hunt the rich!), else nearest visible
       this.enemy = null;
-      const holder = SKY.Game.mode === 'crown' && SKY.Game.crownHolder;
-      if (holder && holder !== p && holder.alive) {
+      const holder = (SKY.Game.mode === 'crown' || SKY.Game.mode === 'spark') &&
+        SKY.Game.crownHolder;
+      if (holder && holder !== p && holder.alive && Math.random() < 0.6) {
         this.enemy = holder;
       } else {
         let bestD = B.fireRange * 1.3;
         for (const o of pawns) {
           if (o === p || !o.alive) continue;
-          if (p.team && o.team === p.team) continue;
           const d = o.pos.distanceTo(p.pos);
           if (d < bestD && SKY.World.los(_eye, o.midPos(_mid))) {
             bestD = d; this.enemy = o;
           }
         }
-      }
-
-      // bomb mode: objective-driven targets
-      if (SKY.Game.mode === 'bomb' && SKY.Game.bomb) {
-        const bb = SKY.Game.bomb;
-        const sites = SKY.World.bombSites;
-        if (bb.phase === 'live' && sites.length) {
-          if (p.team === 'atk') {
-            if (bb.planted) this.roamTarget.copy(bb.pos);
-            else if (bb.carrier === p) {
-              if (!this.mySite || Math.random() < 0.02) this.mySite = SKY.U.pick(sites);
-              this.roamTarget.copy(this.mySite.pos);
-            } else if (!bb.carrier && bb.drop) this.roamTarget.copy(bb.drop);
-            else if (bb.carrier) this.roamTarget.copy(bb.carrier.pos).x += SKY.U.rand(-4, 4);
-          } else {
-            if (bb.planted) this.roamTarget.copy(bb.pos);
-            else {
-              if (!this.mySite || this.retargetT <= 0) this.mySite = SKY.U.pick(sites);
-              this.roamTarget.copy(this.mySite.pos).x += SKY.U.rand(-3, 3);
-            }
-          }
-        }
-        this.retargetT -= B.thinkInterval;
-        if (this.retargetT <= 0) this.retargetT = SKY.U.rand(B.retargetMin, B.retargetMax);
-        // still probe cliffs below
-        this.edgeDanger = false;
-        if (p.grounded && p.speedH() > 1) {
-          const hs = p.speedH();
-          _v.set(p.pos.x + (p.vel.x / hs) * B.edgeLookahead, p.pos.y + 0.5, p.pos.z + (p.vel.z / hs) * B.edgeLookahead);
-          if (!SKY.World.raycast(_v, _down, 7)) this.edgeDanger = true;
-        }
-        return;
       }
 
       // roam retarget
@@ -104,7 +72,11 @@ window.SKY = window.SKY || {};
       if (this.retargetT <= 0 || distToTarget < 2) {
         this.retargetT = SKY.U.rand(B.retargetMin, B.retargetMax);
         const rides = SKY.World.rideSolids || [];
-        if (SKY.Game.mode === 'crown' && !SKY.Game.crownHolder && Math.random() < 0.6) {
+        const orb = SKY.Game.mode === 'spark' && Math.random() < 0.55
+          ? SKY.Sparks.nearest(p.pos) : null;
+        if (orb) {
+          this.roamTarget.copy(orb);                          // gold fever
+        } else if (SKY.Game.mode === 'crown' && !SKY.Game.crownHolder && Math.random() < 0.6) {
           this.roamTarget.copy(SKY.Game.crownPos());          // race for the crown!
         } else if (this.enemy && Math.random() < 0.45) {
           this.roamTarget.copy(this.enemy.pos);

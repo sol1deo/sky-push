@@ -12,13 +12,13 @@ SKY.HUD = (function () {
   let hitT = 0, centerT = 0, subT = 0, sbRefreshT = 0;
   let dmgT = 0, dmgMax = 1;
   let lastTier = -1, lastWeapon = '';
-  let lootKeyHandler = null, buyKeyHandler = null;
+  let lootKeyHandler = null;
 
   const api = {
     botCount: 3,
     mapSel: 'sky',
-    modeSel: 'lbs',
-    roundsSel: 2, livesSel: 3, crownSel: 25,
+    modeSel: 'spark',
+    roundsSel: 2, livesSel: 3, crownSel: 25, sparkSel: 40,
     onPlay: null, onResume: null, onQuit: null,
 
     init() {
@@ -35,8 +35,8 @@ SKY.HUD = (function () {
         loot: $('loot-ov'), lootCards: $('loot-cards'),
         ammo: $('ammo'), ammoMax: $('ammo-max'), scope: $('scope'),
         slot1: $('slot-1'), slot2: $('slot-2'),
-        nades: $('nades'), money: $('money'), actbar: $('actbar'), actfill: $('actfill'),
-        actlabel: $('actlabel'), buy: $('buy-ov'), buyBody: $('buy-body'), buyMoney: $('buy-money'),
+        nades: $('nades'), sparks: $('sparks'), sparkNum: $('spark-num'),
+        sparkFill: $('spark-fill'), lvTimer: $('lv-timer'),
         cd: { pb: $('cd-pb'), ac: $('cd-ac'), gr: $('cd-gr'), ab: $('cd-ab') },
       };
       el.chLines = el.crosshair.querySelectorAll('.l');
@@ -63,6 +63,8 @@ SKY.HUD = (function () {
       bindSel('mode-btn', 'm', v => {
         api.modeSel = v;
         $('crown-row').classList.toggle('hidden', v !== 'crown');
+        $('spark-row').classList.toggle('hidden', v !== 'spark');
+        $('rl-row').classList.toggle('hidden', v === 'spark');
       });
       // PLAY hub sub-tabs: vs bots ↔ online
       document.querySelectorAll('.play-sub').forEach(b => {
@@ -73,6 +75,7 @@ SKY.HUD = (function () {
       bindSel('rounds-btn', 'v', v => { api.roundsSel = parseInt(v, 10); });
       bindSel('lives-btn', 'v', v => { api.livesSel = parseInt(v, 10); });
       bindSel('crown-btn', 'v', v => { api.crownSel = parseInt(v, 10); });
+      bindSel('spark-btn', 'v', v => { api.sparkSel = parseInt(v, 10); });
 
       $('play-btn').addEventListener('click', () => api.onPlay && api.onPlay());
       $('resume-btn').addEventListener('click', () => api.onResume && api.onResume());
@@ -186,6 +189,8 @@ SKY.HUD = (function () {
 
     /* -------- death reward cards: click OR 1/2/3, unlimited time -------- */
     showLoot(choices, onPick) {
+      el.loot.querySelector('.loot-title').textContent = 'Choose a reward';
+      el.loot.querySelector('.loot-sub').textContent = 'click · or press 1 / 2 / 3';
       el.lootCards.innerHTML = choices.map((it, i) => {
         const d = SKY.Loot.describe(it);
         const r = SKY.Loot.RARITY[it.rarity];
@@ -227,54 +232,26 @@ SKY.HUD = (function () {
 
     scoreboard(show) { el.sb.classList.toggle('hidden', !show); },
 
-    /* -------- bomb-mode buy menu (keys buy, B toggles during freeze) -------- */
-    _buyOpen: false,
-    _buyItems: [],
-    buyMenu(on) {
-      if (on === 'toggle') on = !api._buyOpen;
-      api._buyOpen = !!on;
-      el.buy.classList.toggle('hidden', !on);
-      if (on) {
-        api.refreshBuyMenu();
-        if (!buyKeyHandler) {
-          buyKeyHandler = (e) => {
-            const m = e.code.match(/^Digit(\d)$/);
-            if (m) api.buyKey(+m[1]);
-          };
-          window.addEventListener('keydown', buyKeyHandler);
-        }
-      } else if (buyKeyHandler) {
-        window.removeEventListener('keydown', buyKeyHandler);
-        buyKeyHandler = null;
-      }
+    /* -------- SPARK RUSH level-up: same cards, but LIVE --------
+     * No pause, no cursor: the row docks low, keys 1/2/3 pick, a thin bar
+     * counts down to an auto-pick. Clicking is pointless (pointer stays
+     * locked) so cards aren't clickable here. */
+    showLevelUp(choices, level) {
+      api.showLoot(choices, (i) => SKY.Game.pickLoot(i));
+      el.loot.querySelector('.loot-title').textContent = 'LEVEL ' + level;
+      el.loot.querySelector('.loot-sub').textContent = '1 / 2 / 3 — auto-picks when the bar runs out';
+      el.loot.classList.add('quick');
+      el.lvTimer.classList.remove('hidden');
+      api.subMsg('LEVEL UP — pick with 1 / 2 / 3', 2.2);
     },
-    refreshBuyMenu() {
-      const p = SKY.Game.player;
-      if (!p) return;
-      const P = SKY.TUNING.prices;
-      const N = SKY.TUNING.grenades;
-      api._buyItems = ['smg', 'scatter', 'blaster', 'magnum', 'lobber', 'longshot', 'mega',
-                       'he', 'molly', 'vortex'];
-      el.buyMoney.textContent = '$' + p.money;
-      el.buyBody.innerHTML = api._buyItems.map((id, i) => {
-        const isNade = !!N[id];
-        const price = isNade ? N[id].price : P[id];
-        const label = isNade ? N[id].label + ' ×2' : SKY.TUNING.weapons[id].label;
-        const owned = !isNade && p.weapon === id;
-        const afford = p.money >= price;
-        return `<div class="buy-row ${owned ? 'owned' : ''} ${afford ? '' : 'poor'}" data-id="${id}">
-          <span class="keycap">${(i + 1) % 10}</span>
-          <span class="buy-name">${label}</span>
-          <span class="buy-price">${owned ? 'owned' : '$' + price}</span>
-        </div>`;
-      }).join('');
-      el.buyBody.querySelectorAll('.buy-row').forEach(row => {
-        row.onclick = () => SKY.Game.buy(row.dataset.id);
-      });
+    levelUpTimer(frac) {
+      if (!el.lvTimer._fill) el.lvTimer._fill = el.lvTimer.querySelector('div');
+      setW(el.lvTimer._fill, SKY.U.clamp01(frac) * 100);
     },
-    buyKey(digit) {   // 1..9, 0 = 10th
-      const idx = digit === 0 ? 9 : digit - 1;
-      if (api._buyOpen && api._buyItems[idx]) SKY.Game.buy(api._buyItems[idx]);
+    hideLevelUp(pickedIndex) {
+      el.lvTimer.classList.add('hidden');
+      api.hideLoot(pickedIndex);
+      setTimeout(() => el.loot.classList.remove('quick'), 430);
     },
 
     /* called every render frame */
@@ -327,73 +304,48 @@ SKY.HUD = (function () {
       } else el.nades.classList.add('hidden');
 
       // mode-specific readouts
-      setText(el.roundLabel, 'R' + G.roundNum);
-      // round pips: local player's round wins toward the match
-      const RT = G.mode === 'bomb' ? SKY.TUNING.bomb.roundsToWin : SKY.TUNING.game.roundsToWin;
-      const wins = G.mode === 'bomb'
-        ? (G.bombScore ? (p.team === 'atk' ? G.bombScore.atk : G.bombScore.def) : 0)
-        : p.roundWins;
+      setText(el.roundLabel, G.mode === 'spark' ? 'SPARK' : 'R' + G.roundNum);
+      // round pips: local player's round wins toward the match (not in spark)
       let pipsHtml = '';
-      for (let i = 0; i < RT; i++) pipsHtml += `<span class="pip${i < wins ? ' on' : ''}"></span>`;
+      if (G.mode !== 'spark') {
+        for (let i = 0; i < SKY.TUNING.game.roundsToWin; i++) {
+          pipsHtml += `<span class="pip${i < p.roundWins ? ' on' : ''}"></span>`;
+        }
+      }
       setHTML(el.pips, pipsHtml);
       // alive dots: one per player, dimmed when down/eliminated
       setHTML(el.dots, G.pawns.map(q =>
         `<span class="pdot${q.eliminated ? ' out' : q.alive ? '' : ' dead'}" style="background:${q.color};color:${q.color}"></span>`).join(''));
-      if (G.mode === 'bomb' && G.bomb) {
-        const B = G.bomb, C = SKY.TUNING.bomb;
+      if (G.mode === 'spark') {
         el.lives.classList.add('hidden');
         el.crownStatus.classList.add('hidden');
         el.alive.classList.remove('hidden');
-        setText(el.alive, 'ATK ' + (G.bombScore ? G.bombScore.atk : 0) + ' — ' +
-          (G.bombScore ? G.bombScore.def : 0) + ' DEF');
-        el.money.classList.remove('hidden');
-        setText(el.money, '$' + p.money);
-        const t = B.phase === 'freeze' ? B.t : B.planted ? B.timer : B.t;
-        setText(el.timer, (B.phase === 'freeze' ? 'BUY ' : '') +
-          Math.floor(Math.max(0, t) / 60) + ':' + String(Math.floor(Math.max(0, t) % 60)).padStart(2, '0'));
-        const tc = B.planted ? 'var(--danger)' : '';
+        const C = SKY.TUNING.spark;
+        const lead = G.crownHolder;
+        setText(el.alive, lead ? (lead.isLocal ? 'You lead' : lead.name + ' leads · ' + lead.sparks) : 'No leader yet');
+        el.sparks.classList.remove('hidden');
+        setHTML(el.sparkNum, '✦ ' + (p.sparks || 0) + ' <small>/ ' + C.target + '</small>');
+        const next = C.levels[p.sparkLevel];
+        setW(el.sparkFill, next === undefined ? 100
+          : 100 * SKY.U.clamp01((p.sparks || 0) / next));
+        // count DOWN to the buzzer
+        const left = Math.max(0, C.timeLimit - G.roundTime);
+        setText(el.timer, Math.floor(left / 60) + ':' + String(Math.floor(left % 60)).padStart(2, '0'));
+        const tc = left <= C.frenzyAt ? 'var(--danger)' : '';
         if (el.timer._c !== tc) { el.timer._c = tc; el.timer.style.color = tc; }
-        // plant / defuse progress
-        if (B.prog > 0.05 || B.dprog > 0.05) {
-          el.actbar.classList.remove('hidden');
-          const planting = B.prog > 0.05;
-          setText(el.actlabel, planting ? 'Planting' : 'Defusing');
-          setW(el.actfill, 100 * (planting ? B.prog / C.plantTime : B.dprog / C.defuseTime));
-        } else el.actbar.classList.add('hidden');
-        // carrier hint
-        if (B.carrier === p && !B.planted) {
-          el.respawn.classList.remove('hidden');
-          el.respawn.textContent = 'You carry the bomb — hold ' +
-            SKY.Settings.bindName(SKY.Settings.data.binds.interact) + ' on a site';
-        } else if (p.alive && el.respawn.textContent.startsWith('You carry')) {
-          el.respawn.classList.add('hidden');
-        }
-        sbRefreshT -= dt;
-        if (!el.sb.classList.contains('hidden') && sbRefreshT <= 0) { sbRefreshT = 0.25; api.refreshScoreboard(); }
-        // ammo/chips still below
-        const wDefB = SKY.Weapons.defOf(p);
-        if (lastWeapon !== p.weapon) {
-          lastWeapon = p.weapon;
-          el.cd.pb.querySelector('.n').textContent = wDefB.short || wDefB.label;
-        }
-        setText(el.ammo, p.reloadT > 0 ? '··' : String(p.ammo));
-        setText(el.ammoMax, '/' + Math.round(wDefB.mag * p.mods.magMult));
-        if (p.reloadT > 0) setCd(el.cd.pb, p.reloadT, wDefB.reloadTime * p.mods.cdMult);
-        else setCd(el.cd.pb, p.pbCd, wDefB.cooldown * p.mods.cdMult);
-        setCd(el.cd.ac, p.acCd, SKY.TUNING.cannon.cooldown * p.mods.cdMult);
-        setCd(el.cd.gr, p.grapple ? 1 : p.grappleCd, SKY.TUNING.grapple.cooldown * p.mods.grappleCdMult);
-        return;
+      } else {
+        el.sparks.classList.add('hidden');
       }
-      el.money.classList.add('hidden');
       if (G.mode === 'crown') {
         el.lives.classList.add('hidden');
         el.alive.classList.add('hidden');
         el.crownStatus.classList.remove('hidden');
+        el.sparks.classList.add('hidden');
         const C = SKY.TUNING.crown;
         setText(el.crownStatus, G.crownHolder
           ? 'Crown · ' + G.crownHolder.name + ' ' + Math.floor(G.crownHolder.crownTime) + '/' + C.holdToWin
           : 'Crown · free');
-      } else {
+      } else if (G.mode !== 'spark') {
         el.crownStatus.classList.add('hidden');
         el.lives.classList.remove('hidden');
         el.alive.classList.remove('hidden');
@@ -405,8 +357,10 @@ SKY.HUD = (function () {
         setText(el.alive, G.pawns.filter(q => !q.eliminated).length + ' left');
       }
 
-      const t = Math.max(0, G.roundTime);
-      setText(el.timer, Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'));
+      if (G.mode !== 'spark') {
+        const t = Math.max(0, G.roundTime);
+        setText(el.timer, Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'));
+      }
 
       // ammo + weapon chip (bar shows reload progress while reloading)
       const wDef = SKY.Weapons.defOf(p);
@@ -436,12 +390,13 @@ SKY.HUD = (function () {
       const G = SKY.Game;
       const online = SKY.Net.online;
       const rows = [...G.pawns].sort((a, b) =>
-        (b.roundWins - a.roundWins) || (b.lives - a.lives) || (b.koCount - a.koCount));
+        G.mode === 'spark' ? ((b.sparks || 0) - (a.sparks || 0)) || (b.koCount - a.koCount)
+        : (b.roundWins - a.roundWins) || (b.lives - a.lives) || (b.koCount - a.koCount));
       el.sbBody.innerHTML = rows.map(p => {
         const cls = (p.isLocal ? 'me' : '') + (p.eliminated ? ' out' : '');
         const status = p.eliminated ? 'Out' : (p.alive ? 'Alive' : 'Respawning');
-        const lives = G.mode === 'crown'
-          ? Math.floor(p.crownTime) + 's'
+        const lives = G.mode === 'spark' ? '✦' + (p.sparks || 0)
+          : G.mode === 'crown' ? Math.floor(p.crownTime) + 's'
           : '♥'.repeat(Math.max(0, p.lives));
         const ping = p.isBot ? 'bot'
           : !online ? '—'

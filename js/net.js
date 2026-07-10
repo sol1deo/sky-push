@@ -26,7 +26,7 @@ SKY.Net = (function () {
     code: null,
     isPublic: false,
     roster: [],            // [{id, name, color, bot}]
-    settings: { map: 'sky', mode: 'lbs', fillBots: true, rounds: 2, lives: 3, crown: 25 },
+    settings: { map: 'sky', mode: 'spark', fillBots: true, rounds: 2, lives: 3, crown: 25, sparks: 40 },
     inGame: false,
   };
 
@@ -373,16 +373,13 @@ SKY.Net = (function () {
         });
         setTimeout(() => { try { conn.close(); } catch (e) {} }, 800);
         break;
-      case 'buy': {   // bomb-mode purchase (host validates)
-        const pawn = SKY.Game.pawns.find(p => p.netId === conn.__id);
-        if (!pawn || SKY.Game.mode !== 'bomb' || !SKY.Game.bomb || SKY.Game.bomb.phase !== 'freeze') break;
-        const isNade = !!SKY.TUNING.grenades[m.id];
-        const price = isNade ? SKY.TUNING.grenades[m.id].price : SKY.TUNING.prices[m.id];
-        if (price === undefined || pawn.money < price) break;
-        pawn.money -= price;
-        if (isNade) pawn.nades = { type: m.id, count: (pawn.nades && pawn.nades.type === m.id ? pawn.nades.count : 0) + 2 };
-        else pawn.giveWeapon(m.id);
-        conn.send({ t: 'bought', id: m.id, isNade, money: pawn.money });
+      case 'lvpick': {   // spark-mode level-up pick (client rolled locally)
+        const pawn = SKY.Game.pawns.find(p => p.netId === m.id);
+        const item = SKY.Loot.ITEMS.find(it => it.id === m.item);
+        if (pawn && item) {
+          SKY.Loot.apply(pawn, item);
+          broadcast({ t: 'loadout', id: m.id, item: m.item }, conn.__id);
+        }
         break;
       }
       case 'pick': {
@@ -706,26 +703,8 @@ SKY.Net = (function () {
       case 'fire': onFire(m); break;
       case 'nade': onNade(m); break;
       case 'taunt': onTaunt(m); break;
-      case 'bought': {   // my bomb-mode purchase confirmed
-        const p = G.player;
-        if (!p) break;
-        p.money = m.money;
-        if (m.isNade) p.nades = { type: m.id, count: (p.nades && p.nades.type === m.id ? p.nades.count : 0) + 2 };
-        else p.giveWeapon(m.id);
-        SKY.SFX.cash();
-        if (SKY.HUD.refreshBuyMenu) SKY.HUD.refreshBuyMenu();
-        break;
-      }
-      case 'bround': {
-        SKY.Demos.archiveRound({ name: m.team === 'atk' ? 'Attackers' : 'Defenders' });
-        G.bombScore = m.score;
-        if (G.bomb) { G.bomb.phase = 'post'; G.bomb.t = 4; }
-        if (G.player) G.player.money = m.myMoney !== undefined ? m.myMoney : G.player.money;
-        SKY.HUD.centerMsg(m.team === 'atk' ? 'Attackers win' : 'Defenders win', 3, 36);
-        SKY.HUD.subMsg(m.reason + ' · ATK ' + m.score.atk + ' — ' + m.score.def + ' DEF', 4);
-        SKY.SFX.win();
-        break;
-      }
+      case 'skspawn': SKY.Sparks.spawnRemote(m.id, m.n, m.pos); break;
+      case 'sktake': SKY.Sparks.takeRemote(m.ids, m.by); break;
       case 'hitApply': {
         const me = G.player;
         if (me && me.alive) {
@@ -857,7 +836,7 @@ SKY.Net = (function () {
     const roster = api.roster.filter(r => !r.bot);
     if (api.settings.fillBots) {
       const names = ['Bloop', 'Zippy', 'Wobble', 'Gustav', 'Peanut', 'Momo', 'Taco'];
-      const target = api.settings.mode === 'bomb' ? SKY.TUNING.bomb.teamSize * 2 : 4;
+      const target = 4;
       let n = 0;
       while (roster.length < target && n < names.length) {
         roster.push({ id: 'bot' + n, name: names[n], color: COLORS[roster.length % COLORS.length], bot: true });
@@ -871,7 +850,8 @@ SKY.Net = (function () {
     const roster = buildRoster();
     api.roster = roster;
     api.inGame = true;
-    const rules = { rounds: api.settings.rounds, lives: api.settings.lives, crown: api.settings.crown };
+    const rules = { rounds: api.settings.rounds, lives: api.settings.lives,
+      crown: api.settings.crown, sparks: api.settings.sparks };
     // custom (editor) maps ride along in the start message — clients don't
     // need the map deployed anywhere, the def IS the map
     const mapDef = SKY.MapData.get(api.settings.map) || null;
@@ -897,11 +877,11 @@ SKY.Net = (function () {
     if (p.ragdoll) flags |= 4;
     if (p.crouching) flags |= 8;
     if (p.alive) flags |= 16;
-    if (p._acting) flags |= 32;   // bomb-mode plant/defuse hold
+    if (p._acting) flags |= 32;   // interact hold
     return [p.netId,
       +p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2),
       +p.vel.x.toFixed(2), +p.vel.y.toFixed(2), +p.vel.z.toFixed(2),
-      +p.yaw.toFixed(3), +p.pitch.toFixed(3), flags, p.weapon];
+      +p.yaw.toFixed(3), +p.pitch.toFixed(3), flags, p.weapon, p.sparks || 0];
   }
 
   function startPing() {
@@ -926,20 +906,16 @@ SKY.Net = (function () {
         const list = [];
         for (const p of G.pawns) {
           if (!p.isRemote) list.push(packPawn(p));
-          else if (lastStates.has(p.netId)) list.push(lastStates.get(p.netId));
+          else if (lastStates.has(p.netId)) {
+            const st = lastStates.get(p.netId).slice();
+            st[11] = p.sparks || 0;      // spark bank is HOST truth, not echo
+            list.push(st);
+          }
         }
         broadcast({
           t: 'states', list, pings,
           rt: +G.roundTime.toFixed(2), gt: +G.time.toFixed(2),
           crown: G.crownHolder ? [G.crownHolder.netId, +G.crownHolder.crownTime.toFixed(1)] : null,
-          bomb: (G.mode === 'bomb' && G.bomb) ? {
-            ph: G.bomb.phase, t: +G.bomb.t.toFixed(1),
-            planted: G.bomb.planted, timer: +G.bomb.timer.toFixed(1),
-            carrier: G.bomb.carrier ? G.bomb.carrier.netId : null,
-            pos: G.bomb.pos ? [+G.bomb.pos.x.toFixed(1), +G.bomb.pos.y.toFixed(1), +G.bomb.pos.z.toFixed(1)] : null,
-            prog: +G.bomb.prog.toFixed(2), dprog: +G.bomb.dprog.toFixed(2),
-            score: G.bombScore,
-          } : null,
         });
         // host applies client states to its own copies immediately
         applyStates({ list, rt: G.roundTime, gt: G.time, crown: null, hostSelf: true });
@@ -949,25 +925,19 @@ SKY.Net = (function () {
 
   function applyStates(m) {
     const G = SKY.Game;
+    const fromHost = api.role === 'client' && !m.hostSelf;
     for (const s of m.list) {
       const pawn = G.pawns.find(p => p.netId === s[0]);
-      if (!pawn || !pawn.isRemote) continue;
+      if (!pawn) continue;
+      if (fromHost && typeof s[11] === 'number') pawn.sparks = s[11];
+      if (!pawn.isRemote) continue;
       pawn.netTarget = {
         x: s[1], y: s[2], z: s[3], vx: s[4], vy: s[5], vz: s[6],
         yaw: s[7], pitch: s[8], flags: s[9], weapon: s[10], age: 0,
       };
     }
-    if (api.role === 'client' && !m.hostSelf) {
+    if (fromHost) {
       if (m.pings) Object.assign(pings, m.pings);
-      if (m.bomb && G.mode === 'bomb') {
-        if (!G.bomb) G.bomb = { prog: 0, dprog: 0, beepT: 0 };
-        G.bomb.phase = m.bomb.ph; G.bomb.t = m.bomb.t;
-        G.bomb.planted = m.bomb.planted; G.bomb.timer = m.bomb.timer;
-        G.bomb.carrier = m.bomb.carrier ? G.pawns.find(p => p.netId === m.bomb.carrier) : null;
-        G.bomb.pos = m.bomb.pos ? new THREE.Vector3(m.bomb.pos[0], m.bomb.pos[1], m.bomb.pos[2]) : null;
-        G.bomb.prog = m.bomb.prog; G.bomb.dprog = m.bomb.dprog;
-        G.bombScore = m.bomb.score;
-      }
       G.roundTime = m.rt;
       G.time += (m.gt - G.time) * 0.1;   // ease clocks together (movers sync)
       if (m.crown) {
@@ -1037,7 +1007,7 @@ SKY.Net = (function () {
       </div>`).join('');
     const isHost = api.role === 'host';
     document.querySelectorAll('#mp-lobby .lmap-btn, #mp-lobby .lmode-btn, #mp-lobby .lrounds-btn, ' +
-      '#mp-lobby .llives-btn, #mp-lobby .lcrown-btn, #lobby-bots, #lobby-start')
+      '#mp-lobby .llives-btn, #mp-lobby .lcrown-btn, #mp-lobby .lsparks-btn, #lobby-bots, #lobby-start')
       .forEach(el => { el.disabled = !isHost; el.classList.toggle('locked', !isHost); });
     document.querySelectorAll('#mp-lobby .lmap-btn').forEach(b =>
       b.classList.toggle('sel', b.dataset.m === api.settings.map));
@@ -1049,6 +1019,8 @@ SKY.Net = (function () {
       b.classList.toggle('sel', +b.dataset.v === (api.settings.lives || 3)));
     document.querySelectorAll('#mp-lobby .lcrown-btn').forEach(b =>
       b.classList.toggle('sel', +b.dataset.v === (api.settings.crown || 25)));
+    document.querySelectorAll('#mp-lobby .lsparks-btn').forEach(b =>
+      b.classList.toggle('sel', +b.dataset.v === (api.settings.sparks || 40)));
     $('lobby-bots').checked = api.settings.fillBots;
     $('lobby-start').textContent = isHost ? 'START GAME' : 'waiting for host…';
   }
@@ -1151,6 +1123,9 @@ SKY.Net = (function () {
     document.querySelectorAll('#mp-lobby .lcrown-btn').forEach(b => {
       b.onclick = () => { if (api.role === 'host') hostSetSettings({ crown: +b.dataset.v }); };
     });
+    document.querySelectorAll('#mp-lobby .lsparks-btn').forEach(b => {
+      b.onclick = () => { if (api.role === 'host') hostSetSettings({ sparks: +b.dataset.v }); };
+    });
     document.querySelectorAll('#mp-lobby .lmode-btn').forEach(b => {
       b.onclick = () => { if (api.role === 'host') hostSetSettings({ mode: b.dataset.m }); };
     });
@@ -1188,13 +1163,11 @@ SKY.Net = (function () {
     /* hooks used by game/weapons */
     sendFire(data) { if (api.online) send({ t: 'fire', ...data }); },
     sendNade(data) { if (api.online) send({ t: 'nade', ...data }); },
-    sendBuy(id) { if (api.online && api.role === 'client') send({ t: 'buy', id }); },
-    hostBombRound(team, reason, score) {
-      for (const [id, c] of conns) {
-        const pawn = SKY.Game.pawns.find(p => p.netId === id);
-        c.send({ t: 'bround', team, reason, score, myMoney: pawn ? pawn.money : 0 });
-      }
+    sendLevelPick(item) {
+      if (api.online && api.role === 'client') send({ t: 'lvpick', id: api.myId, item: item.id });
     },
+    sendSparkSpawn(d) { if (api.role === 'host') broadcast({ t: 'skspawn', ...d }); },
+    sendSparkTake(ids, by) { if (api.role === 'host') broadcast({ t: 'sktake', ids, by }); },
 
     /* ---------- server browser: probe the public slots ----------
      * v2: ALL slots on ALL signaling servers probed in PARALLEL (lobbies are
@@ -1262,7 +1235,7 @@ SKY.Net = (function () {
         t: 'ko', id: pawn.netId, lives: pawn.lives, elim: pawn.eliminated, line,
         killer: killer ? killer.netId : null, killerKos: killer ? killer.koCount : 0,
       });
-      if (pawn.isRemote && !pawn.eliminated) {
+      if (SKY.Game.mode !== 'spark' && pawn.isRemote && !pawn.eliminated) {
         const choices = SKY.Loot.roll(pawn).map(it => it.id);
         lootSeq++;
         pendingLoot.set(pawn.netId, { choices, seq: lootSeq, at: performance.now() });

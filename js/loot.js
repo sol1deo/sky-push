@@ -117,10 +117,12 @@ SKY.Loot = (function () {
     });
   }
 
-  /* roll 3 distinct choices, rarity-weighted by pawn.deaths */
-  function roll(pawn) {
+  /* roll 3 distinct choices, rarity-weighted by pawn.deaths — or by an
+     explicit tier (SPARK RUSH level number: higher level, rarer stuff) */
+  function roll(pawn, tier) {
     const table = SKY.TUNING.loot.weightsByDeath;
-    const w = table[Math.min(Math.max(pawn.deaths, 1), table.length) - 1];
+    const t = tier !== undefined ? tier : pawn.deaths;
+    const w = table[Math.min(Math.max(t, 1), table.length) - 1];
     const weightOf = { common: w[0], rare: w[1], epic: w[2] };
     const pool = candidates(pawn);
     const picks = [];
@@ -154,8 +156,8 @@ SKY.Loot = (function () {
   }
 
   /* bots: roll and auto-pick (weapons preferred slightly, else random) */
-  function autoPick(pawn) {
-    const picks = roll(pawn);
+  function autoPick(pawn, tier) {
+    const picks = roll(pawn, tier);
     if (!picks.length) return;
     apply(pawn, SKY.U.pick(picks));
   }

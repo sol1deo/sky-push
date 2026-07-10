@@ -63,6 +63,7 @@ SKY.Game = (function () {
         SKY.SFX.init();
         api.startMatch(SKY.HUD.botCount, SKY.HUD.mapSel, SKY.HUD.modeSel, {
           rounds: SKY.HUD.roundsSel, lives: SKY.HUD.livesSel, crown: SKY.HUD.crownSel,
+          sparks: SKY.HUD.sparkSel,
         });
         SKY.Input.requestLock();
       };
@@ -96,12 +97,11 @@ SKY.Game = (function () {
     /* match rules chosen in the menu / lobby (rounds & points to win) */
     applyRules(rules, mode) {
       if (!rules) return;
-      if (rules.rounds) {
-        SKY.TUNING.game.roundsToWin = rules.rounds;
-        if (mode === 'bomb') SKY.TUNING.bomb.roundsToWin = rules.rounds;
-      }
+      if (rules.rounds) SKY.TUNING.game.roundsToWin = rules.rounds;
+      if (mode === 'spark') SKY.TUNING.game.roundsToWin = 1;   // one long round
       if (rules.lives) SKY.TUNING.game.lives = rules.lives;
       if (rules.crown) SKY.TUNING.crown.holdToWin = rules.crown;
+      if (rules.sparks) SKY.TUNING.spark.target = rules.sparks;
     },
 
     /* ---------------- match / round setup ---------------- */
@@ -112,41 +112,18 @@ SKY.Game = (function () {
       SKY.Weapons.clear(); SKY.Grenades.clear();
       api.mode = mode || 'lbs';
       this.applyRules(rules, api.mode);
-      if (api.mode === 'bomb') mapId = 'terminal';   // the bomb map
       SKY.Map.load(scene, mapId || 'sky');
 
       const myName = (SKY.Settings.data.nickname || '').trim() || 'YOU';
-      if (api.mode === 'bomb') {
-        const TS = SKY.TUNING.bomb.teamSize;
-        const AC = ['#ff9a5a', '#ff6a4a', '#ffb84a', '#e8543a', '#ff8a7a', '#d8742a'];
-        const DC = ['#5ab4ff', '#4a86e8', '#6ad8e8', '#3a66c8', '#8ab4ff', '#2a9ad8'];
-        const names = ['Bloop', 'Zippy', 'Wobble', 'Gustav', 'Peanut', 'Momo', 'Taco', 'Pickle'];
-        let ni = 0;
-        const mk = (name, color, team, isLocal) => {
-          const p = new SKY.Pawn({ name, color, isLocal });
-          p.team = team;
-          p.isBot = !isLocal;
-          p.money = SKY.TUNING.bomb.startMoney;
-          p.buildVisual(scene);
-          api.pawns.push(p);
-          if (isLocal) api.player = p;
-          else api.bots.push(new SKY.Bot(p));
-        };
-        mk(myName, AC[0], 'atk', true);
-        for (let i = 1; i < TS; i++) mk(names[ni], AC[i], 'atk', false), ni++;
-        for (let i = 0; i < TS; i++) mk(names[ni], DC[i], 'def', false), ni++;
-        api.bombScore = { atk: 0, def: 0 };
-      } else {
-        api.player = new SKY.Pawn({ name: myName, color: '#ffd34d', isLocal: true });
-        api.player.buildVisual(scene);
-        api.pawns.push(api.player);
-        for (let i = 0; i < SKY.U.clamp(nBots, 1, 5); i++) {
-          const p = new SKY.Pawn({ name: BOT_ROSTER[i][0], color: BOT_ROSTER[i][1] });
-          p.isBot = true;
-          p.buildVisual(scene);
-          api.pawns.push(p);
-          api.bots.push(new SKY.Bot(p));
-        }
+      api.player = new SKY.Pawn({ name: myName, color: '#ffd34d', isLocal: true });
+      api.player.buildVisual(scene);
+      api.pawns.push(api.player);
+      for (let i = 0; i < SKY.U.clamp(nBots, 1, 5); i++) {
+        const p = new SKY.Pawn({ name: BOT_ROSTER[i][0], color: BOT_ROSTER[i][1] });
+        p.isBot = true;
+        p.buildVisual(scene);
+        api.pawns.push(p);
+        api.bots.push(new SKY.Bot(p));
       }
       this._finishMatchSetup();
     },
@@ -161,31 +138,23 @@ SKY.Game = (function () {
       SKY.Map.load(scene, cfg.mapId || 'sky');
 
       const amHost = SKY.Net.role === 'host';
-      const AC = ['#ff9a5a', '#ff6a4a', '#ffb84a', '#e8543a', '#ff8a7a', '#d8742a'];
-      const DC = ['#5ab4ff', '#4a86e8', '#6ad8e8', '#3a66c8', '#8ab4ff', '#2a9ad8'];
-      let ai = 0, di = 0;
-      cfg.roster.forEach((r, idx) => {
+      cfg.roster.forEach((r) => {
         const isLocal = r.id === cfg.myId;
-        const team = api.mode === 'bomb' ? (idx % 2 === 0 ? 'atk' : 'def') : null;
-        const color = team ? (team === 'atk' ? AC[ai++ % AC.length] : DC[di++ % DC.length]) : r.color;
-        const p = new SKY.Pawn({ name: r.name, color, isLocal });
+        const p = new SKY.Pawn({ name: r.name, color: r.color, isLocal });
         p.netId = r.id;
         p.isBot = !!r.bot;
         p.isRemote = !isLocal && !(amHost && r.bot);   // host simulates bots
-        p.team = team;
-        if (api.mode === 'bomb') p.money = SKY.TUNING.bomb.startMoney;
         p.buildVisual(scene);
         api.pawns.push(p);
         if (isLocal) api.player = p;
         if (amHost && r.bot) api.bots.push(new SKY.Bot(p));
       });
-      if (api.mode === 'bomb') api.bombScore = { atk: 0, def: 0 };
       this._finishMatchSetup();
     },
 
     _finishMatchSetup() {
       if (crownMesh) { scene.remove(crownMesh); crownMesh = null; }
-      if (api.mode === 'crown') crownMesh = buildCrownMesh();
+      if (api.mode === 'crown' || api.mode === 'spark') crownMesh = buildCrownMesh();
       api.roundNum = 0;
       SKY.HUD.hideMenu();
       api.startRound(true);
@@ -199,9 +168,10 @@ SKY.Game = (function () {
     },
 
     startRound(fromMenu) {
-      if (api.mode === 'bomb') { this.startBombRound(fromMenu); return; }
       SKY.Replay.wipe();                          // fresh clip buffer per round
       SKY.Pickups.clear();
+      SKY.Sparks.clear();
+      api.sparkFrenzy = false; api.lootT = undefined;
       SKY.Map.resetRound();                       // rebuild if overtime crumbled it
       api.overtime = false;
       api.roundNum++;
@@ -214,6 +184,7 @@ SKY.Game = (function () {
         SKY.Grapple.release(p); p.grappleCd = 0; p.pbCd = 0; p.acCd = 0; p.dashCd = 0;
         p.tauntT = 0; p.zoomed = false;
         p.weapon = 'pistol'; p.deaths = 0;
+        p.sparks = 0; p.sparkLevel = 0;
         p.slots = { 1: null, 2: 'pistol' };
         p.slotAmmo = { 1: 0, 2: SKY.TUNING.weapons.pistol.mag };
         p.activeSlot = 2; p.drawT = 0;
@@ -236,7 +207,9 @@ SKY.Game = (function () {
       api.countdownT = SKY.TUNING.game.countdown + 0.99;
       lastCdNum = -1;
       SKY.HUD.showRespawn(null);
-      SKY.HUD.subMsg('Round ' + api.roundNum + ' — first to ' + SKY.TUNING.game.roundsToWin + ' wins', 2.5);
+      SKY.HUD.subMsg(api.mode === 'spark'
+        ? 'First to ' + SKY.TUNING.spark.target + ' sparks — KOs drop the goods'
+        : 'Round ' + api.roundNum + ' — first to ' + SKY.TUNING.game.roundsToWin + ' wins', 2.5);
       // returning from an unlocked state (e.g. reward picker was open):
       // offline re-pauses; online just shows the overlay (match keeps running)
       if (!fromMenu && !SKY.Input.locked) {
@@ -245,229 +218,72 @@ SKY.Game = (function () {
       }
     },
 
-    /* ---------------- BOMB mode ---------------- */
-    startBombRound() {
-      const C = SKY.TUNING.bomb;
-      SKY.Replay.wipe();
-      SKY.Pickups.clear();
-      api.roundNum++;
-      SKY.Weapons.clear(); SKY.Grenades.clear();
-      const atkS = SKY.World.teamSpawns.atk, defS = SKY.World.teamSpawns.def;
-      let ai = 0, di = 0;
-      const atkAlive = [];
+    /* ---------------- SPARK RUSH ----------------
+     * One long round. KOs burst into spark orbs; hoover them to score AND
+     * level up live (pick 1 of 3 without pausing). Dying scatters part of
+     * your bank where you last stood. First to the target — or richest at
+     * the buzzer — wins. The leader wears the crown so everyone knows who
+     * to hunt.
+     * -------------------------------------------- */
+    tickSpark(dt) {
+      const C = SKY.TUNING.spark;
+      SKY.Sparks.tick(dt);
+
+      // the crown marks the leader (display only — can't be grabbed)
+      let leader = null;
       for (const p of api.pawns) {
-        p.alive = true; p.eliminated = false; p.deadT = 0;
-        p.lastHitBy = null; p.lastHitT = -99;
-        SKY.Grapple.release(p); p.grappleCd = 0; p.pbCd = 0; p.acCd = 0; p.dashCd = 0;
-        p.tauntT = 0; p.zoomed = false;
-        if (!p._survived) {
-          p.weapon = 'pistol'; p.nades = { type: 'he', count: 0 };
-          p.slots = { 1: null, 2: 'pistol' };
-          p.slotAmmo = { 1: 0, 2: SKY.TUNING.weapons.pistol.mag };
-          p.activeSlot = 2; p.drawT = 0;
-        }
-        const s = p.team === 'atk' ? atkS[ai++ % atkS.length] : defS[di++ % defS.length];
-        p.teleport(s.pos, s.yaw);
-        p.visualTick(0.016);
-        if (p.team === 'atk') atkAlive.push(p);
+        if ((p.sparks || 0) > (leader ? leader.sparks : 0)) leader = p;
       }
-      api.bomb = {
-        phase: 'freeze', t: C.freezeTime,
-        planted: false, timer: 0, pos: null, drop: null,
-        carrier: SKY.Net.authority ? SKY.U.pick(atkAlive) : null,
-        prog: 0, dprog: 0, beepT: 0,
-      };
-      api.lootChoices = null; api.lootOpen = false;
-      SKY.HUD.hideLoot();
-      SKY.Effects.ensureWeapon(api.player ? api.player.weapon : 'pistol');
-      api.winner = null;
-      api.roundTime = 0;
-      api.state = 'playing';
-      SKY.HUD.showRespawn(null);
-      SKY.HUD.centerMsg('Buy phase', 1.6, 30);
-      SKY.HUD.subMsg('Round ' + api.roundNum + ' · ATK ' + api.bombScore.atk + ' — ' + api.bombScore.def + ' DEF', 3);
-      if (SKY.HUD.buyMenu) SKY.HUD.buyMenu(true);
-      // bots go shopping
-      if (SKY.Net.authority) for (const p of api.pawns) if (p.isBot && !p.isRemote) this.botBuy(p);
-      if (api.bomb.carrier && api.bomb.carrier.isLocal) SKY.HUD.subMsg('You carry the bomb — plant at A or B', 4);
-    },
+      api.crownHolder = leader && leader.sparks > 0 ? leader : null;
 
-    botBuy(p) {
-      const P = SKY.TUNING.prices;
-      const pickW = p.money >= P.mega + 500 && Math.random() < 0.4 ? 'mega'
-        : p.money >= P.longshot + 400 && Math.random() < 0.25 ? 'longshot'
-        : p.money >= P.blaster + 400 ? 'blaster'
-        : p.money >= P.magnum + 300 && Math.random() < 0.4 ? 'magnum'
-        : p.money >= P.smg + 300 ? 'smg' : null;
-      if (pickW) { p.money -= P[pickW]; p.weapon = pickW; p.ammo = SKY.TUNING.weapons[pickW].mag; }
-      if (p.money >= 400) { p.money -= 300; p.nades = { type: 'he', count: 2 }; }
-    },
-
-    buy(id) {
-      const p = api.player;
-      if (api.mode !== 'bomb' || !api.bomb || api.bomb.phase !== 'freeze' || !p) return;
-      if (SKY.Net.online && SKY.Net.role === 'client') { SKY.Net.sendBuy(id); return; }
-      const isNade = !!SKY.TUNING.grenades[id];
-      const price = isNade ? SKY.TUNING.grenades[id].price : SKY.TUNING.prices[id];
-      if (price === undefined) return;
-      if (p.money < price) { SKY.SFX.dry(); return; }
-      p.money -= price;
-      SKY.SFX.cash();
-      if (isNade) {
-        p.nades = { type: id, count: (p.nades && p.nades.type === id ? p.nades.count : 0) + 2 };
-      } else {
-        p.giveWeapon(id);
-      }
-      if (SKY.HUD.refreshBuyMenu) SKY.HUD.refreshBuyMenu();
-    },
-
-    tickBomb(dt) {
-      const B = api.bomb, C = SKY.TUNING.bomb;
-      if (!B || !SKY.Net.authority) return;
-      const atkAlive = api.pawns.filter(p => p.team === 'atk' && p.alive);
-      const defAlive = api.pawns.filter(p => p.team === 'def' && p.alive);
-
-      if (B.phase === 'freeze') {
-        B.t -= dt;
-        if (B.t <= 0) {
-          B.phase = 'live'; B.t = C.roundTime;
-          SKY.HUD.centerMsg('GO', 0.8, 64);
-          SKY.SFX.go();
-          if (SKY.HUD.buyMenu) SKY.HUD.buyMenu(false);
-        }
-        return;
-      }
-      if (B.phase === 'post') {
-        B.t -= dt;
-        if (B.t <= 0) {
-          if (api.bombScore.atk >= C.roundsToWin || api.bombScore.def >= C.roundsToWin) {
-            api.state = 'matchend';
-            api.restartT = 10;
-            const t = api.bombScore.atk >= C.roundsToWin ? 'Attackers' : 'Defenders';
-            SKY.HUD.centerMsg(t + ' win the match', 8, 36);
-          } else {
-            if (SKY.Net.online) SKY.Net.hostNewRound();
-            this.startBombRound();
-          }
-        }
-        return;
-      }
-
-      /* ---- live ---- */
-      if (!B.planted) {
-        B.t -= dt;
-        if (B.t <= 0) return this.endBombRound('def', 'Time ran out');
-      } else {
-        B.timer -= dt;
-        B.beepT -= dt;
-        if (B.beepT <= 0) { SKY.SFX.beep(); B.beepT = Math.max(0.14, B.timer / 14); }
-        if (B.timer <= 0) {
-          // BOOM — yeet everything near the site
-          const mid = new THREE.Vector3();
-          for (const p of api.pawns) {
-            if (!p.alive) continue;
-            p.midPos(mid);
-            const d = mid.distanceTo(B.pos);
-            if (d > C.blastRadius) continue;
-            const k = 1 - (d / C.blastRadius) * 0.5;
-            const imp = mid.clone().sub(B.pos).normalize().multiplyScalar(C.blastForce * k);
-            imp.y += 14 * k;
-            if (p.isRemote) SKY.Net.sendHit(p.netId, [imp.x, imp.y, imp.z], false);
-            else { p.applyKnockback(imp, null); p.enterRagdoll('air', imp); }
-          }
-          for (let i = 0; i < 4; i++) {
-            SKY.Effects.burst(B.pos, { count: 24, speed: 10 + i * 4, color: i % 2 ? '#ffb06a' : '#ff6a3a', life: 0.8, size: 0.9 });
-          }
-          SKY.Effects.ring(B.pos.clone(), '#ffb06a', C.blastRadius * 1.6, 0.6);
-          SKY.SFX.boom(); SKY.Effects.shake(2);
-          return this.endBombRound('atk', 'The bomb detonated');
+      // level-ups: MY pawn crossing a threshold deals 3 live cards
+      const me = api.player;
+      if (me) {
+        while (me.sparkLevel < C.levels.length && (me.sparks || 0) >= C.levels[me.sparkLevel]) {
+          me.sparkLevel++;
+          api.lootChoices = SKY.Loot.roll(me, me.sparkLevel);
+          api.lootOpen = false;                   // no cursor — keys 1/2/3 only
+          api.lootT = C.pickTime;
+          SKY.HUD.showLevelUp(api.lootChoices, me.sparkLevel);
+          SKY.SFX.crown();
         }
       }
+      if (api.lootChoices && api.lootT !== undefined) {
+        api.lootT -= dt;
+        SKY.HUD.levelUpTimer(api.lootT / C.pickTime);
+        if (api.lootT <= 0) this.pickLoot((Math.random() * api.lootChoices.length) | 0);
+      }
 
-      // carrier died -> bomb resets to attacker spawn; nearest attacker picks up
-      if (!B.planted) {
-        if (B.carrier && !B.carrier.alive) {
-          B.carrier = null;
-          B.drop = new THREE.Vector3(0, 0.3, 24);
-          SKY.HUD.killFeed('Bomb reset to attacker side');
-        }
-        if (!B.carrier && B.drop) {
-          for (const p of atkAlive) {
-            if (p.pos.distanceTo(B.drop) < 2.5) {
-              B.carrier = p; B.drop = null;
-              SKY.HUD.killFeed('<b>' + p.name + '</b> has the bomb');
-              break;
-            }
+      // host-simulated bots level up too (auto-pick)
+      if (SKY.Net.authority) {
+        for (const p of api.pawns) {
+          if (p.isLocal || p.isRemote) continue;
+          while (p.sparkLevel < C.levels.length && (p.sparks || 0) >= C.levels[p.sparkLevel]) {
+            p.sparkLevel++;
+            SKY.Loot.autoPick(p, p.sparkLevel);
           }
         }
       }
 
-      // planting
-      if (!B.planted && B.carrier && B.carrier.alive && B.carrier.grounded) {
-        const site = SKY.World.bombSites.find(s =>
-          Math.hypot(B.carrier.pos.x - s.pos.x, B.carrier.pos.z - s.pos.z) < s.r);
-        const holding = site && (B.carrier.isLocal
-          ? SKY.Input.action('interact')
-          : B.carrier.isRemote ? B.carrier._acting
-          : !api.pawns.some(e => e.team === 'def' && e.alive && e.pos.distanceTo(B.carrier.pos) < 12));
-        if (holding) {
-          B.prog += dt;
-          if (B.prog >= C.plantTime) {
-            B.planted = true;
-            B.pos = B.carrier.pos.clone().add(new THREE.Vector3(0, 0.2, 0));
-            B.timer = C.bombTimer;
-            B.carrier.money += C.plantMoney;
-            B.carrier = null; B.prog = 0;
-            SKY.HUD.killFeed('The bomb has been planted');
-            SKY.HUD.subMsg('Bomb planted — ' + Math.round(C.bombTimer) + 's', 2.5);
-            SKY.SFX.beep();
-          }
-        } else B.prog = Math.max(0, B.prog - dt * 2);
-      } else if (!B.planted) B.prog = Math.max(0, B.prog - dt * 2);
+      if (!SKY.Net.authority) return;
 
-      // defusing
-      if (B.planted) {
-        let defuser = null;
-        for (const p of defAlive) {
-          if (p.pos.distanceTo(B.pos) < 2.4 && p.grounded) { defuser = p; break; }
-        }
-        const holding = defuser && (defuser.isLocal
-          ? SKY.Input.action('interact')
-          : defuser.isRemote ? defuser._acting
-          : !atkAlive.some(e => e.pos.distanceTo(defuser.pos) < 10));
-        if (holding) {
-          B.dprog += dt;
-          if (B.dprog >= C.defuseTime) return this.endBombRound('def', 'Bomb defused');
-        } else B.dprog = Math.max(0, B.dprog - dt * 2);
+      // frenzy: the final stretch mints double
+      if (!api.sparkFrenzy && C.timeLimit - api.roundTime <= C.frenzyAt) {
+        api.sparkFrenzy = true;
+        SKY.HUD.centerMsg('FRENZY — double sparks', 2.2, 40);
+        SKY.SFX.overtime();
       }
-
-      // team wipes (planted attackers-wipe still lets the bomb cook)
-      if (!B.planted) {
-        if (atkAlive.length === 0) return this.endBombRound('def', 'Attackers eliminated');
-        if (defAlive.length === 0) return this.endBombRound('atk', 'Defenders eliminated');
-      }
-    },
-
-    endBombRound(team, reason) {
-      const B = api.bomb, C = SKY.TUNING.bomb;
-      if (!B || B.phase === 'post') return;
-      SKY.Demos.archiveRound({ name: team === 'atk' ? 'Attackers' : 'Defenders' });
-      B.phase = 'post'; B.t = 4;
-      api.bombScore[team]++;
-      for (const p of api.pawns) {
-        p.money = Math.min(16000, p.money + (p.team === team ? C.winMoney : C.lossMoney));
-        p._survived = p.alive;
-      }
-      SKY.HUD.centerMsg(team === 'atk' ? 'Attackers win' : 'Defenders win', 3, 36);
-      SKY.HUD.subMsg(reason + ' · ATK ' + api.bombScore.atk + ' — ' + api.bombScore.def + ' DEF', 4);
-      SKY.SFX.win();
-      if (SKY.Net.online) SKY.Net.hostBombRound(team, reason, api.bombScore);
+      // win: banked the target, or richest at the buzzer
+      const rich = api.pawns.slice().sort((x, y) => (y.sparks || 0) - (x.sparks || 0))[0];
+      if (rich && (rich.sparks || 0) >= C.target) return this.endRound(rich);
+      if (api.roundTime >= C.timeLimit) return this.endRound(rich && rich.sparks > 0 ? rich : null);
     },
 
     toMenu() {
       if (SKY.Replay.active) SKY.Replay.close();
       SKY.Replay.wipe();
       SKY.Pickups.clear();
+      SKY.Sparks.clear();
       for (const p of api.pawns) p.dispose();
       api.pawns = []; api.bots = []; api.player = null;
       SKY.Weapons.clear();
@@ -489,10 +305,12 @@ SKY.Game = (function () {
       const item = api.lootChoices[i];
       SKY.Loot.apply(api.player, item);
       if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostLoadoutFromLocalPick(item);
+      else if (SKY.Net.online && api.mode === 'spark') SKY.Net.sendLevelPick(item);
       api.lootChoices = null;
       api.lootOpen = false;
-      SKY.HUD.hideLoot(i);
-      SKY.Input.requestLock();
+      api.lootT = undefined;
+      if (api.mode === 'spark') SKY.HUD.hideLevelUp(i);
+      else { SKY.HUD.hideLoot(i); SKY.Input.requestLock(); }
     },
 
     /* ---------------- fixed-rate physics tick ---------------- */
@@ -543,15 +361,11 @@ SKY.Game = (function () {
       }
 
       /* ================= state: playing ================= */
-      if (api.mode === 'bomb') {
-        api.roundTime = (api.bomb && api.bomb.phase !== 'freeze') ? api.roundTime + dt : 0;
-        this.tickBomb(dt);
-      } else {
-        api.roundTime += dt;
-      }
+      api.roundTime += dt;
+      if (api.mode === 'spark') this.tickSpark(dt);
 
-      // OVERTIME: arena starts working against you (host decides; not in bomb)
-      if (SKY.Net.authority && api.mode !== 'bomb' && !api.overtime &&
+      // OVERTIME: arena starts working against you (host decides; not in spark)
+      if (SKY.Net.authority && api.mode !== 'spark' && !api.overtime &&
           api.roundTime > SKY.TUNING.game.overtimeStart) {
         api.overtime = true;
         SKY.Map.startOvertime();
@@ -570,14 +384,6 @@ SKY.Game = (function () {
 
       this.buildPlayerCmd();
       for (const b of api.bots) b.tick(dt, api.pawns, api.time);
-
-      // bomb buy phase: everyone stands still
-      if (api.mode === 'bomb' && api.bomb && api.bomb.phase === 'freeze') {
-        for (const p of api.pawns) {
-          p.cmd.mx = 0; p.cmd.mz = 0;
-          p.cmd.jumpHeld = false; p.cmd.jumpPressed = false;
-        }
-      }
 
       for (const p of api.pawns) {
         if (!p.alive) continue;
@@ -605,11 +411,12 @@ SKY.Game = (function () {
       if (SKY.Net.authority) {
         for (const p of api.pawns) {
           if (p.alive && p.pos.y < SKY.World.killY) this.handleKO(p);
-          if (api.mode === 'bomb') continue;   // no respawns mid-round in bomb
           if (!p.alive && !p.eliminated) {
             p.deadT -= dt;
-            const waiting = (p.isLocal && api.lootChoices) ||
-                            (SKY.Net.online && p.isRemote && SKY.Net.hostWaitingLoot(p));
+            // spark mode never blocks respawns on card picks (they're live)
+            const waiting = api.mode !== 'spark' &&
+                            ((p.isLocal && api.lootChoices) ||
+                             (SKY.Net.online && p.isRemote && SKY.Net.hostWaitingLoot(p)));
             if (p.isLocal) {
               SKY.HUD.showRespawn(waiting
                 ? 'Pick a reward to respawn'
@@ -669,8 +476,8 @@ SKY.Game = (function () {
       p._acting = In.action('interact');
 
       // weapon slots: 1 = pickup, 2 = pistol; wheel = quick swap.
-      // (blocked while the reward cards or the buy menu own the number keys)
-      if (!api.lootChoices && !SKY.HUD._buyOpen) {
+      // (blocked while reward / level-up cards own the number keys)
+      if (!api.lootChoices) {
         if (In.consumePressed('Digit1')) p.switchSlot(1);
         if (In.consumePressed('Digit2')) p.switchSlot(2);
         const wd = In.takeWheel();
@@ -684,10 +491,6 @@ SKY.Game = (function () {
       if (In.actionPressed('cannon')) SKY.Weapons.tryFireAirCannon(p, api.pawns);
       if (In.actionPressed('grapple')) SKY.Grapple.tryFire(p);
       if (In.actionPressed('grenade')) SKY.Grenades.throwNade(p);
-      if (In.actionPressed('buymenu') && api.mode === 'bomb' && api.bomb &&
-          api.bomb.phase === 'freeze' && SKY.HUD.buyMenu) {
-        SKY.HUD.buyMenu('toggle');
-      }
       if (In.actionPressed('dash')) p.tryDash();
       if (In.actionPressed('taunt') && p.tryTaunt()) SKY.Net.sendTaunt();
       if (In.actionPressed('reload')) SKY.Weapons.tryReload(p);
@@ -721,7 +524,7 @@ SKY.Game = (function () {
     /* ---------------- KOs, respawns, winning ---------------- */
     handleKO(pawn) {
       pawn.deaths++;
-      if (api.mode !== 'crown' && api.mode !== 'bomb') pawn.lives--;
+      if (api.mode !== 'crown' && api.mode !== 'spark') pawn.lives--;
       pawn.alive = false;
       SKY.Grapple.release(pawn);
       SKY.Effects.koBurst(_v.set(pawn.pos.x, SKY.World.killY + 3, pawn.pos.z).clone(), pawn.color);
@@ -742,14 +545,17 @@ SKY.Game = (function () {
         killer.tryTaunt();
       }
 
-      if (api.mode === 'bomb') {
-        // out for the round; killer earns
-        pawn.eliminated = true;
-        if (killer && killer.team !== pawn.team) {
-          killer.money = Math.min(16000, killer.money + SKY.TUNING.bomb.killMoney);
-          if (killer.isLocal) SKY.SFX.cash();
-        }
-        if (pawn.isLocal) SKY.HUD.showRespawn('Out for the round — spectating');
+      if (api.mode === 'spark') {
+        // the piñata moment: part of the bank + a KO bonus scatters where
+        // the victim last stood — chase the gold, mind the ledge
+        const C = SKY.TUNING.spark;
+        pawn.deadT = C.respawnDelay;
+        const drop = Math.floor((pawn.sparks || 0) * C.dropFrac);
+        pawn.sparks = (pawn.sparks || 0) - drop;
+        const mint = Math.min(14, drop + C.koMint * (api.sparkFrenzy ? 2 : 1));
+        const at = pawn.lastGroundPos || SKY.World.roamPoints[0] || pawn.pos;
+        SKY.Sparks.mint(mint, at);
+        if (pawn.isLocal) SKY.HUD.showRespawn('Respawning…');
         if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer);
         return;
       }
@@ -833,15 +639,17 @@ SKY.Game = (function () {
       SKY.Map.tick(rdt, api.time);
       SKY.Effects.tick(rdt);
       SKY.Pickups.visualTick(rdt);
+      SKY.Sparks.visualTick(rdt);
       SKY.Attract.tick(rdt);    // slow-mo menu show (self-gates on state)
 
-      // crown prop
-      if (crownMesh && api.mode === 'crown') {
+      // crown prop (crown rush: the objective; spark rush: marks the leader)
+      if (crownMesh && (api.mode === 'crown' || api.mode === 'spark')) {
         crownSpin += rdt * 2;
         const cp = api.crownPos();
         crownMesh.position.set(cp.x, cp.y + Math.sin(crownSpin * 1.4) * 0.12, cp.z);
         crownMesh.rotation.y = crownSpin;
-        crownMesh.visible = api.state === 'playing' || api.state === 'countdown';
+        crownMesh.visible = (api.state === 'playing' || api.state === 'countdown') &&
+          (api.mode !== 'spark' || !!api.crownHolder);
       }
 
       const p = api.player;

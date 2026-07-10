@@ -1038,8 +1038,7 @@ SKY.Map = (function () {
   }
 
   /* ============================================================
-   * MAP 7: TERMINAL — big cargo-port arena built for BOMB mode
-   * (also playable in party modes). Two sites, a catwalk spine,
+   * MAP 7: TERMINAL — big cargo-port arena. A catwalk spine,
    * container cover, and open edges everywhere.
    * ============================================================ */
   function buildTerminal() {
@@ -1102,26 +1101,9 @@ SKY.Map = (function () {
     jumpPad(-22, 0, 8, new THREE.Vector3(4, 15, -4), 0xe8c85a);
     jumpPad(22, 0, -8, new THREE.Vector3(-4, 15, 4), 0xe8c85a);
 
-    // bomb sites + spawns
-    SKY.World.bombSites = [
-      { name: 'A', pos: new THREE.Vector3(-26, 1.3, -8), r: 4 },
-      { name: 'B', pos: new THREE.Vector3(26, 0.3, 6), r: 4 },
-    ];
-    for (const site of SKY.World.bombSites) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(site.r - 0.35, site.r, 28),
-        new THREE.MeshBasicMaterial({ color: 0xffc040, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.copy(site.pos).y += 0.06;
-      group.add(ring);
-      const label = SKY.U.makeTextSprite(site.name, { color: '#ffc040', px: 64, scale: 0.02 });
-      label.position.set(site.pos.x, site.pos.y + 3, site.pos.z);
-      group.add(label);
-    }
     for (let i = 0; i < 6; i++) {
-      SKY.World.teamSpawns.atk.push({ pos: new THREE.Vector3(-5 + i * 2, 0.1, 28), yaw: Math.PI });
-      SKY.World.teamSpawns.def.push({ pos: new THREE.Vector3(-5 + i * 2, 0.1, -28), yaw: 0 });
       const a = (i / 6) * Math.PI * 2;
-      spawnPt(Math.cos(a) * 9, 0.1, Math.sin(a) * 9);   // party-mode spawns
+      spawnPt(Math.cos(a) * 9, 0.1, Math.sin(a) * 9);
     }
     [[0, 0, 0], [-26, 1.3, -8], [26, 0.3, 6], [0, 4.1, 0], [0, 0, 24], [0, 0, -24],
      [-26, 0, 4], [26, 0, -4], [-14, 0, -12], [14, 0, 12]]
@@ -1129,7 +1111,7 @@ SKY.Map = (function () {
     [[0, 3.7, 0], [-26, 1, -8], [26, 0.2, 6], [-1.5, 6.2, 0], [0, -0.3, 26], [0, -0.3, -26]]
       .forEach(p => anchor(p[0], p[1], p[2]));
 
-    eventCfg = null;   // no random events on the competitive map
+    eventCfg = null;   // no random events on this one
   }
 
   /* ============================================================

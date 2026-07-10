@@ -165,7 +165,7 @@ SKY.TUNING = {
 
   /* ------------------------------------------------------------------
    * GRENADES — thrown with G. Everyone spawns with 2 HE per life; other
-   * types come from death rewards (packs) or the bomb-mode buy menu.
+   * types come from level-up rewards (packs).
    * ------------------------------------------------------------------ */
   grenades: {
     // three DISTINCT roles: HE = raw boom, FIRE POOL = area denial that
@@ -266,25 +266,25 @@ SKY.TUNING = {
   },
 
   /* ------------------------------------------------------------------
-   * BOMB mode (attack/defend, CS-style but ring-outs still count)
+   * SPARK RUSH — the flagship mode. KOs burst into spark orbs; hoover
+   * them up to score AND level up (live pick-1-of-3, no pause). Dying
+   * scatters part of your bank where you last stood. Momentum is power:
+   * your pickup magnet grows with your speed.
    * ------------------------------------------------------------------ */
-  bomb: {
-    teamSize:     4,      // per side (bots fill)
-    freezeTime:   8,      // buy phase, players frozen
-    roundTime:    80,     // attackers must plant before this runs out
-    bombTimer:    35,     // plant -> boom
-    plantTime:    3.2,    // hold interact on a site
-    defuseTime:   5.0,
-    roundsToWin:  4,
-    startMoney:   800,
-    killMoney:    300,
-    plantMoney:   300,
-    winMoney:     3250,
-    lossMoney:    1900,
-    blastRadius:  14,     // the explosion yeets everyone nearby
-    blastForce:   30,
+  spark: {
+    target:      40,      // sparks banked = instant win
+    timeLimit:   300,     // otherwise richest at the buzzer wins
+    koMint:      3,       // orbs the arena mints per KO (on top of the drop)
+    dropFrac:    0.3,     // share of the victim's bank that scatters
+    trickleEvery: 6,      // ambient orb cadence (seconds)
+    maxAmbient:  10,      // ambient orbs allowed on the map
+    magnetBase:  2.4,     // pickup radius standing still
+    magnetSpeed: 0.13,    // +radius per unit of horizontal speed
+    levels:      [6, 14, 24, 36],  // banked-spark thresholds -> level-up pick
+    pickTime:    7,       // seconds to choose before auto-pick
+    frenzyAt:    60,      // final N seconds: KOs mint DOUBLE
+    respawnDelay: 2.5,
   },
-  prices: { blaster: 2000, scatter: 1500, smg: 1000, magnum: 2200, longshot: 3500, lobber: 3000, mega: 4500 },
 
   /* ------------------------------------------------------------------
    * DEATH REWARDS — after each KO you pick 1 of 3 (keys 1/2/3).

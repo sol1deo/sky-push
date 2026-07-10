@@ -73,6 +73,7 @@
   SKY.Grenades.init(scene);
   SKY.Grapple.init(scene);
   SKY.Pickups.init(scene);
+  SKY.Sparks.init(scene);
   SKY.HUD.init();
   SKY.MapData.init();
   SKY.Game.init(scene, camera);
@@ -274,6 +275,8 @@
       const roundTimeAtEnd = +g.roundTime.toFixed(1);
       const posAtEnd = [+p.pos.x.toFixed(1), +p.pos.y.toFixed(1), +p.pos.z.toFixed(1)];
       const spdAtEnd = +p.speedH().toFixed(1);
+      const bankAtEnd = g.pawns.map(q => q.sparks || 0).join(',');
+      const orbsAtEnd = SKY.Sparks.count();
       // match-history smoke: end the round (archives the demo), go to the
       // menu, then watch the archived round from there (skipped under &rpui,
       // which needs the live buffers kept around)
@@ -350,6 +353,8 @@
         botsMoved: botsMovedAtEnd,
         nan: vals.some(v => !isFinite(v)),
         pickupsSpawned: SKY.Pickups.spawnedTotal(),
+        bank: bankAtEnd,
+        orbs: orbsAtEnd,
         replayFrames, replayOk, dofOk, demoOk, editorOk,
       });
     }

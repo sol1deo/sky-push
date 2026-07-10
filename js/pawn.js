@@ -59,10 +59,14 @@ window.SKY = window.SKY || {};
       this.airGrapples = 1;               // hooks left this airtime (grapple.js)
       this.pounding = false; this._crouchWas = false;
 
-      // grenades (G) + bomb-mode economy/team
+      // grenades (G)
       this.nades = { ...SKY.TUNING.nadeStart };
-      this.money = 0;
-      this.team = null;
+
+      // SPARK RUSH: banked sparks + claimed level-ups; deaths scatter the
+      // drop where you LAST STOOD, not into the void you fell into
+      this.sparks = 0;
+      this.sparkLevel = 0;
+      this.lastGroundPos = new THREE.Vector3();
 
       // taunt (T)
       this.tauntT = 0;
@@ -294,6 +298,7 @@ window.SKY = window.SKY || {};
         }
       }
       this._groundedPrev = this.grounded;
+      if (this.grounded) this.lastGroundPos.set(this.pos.x, this.pos.y, this.pos.z);
 
       // landing feedback
       if (!prevGrounded && this.grounded) {
@@ -489,6 +494,7 @@ window.SKY = window.SKY || {};
 
     teleport(pos, yaw) {
       this.pos.copy(pos);
+      this.lastGroundPos.copy(pos);
       this.vel.set(0, 0, 0);
       this.yaw = yaw; this.cmd.yaw = yaw;
       this.facingYaw = yaw; this.facingVel = 0;
@@ -505,7 +511,7 @@ window.SKY = window.SKY || {};
       this.slotAmmo[2] = Math.round(SKY.TUNING.weapons.pistol.mag * this.mods.magMult);
       if (this.slots[1]) this.slotAmmo[1] = Math.round(SKY.TUNING.weapons[this.slots[1]].mag * this.mods.magMult);
       this.ammo = this.slotAmmo[this.activeSlot];
-      if (SKY.Game.mode !== 'bomb') this.nades = { ...SKY.TUNING.nadeStart };
+      this.nades = { ...SKY.TUNING.nadeStart };
       if (this.grapple) { this.grapple = null; }
       if (this.isLocal) { SKY.Input.yaw = yaw; SKY.Input.pitch = 0; }
     }
