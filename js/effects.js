@@ -284,6 +284,32 @@ SKY.Effects = (function () {
     } catch (e) { return null; }   // headless / no-GL fallback
   }
 
+  /* flat SIDE-PROFILE render (PUBG-style inventory icon) */
+  const sideCache = {};
+  function weaponSideIcon(kind) {
+    if (sideCache[kind]) return sideCache[kind];
+    try {
+      weaponThumb(kind);                      // ensures thumbRig exists
+      if (!thumbRig) return null;
+      const mesh = buildWeaponMesh(kind);
+      const box = new THREE.Box3().setFromObject(mesh);
+      const c = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length();
+      mesh.position.sub(c);
+      const grp = new THREE.Group();
+      grp.add(mesh);
+      grp.rotation.y = -Math.PI / 2;          // pure side view, barrel to the right
+      thumbRig.sc.add(grp);
+      thumbRig.cam.position.set(0, 0.02, size * 1.15);
+      thumbRig.cam.lookAt(0, 0, 0);
+      thumbRig.r.render(thumbRig.sc, thumbRig.cam);
+      const url = thumbRig.r.domElement.toDataURL();
+      thumbRig.sc.remove(grp);
+      sideCache[kind] = url;
+      return url;
+    } catch (e) { return null; }
+  }
+
   /* ------------------------- viewmodel -------------------------
    * Right hand: the active weapon, with an animated HOLSTER→DRAW swap
    * (drops off-screen, new gun snaps up). Left hand: the grapple hook-gun
@@ -502,8 +528,11 @@ SKY.Effects = (function () {
         vm.swapBlend = Math.min(1, vm.swapBlend + dt / 0.13);
         if (vm.swapBlend === 1) vm.swapPhase = null;
       }
-      // left hook arm in/out — quick and springy
+      // left hook arm in/out — quick and springy; fully hide whichever hand
+      // is tucked away so nothing pokes into the frame
       vm.hookBlend = SKY.U.damp(vm.hookBlend, vm.hookTarget, 22, dt);
+      if (vm.hook) vm.hook.visible = vm.visible && vm.hookBlend > 0.04;
+      if (vm.group) vm.group.visible = vm.visible && vm.hookBlend < 0.96;
       // tracers fade
       for (const tr of tracers) {
         if (tr.life <= 0) continue;
@@ -531,8 +560,8 @@ SKY.Effects = (function () {
 
     setViewmodelVisible(v) {
       vm.visible = v;
-      if (vm.group) vm.group.visible = v;
-      if (vm.hook) vm.hook.visible = v;
+      if (vm.group) vm.group.visible = v && vm.hookBlend < 0.96;
+      if (vm.hook) vm.hook.visible = v && vm.hookBlend > 0.04;
     },
 
     /* weapon feel: mouse-lag sway, run bob, fall tilt, slide roll, fire kick,
@@ -616,7 +645,7 @@ SKY.Effects = (function () {
         spawn({ pos, vel: v, life: SKY.U.rand(0.15, 0.3), size: 0.22, color: '#ffd9a0', gravity: 10, drag: 2 });
       }
     },
-    tracer, muzzleLight, buildWeaponMesh, weaponThumb,
+    tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon,
     makeTracer, poseTracer, resetTracer,
     cannonBlast(pos, dir) {
       for (let i = 0; i < 14; i++) {

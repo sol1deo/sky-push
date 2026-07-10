@@ -257,14 +257,14 @@ SKY.HUD = (function () {
         el.crosshair.style.transform = `translate(-50%,-50%) scale(${1 + push.tier * 0.14})`;
       }
 
-      // weapon slots (1 = pickup, 2 = pistol)
+      // weapon slots (1 = pickup, 2 = pistol) — side-profile weapon icons
       if (p.slots) {
         const w1 = p.slots[1];
         const key = (w1 || '') + '|' + p.activeSlot;
         if (el.slot1._k !== key) {
           el.slot1._k = key;
-          el.slot1.querySelector('.sn').textContent = w1
-            ? (SKY.TUNING.weapons[w1].short || w1) : '—';
+          setSlotVisual(el.slot1, w1);
+          setSlotVisual(el.slot2, 'pistol');
           el.slot1.classList.toggle('empty', !w1);
           el.slot1.classList.toggle('on', p.activeSlot === 1);
           el.slot2.classList.toggle('on', p.activeSlot === 2);
@@ -411,6 +411,22 @@ SKY.HUD = (function () {
     if (chip._cooling !== (f < 1)) {
       chip._cooling = f < 1;
       chip.classList.toggle('cooling', f < 1);
+    }
+  }
+
+  /* one weapon slot: side icon if we can render one, text fallback otherwise */
+  function setSlotVisual(slotEl, weaponId) {
+    const img = slotEl.querySelector('.si');
+    const sn = slotEl.querySelector('.sn');
+    const icon = weaponId ? SKY.Effects.weaponSideIcon(weaponId) : null;
+    if (icon) {
+      if (img.src !== icon) img.src = icon;
+      img.classList.remove('hidden');
+      sn.classList.add('hidden');
+    } else {
+      img.classList.add('hidden');
+      sn.classList.remove('hidden');
+      sn.textContent = weaponId ? (SKY.TUNING.weapons[weaponId].short || weaponId) : '—';
     }
   }
 

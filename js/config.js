@@ -50,9 +50,11 @@ SKY.TUNING = {
     // --- air movement (this is where the skill ceiling lives) ---
     airForwardAccel: 2.2,   // direct mid-air steering, capped at walkSpeed. Lets hold-W+Space
                             // bhop reach run speed (party-friendly). Set 0 for hardcore Quake.
-    airAccel:        70.0,  // how hard air-strafing accelerates you (Quake airaccelerate)
-    airMaxWishSpeed: 1.0,   // classic 30-unit style cap: speed gain per strafe direction (m/s)
-    airControlTurn:  5.0,   // CPM-style: holding only W lets you steer velocity with the mouse
+    airAccel:        85.0,  // how hard air-strafing accelerates you (Quake airaccelerate)
+    airMaxWishSpeed: 1.15,  // classic 30-unit style cap: speed gain per strafe direction (m/s)
+    airControlTurn:  6.5,   // CPM-style velocity steering with the mouse — applies on any
+                            // SINGLE held direction key (W, or A/D strafe turns), so smooth
+                            // 180° strafe curves keep momentum like CS instead of bleeding
     bhopSoftCap:     20.0,  // above this horizontal speed, extra drag kicks in
     bhopSoftCapDrag: 2.4,   // strength of that drag (prevents infinite snowballing)
 
@@ -228,7 +230,8 @@ SKY.TUNING = {
    * of the cooldown.
    * ------------------------------------------------------------------ */
   grapple: {
-    range:        48.0,   // max attach distance (long enough for panic saves)
+    range:        32.0,   // max attach distance — a real limit, no cross-map ropes
+                          // (Long Arm powerup extends it ×1.5)
     reelSpeed:    5.5,    // m/s the rope winches in while held (slow = real swings)
     pullAccel:    26.0,   // assist acceleration toward the point (×0.35 applied)
     maxDuration:  6.0,    // rope auto-releases after this long
