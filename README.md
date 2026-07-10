@@ -203,10 +203,18 @@ weapons-hold after GO! so nobody gets blasted at spawn.
 
 WASD move · Space jump (hold = bhop) · C slide · LMB fire · RMB aim/zoom ·
 R reload · E grapple (hold to reel — a real pendulum rope: slack sags, taut
-swings; grabs vehicles, and **hooking a player yanks THEM to YOU**) · Q air
+swings; grabs vehicles, and **hooking a player yanks THEM to YOU**; short
+cooldown so you can **chain swings Spider-Man style**, cone aim-assist for
+panic saves, and firing it **breaks you out of an airborne ragdoll**) · Q air
 cannon (blast-jump) · F dash (if earned) · 1/2/3 pick reward · T taunt ·
 V replay editor · P reset · Tab scoreboard · Esc pause — **all rebindable
 in ⚙ settings**.
+
+## Map pickups
+
+Weapons (and the odd powerup/ability) spawn around the arena every ~11 s
+(max 3 up at once, `js/pickups.js`) — walk over one to grab it, so winners
+aren't stuck on the pistol. Host-authoritative online; off in BOMB mode.
 
 ## Cinematic rendering (cheap on purpose)
 

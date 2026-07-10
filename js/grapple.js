@@ -28,6 +28,34 @@ SKY.Grapple = (function () {
   const _curve = new THREE.QuadraticBezierCurve3(
     new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3());
 
+  /* world raycast with AIM ASSIST: if the exact crosshair ray misses, search
+     a small cone around it — panic saves while falling should just work */
+  const _adir = new THREE.Vector3();
+  const _aup = new THREE.Vector3();
+  const _aright = new THREE.Vector3();
+  function assistRaycast(origin, dir, maxDist) {
+    let hit = SKY.World.raycast(origin, dir, maxDist);
+    if (hit) return hit;
+    _aup.set(0, 1, 0);
+    if (Math.abs(dir.y) > 0.98) _aup.set(1, 0, 0);
+    _aright.crossVectors(dir, _aup).normalize();
+    _aup.crossVectors(_aright, dir);
+    const base = SKY.TUNING.grapple.assistDeg * Math.PI / 180;
+    for (const mult of [1, 2]) {
+      const spread = Math.sin(base * mult);
+      for (let k = 0; k < 8; k++) {
+        const a = (k / 8) * Math.PI * 2;
+        _adir.copy(dir)
+          .addScaledVector(_aright, Math.cos(a) * spread)
+          .addScaledVector(_aup, Math.sin(a) * spread)
+          .normalize();
+        hit = SKY.World.raycast(origin, _adir, maxDist);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
   /* nearest pawn the ray passes through (body capsule), or null */
   function raycastPawns(pawn, origin, dir, maxDist) {
     const R = SKY.TUNING.knock.bodyRadius + 0.15;   // hook is a bit forgiving
@@ -48,14 +76,19 @@ SKY.Grapple = (function () {
 
   function tryFire(pawn) {
     const G = SKY.TUNING.grapple;
-    if (!pawn.alive || pawn.ragdoll) return false;
+    if (!pawn.alive) return false;
+    if (pawn.ragdoll) {
+      // heroic save: web out of an airborne tumble (headshot knockdowns stay)
+      if (pawn.ragdoll.mode !== 'air') return false;
+      pawn.exitRagdoll();
+    }
     if (pawn.grapple) { release(pawn); return false; }   // press again = detach
     if (pawn.grappleCd > 0) { if (pawn.isLocal) SKY.SFX.grapMiss(); return false; }
 
     SKY.U.dirFromYawPitch(pawn.yaw, pawn.pitch, _dir);
     pawn.eyePos(_eye);
     const range = G.range * pawn.mods.grappleRangeMult;
-    const hit = SKY.World.raycast(_eye, _dir, range);
+    const hit = assistRaycast(_eye, _dir, range);
     const ph = raycastPawns(pawn, _eye, _dir, hit ? hit.t : range);
 
     if (ph) {

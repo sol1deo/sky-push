@@ -185,6 +185,7 @@ SKY.Game = (function () {
     startRound(fromMenu) {
       if (api.mode === 'bomb') { this.startBombRound(fromMenu); return; }
       SKY.Replay.wipe();                          // fresh clip buffer per round
+      SKY.Pickups.clear();
       SKY.Map.resetRound();                       // rebuild if overtime crumbled it
       api.overtime = false;
       api.roundNum++;
@@ -225,6 +226,7 @@ SKY.Game = (function () {
     startBombRound() {
       const C = SKY.TUNING.bomb;
       SKY.Replay.wipe();
+      SKY.Pickups.clear();
       api.roundNum++;
       SKY.Weapons.clear(); SKY.Grenades.clear();
       const atkS = SKY.World.teamSpawns.atk, defS = SKY.World.teamSpawns.def;
@@ -439,6 +441,7 @@ SKY.Game = (function () {
     toMenu() {
       if (SKY.Replay.active) SKY.Replay.close();
       SKY.Replay.wipe();
+      SKY.Pickups.clear();
       for (const p of api.pawns) p.dispose();
       api.pawns = []; api.bots = []; api.player = null;
       SKY.Weapons.clear();
@@ -567,6 +570,7 @@ SKY.Game = (function () {
       this.separatePawns();
       SKY.Weapons.tick(dt, api.pawns);
       SKY.Grenades.tick(dt, api.pawns);
+      SKY.Pickups.tick(dt);
       if (SKY.Net.authority) this.tickCrown(dt);
 
       // kill plane + respawns (host authoritative online)
@@ -791,6 +795,7 @@ SKY.Game = (function () {
       const C = SKY.TUNING.camera;
       SKY.Map.tick(rdt, api.time);
       SKY.Effects.tick(rdt);
+      SKY.Pickups.visualTick(rdt);
 
       // crown prop
       if (crownMesh && api.mode === 'crown') {

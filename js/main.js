@@ -72,6 +72,7 @@
   SKY.Weapons.init(scene);
   SKY.Grenades.init(scene);
   SKY.Grapple.init(scene);
+  SKY.Pickups.init(scene);
   SKY.HUD.init();
   SKY.Game.init(scene, camera);
   SKY.Replay.init(scene, camera);
@@ -293,6 +294,7 @@
         ragdolls: g.ragdollCount || 0,
         botsMoved: botsMovedAtEnd,
         nan: vals.some(v => !isFinite(v)),
+        pickupsSpawned: SKY.Pickups.spawnedTotal(),
         replayFrames, replayOk, dofOk, demoOk,
       });
     }

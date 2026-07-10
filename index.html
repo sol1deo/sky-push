@@ -671,23 +671,18 @@
         <div class="hint" style="margin-left:auto;margin-right:auto">Quick Join finds a public lobby or opens one.
           Private lobbies give you a 4-letter code. Peer-to-peer — no account, no server.</div>
 
-        <div class="panel-title" style="margin-top:26px">Direct link — no lobby server</div>
-        <div class="hint" style="margin:8px auto 0">If lobbies won't connect (blocked networks):
-          exchange the codes below through any chat app instead.
-          One player CREATEs an invite and sends it; the other ACCEPTs it and
-          sends the reply back; the first player pastes the reply. Done.</div>
+        <div class="panel-title" style="margin-top:26px">Direct connect (testing)</div>
+        <div class="hint" style="margin:8px auto 0">If lobbies won't connect:
+          one of you hits <b>CREATE CODE</b> and sends it over Discord/Telegram.
+          The other just <b>pastes it in the box</b> — a reply appears, send it
+          back. First player pastes the reply. That's it.</div>
         <div class="sel-row" style="margin-top:12px">
-          <button class="sel-btn" id="dl-invite">Create invite</button>
-          <button class="sel-btn" id="dl-accept">Accept invite</button>
+          <button class="sel-btn" id="dl-invite">Create code</button>
+          <button class="sel-btn" id="dl-copy">Copy</button>
         </div>
-        <div id="dl-box" class="hidden">
-          <div id="dl-step" class="hint" style="margin:10px auto 6px"></div>
-          <textarea id="dl-text" spellcheck="false"></textarea>
-          <div class="sel-row">
-            <button class="sel-btn" id="dl-copy">Copy</button>
-            <button class="sel-btn" id="dl-go">Continue</button>
-          </div>
-        </div>
+        <textarea id="dl-text" spellcheck="false"
+          placeholder="…or paste a code from your friend here"></textarea>
+        <div id="dl-step" class="hint" style="margin:8px auto 0"></div>
 
         <button class="btn small" id="net-test-btn">Network test</button>
         <pre id="net-test-out" class="hidden"></pre>
@@ -810,6 +805,7 @@
 <script src="js/pawn.js"></script>
 <script src="js/weapons.js"></script>
 <script src="js/loot.js"></script>
+<script src="js/pickups.js"></script>
 <script src="js/grenades.js"></script>
 <script src="js/grapple.js"></script>
 <script src="js/bots.js"></script>

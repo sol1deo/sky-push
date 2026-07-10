@@ -228,14 +228,16 @@ SKY.TUNING = {
    * of the cooldown.
    * ------------------------------------------------------------------ */
   grapple: {
-    range:        30.0,   // max attach distance
-    reelSpeed:    9.0,    // m/s the rope winches in while held
-    pullAccel:    55.0,   // assist acceleration toward the point (×0.35 applied)
-    maxDuration:  3.2,    // rope auto-releases after this long
+    range:        48.0,   // max attach distance (long enough for panic saves)
+    reelSpeed:    5.5,    // m/s the rope winches in while held (slow = real swings)
+    pullAccel:    26.0,   // assist acceleration toward the point (×0.35 applied)
+    maxDuration:  6.0,    // rope auto-releases after this long
     breakDist:    1.4,    // rope releases when you get this close to the point
-    cooldown:     2.5,    // cooldown after a FULL-length grapple...
-    minCdFrac:    0.35,   // ...a quick tap only costs this fraction of it
-    missCooldown: 0.35,   // short cooldown if you fire and hit nothing
+    cooldown:     0.8,    // near-instant re-grapple — chain swings like Spider-Man
+    minCdFrac:    0.3,    // ...a quick tap only costs this fraction of it
+    missCooldown: 0.12,   // short cooldown if you fire and hit nothing
+    assistDeg:    6.0,    // aim assist: cone-search this many degrees around the
+                          // crosshair when the exact ray misses (panic saves!)
     // hooking a PLAYER reels THEM to YOU (hold to keep pulling)
     playerYank:      9.0,   // instant impulse toward you on attach
     playerYankUp:    4.5,   // instant lift on attach (pops them off the ground)

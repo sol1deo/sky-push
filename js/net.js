@@ -529,14 +529,65 @@ SKY.Net = (function () {
     return conn;
   }
 
-  /* wait for ICE gathering, then encode the whole description as base64 */
+  /* compact codec: an SDP is 95% boilerplate — keep only the ICE credentials,
+     the DTLS fingerprint and the useful candidates, rebuild the rest from a
+     template on the other side. Codes shrink to ~600-900 chars = one Discord
+     message. */
+  function packDesc(desc) {
+    const sdp = desc.sdp;
+    const get = (re) => (sdp.match(re) || [])[1] || '';
+    const pri = (l) => l.includes(' typ relay') ? 0 : l.includes(' typ srflx') ? 1 : 2;
+    const cands = sdp.split(/\r?\n/)
+      .filter(l => l.indexOf('a=candidate:') === 0)
+      .map(l => l.slice(12))
+      .filter(l => !l.includes('.local'))    // mDNS hostnames are useless remotely
+      .filter(l => / udp /i.test(l))         // drop ice-tcp host candidates
+      .sort((a, b) => pri(a) - pri(b))       // relay + srflx first…
+      .slice(0, 7);                          // …and keep the code chat-sized
+    return 'SKY1.' + btoa(JSON.stringify({
+      o: desc.type === 'offer' ? 1 : 0,
+      u: get(/a=ice-ufrag:(\S+)/), w: get(/a=ice-pwd:(\S+)/),
+      f: get(/a=fingerprint:sha-256 ([A-Fa-f0-9:]+)/),
+      s: get(/a=setup:(\w+)/) || (desc.type === 'offer' ? 'actpass' : 'active'),
+      m: get(/a=mid:(\S+)/) || '0',
+      c: cands,
+    }));
+  }
+  function unpackDesc(str) {
+    const t = String(str).replace(/\s+/g, '');
+    if (t.indexOf('SKY1.') === 0) {
+      const d = JSON.parse(atob(t.slice(5)));
+      const sdp = [
+        'v=0',
+        'o=- 4611731400430051336 2 IN IP4 127.0.0.1',
+        's=-',
+        't=0 0',
+        'a=group:BUNDLE ' + d.m,
+        'a=msid-semantic: WMS',
+        'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+        'c=IN IP4 0.0.0.0',
+        'a=ice-ufrag:' + d.u,
+        'a=ice-pwd:' + d.w,
+        'a=fingerprint:sha-256 ' + d.f,
+        'a=setup:' + d.s,
+        'a=mid:' + d.m,
+        'a=sctp-port:5000',
+        'a=max-message-size:262144',
+      ].concat(d.c.map(c => 'a=candidate:' + c)).join('\r\n') + '\r\n';
+      return { type: d.o ? 'offer' : 'answer', sdp };
+    }
+    // legacy full-JSON format
+    return JSON.parse(decodeURIComponent(escape(atob(t))));
+  }
+
+  /* wait for ICE gathering, then hand out the compact code */
   function gatherLocal(pc) {
     return new Promise((res) => {
       let done = false;
       const fin = () => {
         if (done) return;
         done = true;
-        res(btoa(unescape(encodeURIComponent(JSON.stringify(pc.localDescription)))));
+        res(packDesc(pc.localDescription));
       };
       if (pc.iceGatheringState === 'complete') { fin(); return; }
       setTimeout(fin, 5000);   // ship whatever candidates we have by then
@@ -544,9 +595,6 @@ SKY.Net = (function () {
         if (pc.iceGatheringState === 'complete') fin();
       };
     });
-  }
-  function parseDesc(s) {
-    return JSON.parse(decodeURIComponent(escape(atob(String(s).replace(/\s+/g, '')))));
   }
 
   /* become (or stay) a lobby host without needing any signaling server */
@@ -581,7 +629,7 @@ SKY.Net = (function () {
   function directComplete(answerStr) {
     if (!pendingDirect) return false;
     try {
-      pendingDirect.setRemoteDescription(parseDesc(answerStr));
+      pendingDirect.setRemoteDescription(unpackDesc(answerStr));
       pendingDirect = null;
       return true;
     } catch (e) { return false; }
@@ -589,7 +637,7 @@ SKY.Net = (function () {
 
   /* guest side: paste the invite, produce the reply string */
   async function directJoin(offerStr, onAnswer) {
-    const desc = parseDesc(offerStr);           // throws on garbage — caller catches
+    const desc = unpackDesc(offerStr);          // throws on garbage — caller catches
     destroyPeer();
     const sess = sessionId;
     const pc = new RTCPeerConnection({ iceServers });
@@ -756,6 +804,8 @@ SKY.Net = (function () {
         if (pawn) { pawn.eliminated = true; pawn.alive = false; }
         break;
       }
+      case 'pkspawn': SKY.Pickups.spawnAt(m.id, m.item, m.pos); break;
+      case 'pktake': SKY.Pickups.takeRemote(m.id, m.by); break;
     }
   }
 
@@ -1073,54 +1123,44 @@ SKY.Net = (function () {
       netTest((txt) => { out.textContent = txt; });
     };
 
-    /* ----- direct link (manual copy-paste signaling) ----- */
-    let dlMode = null;   // 'invite-out' | 'answer-in' | 'offer-in'
-    const dlShow = (step, text, mode) => {
-      $('dl-box').classList.remove('hidden');
-      $('dl-step').textContent = step;
-      $('dl-text').value = text || '';
-      dlMode = mode;
-    };
+    /* ----- direct connect: ONE box, paste-driven — the box recognises what
+       was pasted (invite vs reply) and does the right thing automatically */
+    const dlText = $('dl-text');
+    const dlSay = (s) => { $('dl-step').textContent = s; };
     $('dl-invite').onclick = () => {
       ensureNickname(() => {
-        dlShow('Creating invite…', '', null);
+        dlSay('Creating code…');
         directHost((inv) => {
-          dlShow('1) COPY this invite and send it to your friend (any chat). ' +
-            '2) Paste their REPLY over it and press CONTINUE.', inv, 'invite-out');
-          try { navigator.clipboard.writeText(inv); status('Invite copied!'); } catch (e) {}
+          dlText.value = inv;
+          try { navigator.clipboard.writeText(inv); } catch (e) {}
+          dlSay('Code copied — send it to your friend. When their reply comes, just paste it in the box.');
         });
       });
     };
-    $('dl-accept').onclick = () => {
-      ensureNickname(() => {
-        dlShow('Paste the INVITE from the host here, then press CONTINUE.', '', 'offer-in');
-      });
-    };
     $('dl-copy').onclick = () => {
-      try { navigator.clipboard.writeText($('dl-text').value); status('Copied!'); } catch (e) {}
+      try { navigator.clipboard.writeText(dlText.value); dlSay('Copied.'); } catch (e) {}
     };
-    $('dl-go').onclick = async () => {
-      const text = $('dl-text').value.trim();
-      if (!text) return;
-      try {
-        if (dlMode === 'offer-in') {
-          dlShow('Building your reply…', '', null);
-          await directJoin(text, (ans) => {
-            dlShow('Send this REPLY back to the host — you join automatically ' +
-              'once they paste it. (Can take ~15 s.)', ans, 'answer-out');
-            try { navigator.clipboard.writeText(ans); status('Reply copied!'); } catch (e) {}
-          });
-        } else if (dlMode === 'invite-out') {
-          if (directComplete(text)) {
-            dlShow('Connecting… your friend appears in the lobby in a few seconds.', '', null);
-          } else {
-            status('That reply doesn\'t look right — paste the WHOLE code.');
-          }
-        }
-      } catch (e) {
-        status('That code doesn\'t look right — paste the WHOLE thing.');
+    dlText.addEventListener('input', () => {
+      const t = dlText.value.trim();
+      if (t.indexOf('SKY1.') !== 0) return;
+      let d;
+      try { d = JSON.parse(atob(t.slice(5).replace(/\s+/g, ''))); } catch (e) { return; }  // partial paste
+      if (d.o === 1) {
+        // an INVITE was pasted → build the reply
+        dlSay('Building your reply…');
+        ensureNickname(() => {
+          directJoin(t, (ans) => {
+            dlText.value = ans;
+            try { navigator.clipboard.writeText(ans); } catch (e) {}
+            dlSay('Reply copied — send it back. You join automatically once they paste it (~15 s).');
+          }).catch(() => dlSay('That code didn\'t work — ask for a fresh one.'));
+        });
+      } else if (d.o === 0) {
+        // a REPLY was pasted → finish the handshake
+        if (directComplete(t)) dlSay('Connecting… your friend appears in the lobby in a few seconds.');
+        else dlSay('Press CREATE CODE first, then paste their reply.');
       }
-    };
+    });
     $('mp-nick').onclick = () => {
       SKY.Settings.data.nickname = '';
       ensureNickname(() => {});
@@ -1241,6 +1281,8 @@ SKY.Net = (function () {
       else send(m);
     },
     sendTaunt() { if (api.online) send({ t: 'taunt', id: api.myId }); },
+    sendPickupSpawn(d) { if (api.role === 'host') broadcast({ t: 'pkspawn', ...d }); },
+    sendPickupTake(id, by) { if (api.role === 'host') broadcast({ t: 'pktake', id, by }); },
     sendMapEvent(params) { if (api.role === 'host') broadcast({ t: 'mapevent', params }); },
     hostKo(pawn, line, killer) {
       broadcast({
