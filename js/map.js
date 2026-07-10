@@ -117,8 +117,45 @@ SKY.Map = (function () {
       fill.position.copy(o.fillPos || new THREE.Vector3(-40, 30, -35));
       group.add(fill);
     }
-    lightShafts(o.sunPos, o.sunColor);
+    if (o.shafts) lightShafts(o.sunPos, o.sunColor);
+    celestial(o);
     return { hemi, sun };
+  }
+
+  /* the visible sun / moon along the key-light direction */
+  function celestial(o) {
+    if (!o.disc) return;
+    const pos = o.sunPos.clone().normalize().multiplyScalar(330);
+    const size = o.discSize || 60;
+    if (o.disc === 'sun') {
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.blobTexture(), color: o.discColor || '#fff2d0', transparent: true,
+        opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+      }));
+      glow.position.copy(pos);
+      glow.scale.set(size * 2.8, size * 2.8, 1);
+      const core = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.blobTexture(), color: '#ffffff', transparent: true,
+        opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+      }));
+      core.position.copy(pos);
+      core.scale.set(size, size, 1);
+      group.add(glow, core);
+    } else {
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.blobTexture(), color: o.discColor || '#e8f0ff', transparent: true,
+        opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+      }));
+      halo.position.copy(pos);
+      halo.scale.set(size * 2.4, size * 2.4, 1);
+      const moon = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.moonTexture(), color: o.discColor || '#e8f0ff', transparent: true,
+        depthWrite: false, fog: false,
+      }));
+      moon.position.copy(pos);
+      moon.scale.set(size, size, 1);
+      group.add(halo, moon);
+    }
   }
 
   /* cinematic light shafts angled from the sun — cheap additive planes,
@@ -231,6 +268,7 @@ SKY.Map = (function () {
       sunColor: 0xffd9a0, sunInt: 1.45, sunPos: new THREE.Vector3(38, 32, 22),
       hemiSky: 0xbfd4f5, hemiGround: 0x5a6070, hemiInt: 0.45,
       fillColor: 0x8aa4e8, fillInt: 0.3,
+      shafts: true, disc: 'sun', discSize: 80, discColor: '#ffc97a',
     });
     skyDome('#2f5da8', '#7ba4d8', '#ffd9a4');
     scene.fog = new THREE.Fog(0xa8bede, 90, 280);
@@ -307,6 +345,7 @@ SKY.Map = (function () {
       sunColor: 0xffd9a0, sunInt: 1.5, sunPos: new THREE.Vector3(-45, 40, 30),
       hemiSky: 0xbcd0ec, hemiGround: 0x6a625e, hemiInt: 0.6,
       fillColor: 0x8aa4e8, fillInt: 0.3,
+      shafts: true, disc: 'sun', discSize: 65, discColor: '#ffd9a0',
     });
     skyDome('#2f5da8', '#84aede', '#ffcf95');
     scene.fog = new THREE.Fog(0xb0bcd4, 70, 260);
@@ -640,6 +679,7 @@ SKY.Map = (function () {
       sunColor: 0xe4eeff, sunInt: 1.4, sunPos: new THREE.Vector3(30, 55, -25),
       hemiSky: 0x7e96d4, hemiGround: 0x39404f, hemiInt: 0.85,
       fillColor: 0xff9ac8, fillInt: 0.22, fillPos: new THREE.Vector3(-30, 20, 30),
+      disc: 'moon', discSize: 46, discColor: '#e8f0ff',
     });
     skyDome('#101c3c', '#283c74', '#5a70ac', true);
     scene.fog = new THREE.Fog(0x35446e, 60, 220);
@@ -760,6 +800,7 @@ SKY.Map = (function () {
       sunColor: 0xffe0b0, sunInt: 1.5, sunPos: new THREE.Vector3(40, 55, -18),
       hemiSky: 0xbccdec, hemiGround: 0x6a6258, hemiInt: 0.6,
       fillColor: 0x9ab0e8, fillInt: 0.3,
+      shafts: true, disc: 'sun', discSize: 50, discColor: '#fff4d8',
     });
     skyDome('#2f5da8', '#84aede', '#ffd9a8');
     scene.fog = new THREE.Fog(0xa8b4d0, 85, 280);
@@ -897,6 +938,7 @@ SKY.Map = (function () {
       sunColor: 0xfff2d0, sunInt: 1.6, sunPos: new THREE.Vector3(-35, 55, 25),
       hemiSky: 0xcfe4ff, hemiGround: 0x87b2c8, hemiInt: 0.85,   // sea bounce keeps
       fillColor: 0x8ad4ff, fillInt: 0.4,                         // undersides readable
+      shafts: true, disc: 'sun', discSize: 58, discColor: '#fff8e0',
     });
     skyDome('#1e6ac0', '#66aade', '#d8f0ff');
     scene.fog = new THREE.Fog(0xa8d4ea, 90, 300);
@@ -1007,6 +1049,7 @@ SKY.Map = (function () {
       sunColor: 0xffe8c0, sunInt: 1.5, sunPos: new THREE.Vector3(35, 50, 20),
       hemiSky: 0xc4d4ec, hemiGround: 0x5e6470, hemiInt: 0.55,
       fillColor: 0x9ab4e8, fillInt: 0.3,
+      shafts: true, disc: 'sun', discSize: 55, discColor: '#fff0d0',
     });
     skyDome('#2f5da8', '#84aede', '#e8d8b8');
     scene.fog = new THREE.Fog(0xb0bcd0, 100, 320);
@@ -1148,6 +1191,8 @@ SKY.Map = (function () {
       hemiSky: M.hemi[0], hemiGround: M.hemi[1], hemiInt: M.hemi[2],
       fillColor: M.fill[0], fillInt: M.fill[1],
       fillPos: M.fill[2] ? new THREE.Vector3(...M.fill[2]) : undefined,
+      shafts: !!M.shafts, disc: M.disc || null,
+      discSize: M.discSize, discColor: M.discColor,
     });
     const S = D.SKIES[def.sky];
     skyDome(S[0], S[1], S[2], S[3]);

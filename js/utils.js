@@ -65,6 +65,32 @@ SKY.U = {
     return SKY.U._blob;
   },
 
+  /* --- the moon: soft-edged disc with faint maria blotches --- */
+  moonTexture() {
+    if (SKY.U._moon) return SKY.U._moon;
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 30, 64, 64, 62);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.95)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(120,135,160,0.32)';
+    for (const [x, y, r] of [[46, 50, 13], [78, 44, 9], [66, 78, 15], [44, 82, 7], [86, 70, 6]]) {
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    // terminator shading for depth
+    const sh = g.createRadialGradient(84, 50, 10, 64, 64, 64);
+    sh.addColorStop(0, 'rgba(0,0,0,0)');
+    sh.addColorStop(1, 'rgba(30,40,60,0.35)');
+    g.fillStyle = sh;
+    g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
+    SKY.U._moon = new THREE.CanvasTexture(c);
+    return SKY.U._moon;
+  },
+
   /* --- soft vertical light-shaft streaks (cinematic sun rays) --- */
   shaftTexture() {
     if (SKY.U._shaft) return SKY.U._shaft;

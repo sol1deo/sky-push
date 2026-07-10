@@ -24,7 +24,12 @@ SKY.Editor = (function () {
   let objects = [];               // [{ kind, data, mesh }]
   let sel = -1;
   let selBox = null;
-  let history = [];
+  let history = [];               // undo stack
+  let future = [];                // redo stack
+  let clipboard = null;           // { kind, json } — Ctrl+C/X/V
+  let pasteCount = 0;
+  let lastNudgeT = 0;
+  let env = null;                 // sky dome / sun / shafts preview group
   let camYaw = 0.6, camPitch = -0.45;
   const camPos = new THREE.Vector3(24, 18, 24);
   let flySpeed = 14;
@@ -138,6 +143,7 @@ SKY.Editor = (function () {
   function applyMood() {
     for (const l of lights) scene.remove(l);
     lights = [];
+    if (env) { scene.remove(env); env = null; }
     const M = SKY.MapData.MOODS[def.mood];
     const hemi = new THREE.HemisphereLight(M.hemi[0], M.hemi[1], M.hemi[2]);
     const sun = new THREE.DirectionalLight(M.sun[0], M.sun[1]);
@@ -148,11 +154,89 @@ SKY.Editor = (function () {
     sun.shadow.camera.top = 70; sun.shadow.camera.bottom = -70;
     sun.shadow.camera.far = 240;
     sun.shadow.bias = -0.0004;
+    if (M.fill[0]) {
+      const fill = new THREE.DirectionalLight(M.fill[0], M.fill[1]);
+      fill.position.set(...(M.fill[2] || [-40, 30, -35]));
+      lights.push(fill);
+      scene.add(fill);
+    }
     lights.push(hemi, sun);
     scene.add(hemi, sun);
-    const S = SKY.MapData.SKIES[def.sky];
-    scene.background = new THREE.Color(S[1]);
     scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+    // FULL environment preview — same dome / sun / moon / shafts as in-game
+    env = new THREE.Group();
+    scene.add(env);
+    scene.background = null;
+    const S = SKY.MapData.SKIES[def.sky];
+    env.add(makeDome(S[0], S[1], S[2], S[3]));
+    const sunPos = new THREE.Vector3(...M.sun[2]);
+    if (M.disc) {
+      const pos = sunPos.clone().normalize().multiplyScalar(330);
+      const size = M.discSize || 60;
+      if (M.disc === 'sun') {
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: SKY.U.blobTexture(), color: M.discColor || '#fff2d0', transparent: true,
+          opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+        }));
+        glow.position.copy(pos); glow.scale.set(size * 2.8, size * 2.8, 1);
+        const core = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: SKY.U.blobTexture(), color: '#ffffff', transparent: true,
+          opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+        }));
+        core.position.copy(pos); core.scale.set(size, size, 1);
+        env.add(glow, core);
+      } else {
+        const moon = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: SKY.U.moonTexture(), color: M.discColor || '#e8f0ff', transparent: true,
+          depthWrite: false, fog: false,
+        }));
+        moon.position.copy(pos); moon.scale.set(size, size, 1);
+        env.add(moon);
+      }
+    }
+    if (M.shafts) {
+      const dir = sunPos.clone().normalize();
+      for (let i = 0; i < 4; i++) {
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(SKY.U.rand(8, 16), SKY.U.rand(45, 70)),
+          new THREE.MeshBasicMaterial({
+            map: SKY.U.shaftTexture(), color: M.sun[0], transparent: true,
+            opacity: SKY.U.rand(0.045, 0.09), blending: THREE.AdditiveBlending,
+            depthWrite: false, side: THREE.DoubleSide, fog: false,
+          }));
+        plane.position.set(SKY.U.rand(-22, 22), SKY.U.rand(14, 22), SKY.U.rand(-22, 22));
+        plane.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        plane.rotateY(SKY.U.rand(0, Math.PI));
+        env.add(plane);
+      }
+    }
+  }
+
+  /* gradient sky dome — same recipe as the game's */
+  function makeDome(top, mid, horizon, stars) {
+    const g = new THREE.Group();
+    const c = document.createElement('canvas');
+    c.width = 32; c.height = 256;
+    const ctx = c.getContext('2d');
+    const gr = ctx.createLinearGradient(0, 0, 0, 256);
+    gr.addColorStop(0, top); gr.addColorStop(0.55, mid); gr.addColorStop(1, horizon);
+    ctx.fillStyle = gr; ctx.fillRect(0, 0, 32, 256);
+    const tex = new THREE.CanvasTexture(c);
+    tex.encoding = THREE.sRGBEncoding;
+    g.add(new THREE.Mesh(new THREE.SphereGeometry(380, 24, 14),
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false })));
+    if (stars) {
+      const sc = document.createElement('canvas');
+      sc.width = sc.height = 512;
+      const sg = sc.getContext('2d');
+      for (let i = 0; i < 240; i++) {
+        sg.fillStyle = `rgba(255,255,255,${SKY.U.rand(0.3, 1)})`;
+        sg.fillRect(Math.random() * 512, Math.random() * 320, SKY.U.rand(1, 2.4), SKY.U.rand(1, 2.4));
+      }
+      g.add(new THREE.Mesh(new THREE.SphereGeometry(370, 24, 14),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), side: THREE.BackSide, transparent: true, fog: false })));
+    }
+    return g;
   }
 
   function labelOf(o, i) {
@@ -205,6 +289,7 @@ SKY.Editor = (function () {
     m.scale.setScalar(1);
     m.geometry.dispose();
     m.geometry = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
+    if (!d.rep) m.material = blockMaterial(d);   // re-spread the checker evenly
     if (selBox) selBox.update();
   }
 
@@ -263,16 +348,57 @@ SKY.Editor = (function () {
     return out;
   }
 
-  /* ================= history ================= */
+  /* ================= history (undo / redo) ================= */
   function push() {
     history.push(JSON.stringify(def));
     if (history.length > 60) history.shift();
+    future.length = 0;                       // a new action clears redo
   }
   function undo() {
-    if (!history.length) return;
+    if (!history.length) { status('nothing to undo'); return; }
+    future.push(JSON.stringify(def));
     def = SKY.MapData.normalize(JSON.parse(history.pop()));
     rebuild(false);
     status('undo');
+  }
+  function redo() {
+    if (!future.length) { status('nothing to redo'); return; }
+    history.push(JSON.stringify(def));
+    def = SKY.MapData.normalize(JSON.parse(future.pop()));
+    rebuild(false);
+    status('redo');
+  }
+
+  /* ================= clipboard ================= */
+  function copySel(cut) {
+    const o = objects[sel];
+    if (!o) return;
+    clipboard = { kind: o.kind, json: JSON.stringify(o.data) };
+    pasteCount = 0;
+    if (cut) { deleteSel(); status('cut'); } else status('copied ' + o.kind);
+  }
+  function paste() {
+    if (!clipboard) { status('clipboard empty'); return; }
+    const item = JSON.parse(clipboard.json);
+    pasteCount++;
+    item.p = [item.p[0] + 2 * pasteCount, item.p[1], item.p[2] + 2 * pasteCount];
+    const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props }[clipboard.kind];
+    push();
+    arr.push(item);
+    rebuild();
+    select(objects.findIndex(o => o.data === item));
+    status('pasted');
+  }
+
+  /* arrow-key nudging (one undo point per burst) */
+  function nudge(dx, dy, dz) {
+    const o = objects[sel];
+    if (!o) return;
+    if (performance.now() - lastNudgeT > 900) push();
+    lastNudgeT = performance.now();
+    o.data.p[0] += dx; o.data.p[1] += dy; o.data.p[2] += dz;
+    syncMeshFromData(o);
+    syncInspector();
   }
 
   /* ================= add / duplicate / delete / drop ================= */
@@ -338,6 +464,8 @@ SKY.Editor = (function () {
       if (g.width !== d.s[0] || g.height !== d.s[1] || g.depth !== d.s[2]) {
         m.geometry.dispose();
         m.geometry = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
+        // keep the checker density even instead of stretching the texture
+        if (!d.rep) m.material = blockMaterial(d);
       }
     } else if (o.kind === 'pad') m.position.set(d.p[0], d.p[1] + 0.11, d.p[2]);
     else if (o.kind === 'item') m.position.set(d.p[0], d.p[1] + 1, d.p[2]);
@@ -376,7 +504,13 @@ SKY.Editor = (function () {
     const d = o.data;
     let h = numRow('X', d.p[0], 'p0') + numRow('Y', d.p[1], 'p1') + numRow('Z', d.p[2], 'p2');
     if (o.kind === 'block') {
-      h += numRow('Width', d.s[0], 's0') + numRow('Height', d.s[1], 's1') + numRow('Depth', d.s[2], 's2');
+      h += numRow('Width', d.s[0], 's0') + numRow('Height', d.s[1], 's1') + numRow('Length', d.s[2], 's2');
+      h += `<div class="ed-row"><span>Extend faces</span></div>
+        <div class="ed-row ed-faces">
+          <span class="ed-face" data-f="0,-1">−X</span><span class="ed-face" data-f="0,1">+X</span>
+          <span class="ed-face" data-f="1,-1">−Y</span><span class="ed-face" data-f="1,1">+Y</span>
+          <span class="ed-face" data-f="2,-1">−Z</span><span class="ed-face" data-f="2,1">+Z</span>
+        </div>`;
       h += numRow('Rot X°', d.r[0] * 180 / Math.PI, 'r0', 5) + numRow('Rot Y°', d.r[1] * 180 / Math.PI, 'r1', 5) + numRow('Rot Z°', d.r[2] * 180 / Math.PI, 'r2', 5);
       h += `<div class="ed-row"><span>Palette</span><select data-k="pal">
         <option value=""${!d.pal ? ' selected' : ''}>flat color</option>
@@ -550,6 +684,7 @@ SKY.Editor = (function () {
   function clearSceneOwned() {
     if (gizmo) { gizmo.detach(); scene.remove(gizmo); }
     if (group) { scene.remove(group); group = null; }
+    if (env) { scene.remove(env); env = null; }
     for (const l of lights) scene.remove(l);
     lights = [];
     objects = [];
@@ -699,8 +834,19 @@ SKY.Editor = (function () {
     });
 
     /* drag-scrub the number labels (Blender/Unity style) */
-    let scrub = null;
+    let scrub = null, faceScrub = null;
     ui.ins.addEventListener('mousedown', (e) => {
+      const face = e.target.closest('.ed-face');
+      if (face) {
+        const o = objects[sel];
+        if (o && o.kind === 'block') {
+          const [axis, sign] = face.dataset.f.split(',').map(Number);
+          push();
+          faceScrub = { o, axis, sign, lastX: e.clientX };
+        }
+        e.preventDefault();
+        return;
+      }
       const span = e.target.closest('.ed-scrub');
       if (!span) return;
       const input = span.parentNode.querySelector('input[type=number]');
@@ -709,13 +855,28 @@ SKY.Editor = (function () {
       e.preventDefault();
     });
     window.addEventListener('mousemove', (e) => {
+      if (faceScrub) {
+        // Blender-style single-face extend: size grows, center shifts by half
+        const dx = (e.clientX - faceScrub.lastX) * 0.05;
+        faceScrub.lastX = e.clientX;
+        const d = faceScrub.o.data;
+        const ns = Math.max(0.25, d.s[faceScrub.axis] + dx);
+        const grew = ns - d.s[faceScrub.axis];
+        d.s[faceScrub.axis] = ns;
+        d.p[faceScrub.axis] += faceScrub.sign * grew / 2;
+        syncMeshFromData(faceScrub.o);
+        return;
+      }
       if (!scrub) return;
       const dx = e.clientX - scrub.lastX;
       scrub.lastX = e.clientX;
       scrub.input.value = (parseFloat(scrub.input.value) + dx * scrub.step * 0.25).toFixed(2);
       scrub.input.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    window.addEventListener('mouseup', () => { scrub = null; });
+    window.addEventListener('mouseup', () => {
+      if (faceScrub) { syncInspector(); refreshOutliner(); faceScrub = null; }
+      scrub = null;
+    });
 
     /* assets panel */
     SKY.Assets.onChange = () => { if (api.active) refreshAssets(); };
@@ -770,8 +931,13 @@ SKY.Editor = (function () {
     window.addEventListener('keydown', (e) => {
       if (!api.active || looking) return;
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-      if (e.ctrlKey && e.code === 'KeyZ') { undo(); return; }
+      if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey) { undo(); return; }
+      if (e.ctrlKey && (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey))) { redo(); return; }
       if (e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); save(); return; }
+      if (e.ctrlKey && e.code === 'KeyC') { copySel(false); return; }
+      if (e.ctrlKey && e.code === 'KeyX') { copySel(true); return; }
+      if (e.ctrlKey && e.code === 'KeyV') { paste(); return; }
+      if (e.ctrlKey && e.code === 'KeyD') { e.preventDefault(); duplicateSel(); return; }
       if (gizmo && sel >= 0) {
         if (e.code === 'KeyG') gizmo.setMode('translate');
         if (e.code === 'KeyR') gizmo.setMode('rotate');
@@ -781,6 +947,13 @@ SKY.Editor = (function () {
       if (e.code === 'KeyD' && e.shiftKey) duplicateSel();
       if (e.code === 'Delete' || e.code === 'Backspace') deleteSel();
       if (e.code === 'Escape') select(-1);
+      const nstep = e.shiftKey ? 0.1 : 0.5;
+      if (e.code === 'ArrowLeft') nudge(-nstep, 0, 0);
+      if (e.code === 'ArrowRight') nudge(nstep, 0, 0);
+      if (e.code === 'ArrowUp') nudge(0, 0, -nstep);
+      if (e.code === 'ArrowDown') nudge(0, 0, nstep);
+      if (e.code === 'PageUp') nudge(0, nstep, 0);
+      if (e.code === 'PageDown') nudge(0, -nstep, 0);
       if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
         if (gizmo) {
           gizmo.setTranslationSnap(0.5);

@@ -534,6 +534,11 @@
   .ed-asset-x:hover { color:var(--danger); }
   .ed-scrub { cursor:ew-resize; user-select:none; }
   .ed-scrub:hover { color:var(--txt); }
+  .ed-faces { gap:4px !important; }
+  .ed-face { flex:1; text-align:center; padding:4px 0; border:1px solid var(--line2);
+    border-radius:5px; font-size:10px; font-weight:700; color:var(--dim);
+    cursor:ew-resize; user-select:none; background:rgba(255,255,255,.03); }
+  .ed-face:hover { color:var(--txt); border-color:rgba(255,255,255,.35); }
   #editor-ov select, #editor-ov option { background:#14181f; color:var(--txt); }
   #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px; overflow-y:auto;
     background:linear-gradient(270deg, rgba(10,12,16,.92), rgba(10,12,16,.6));
@@ -708,7 +713,7 @@
     <button class="rail-btn" id="tab-matches">Matches</button>
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
-    <div class="rail-foot">prototype · build 20</div>
+    <div class="rail-foot">prototype · build 21</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -906,9 +911,9 @@
     <div id="ed-inspector"></div>
   </div>
   <div id="ed-status"></div>
-  <div id="ed-hint">rmb — look · wasd e/q — fly · wheel — speed · click — select ·
-    g/s/r — move/scale/rotate (x/y/z axis, ctrl snap) · f — drop on floor ·
-    shift+d — duplicate · del — delete · ctrl+z — undo · drag an image onto a block — texture</div>
+  <div id="ed-hint">rmb — look+fly (wasd e/q) · click — select · g/r/s — gizmo modes (ctrl snap) ·
+    extend faces — drag ±x/±y/±z in the inspector · f — drop on floor · ctrl+c/x/v — copy/cut/paste ·
+    ctrl+d — duplicate · ctrl+z / ctrl+y — undo/redo · arrows/pgup/pgdn — nudge · del — delete</div>
 </div>
 
 <!-- ============ nickname modal ============ -->
@@ -950,31 +955,31 @@
 <script src="lib/TransformControls.js"></script>
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=20"></script>
-<script src="js/utils.js?v=20"></script>
-<script src="js/mapdata.js?v=20"></script>
-<script src="js/audio.js?v=20"></script>
-<script src="js/settings.js?v=20"></script>
-<script src="js/input.js?v=20"></script>
-<script src="js/world.js?v=20"></script>
-<script src="js/effects.js?v=20"></script>
-<script src="js/map.js?v=20"></script>
-<script src="js/characters.js?v=20"></script>
-<script src="js/pawn.js?v=20"></script>
-<script src="js/weapons.js?v=20"></script>
-<script src="js/loot.js?v=20"></script>
-<script src="js/pickups.js?v=20"></script>
-<script src="js/grenades.js?v=20"></script>
-<script src="js/grapple.js?v=20"></script>
-<script src="js/bots.js?v=20"></script>
-<script src="js/hud.js?v=20"></script>
-<script src="js/game.js?v=20"></script>
-<script src="js/net.js?v=20"></script>
-<script src="js/dof.js?v=20"></script>
-<script src="js/replay.js?v=20"></script>
-<script src="js/demos.js?v=20"></script>
-<script src="js/assets.js?v=20"></script>
-<script src="js/editor.js?v=20"></script>
-<script src="js/main.js?v=20"></script>
+<script src="js/config.js?v=21"></script>
+<script src="js/utils.js?v=21"></script>
+<script src="js/mapdata.js?v=21"></script>
+<script src="js/audio.js?v=21"></script>
+<script src="js/settings.js?v=21"></script>
+<script src="js/input.js?v=21"></script>
+<script src="js/world.js?v=21"></script>
+<script src="js/effects.js?v=21"></script>
+<script src="js/map.js?v=21"></script>
+<script src="js/characters.js?v=21"></script>
+<script src="js/pawn.js?v=21"></script>
+<script src="js/weapons.js?v=21"></script>
+<script src="js/loot.js?v=21"></script>
+<script src="js/pickups.js?v=21"></script>
+<script src="js/grenades.js?v=21"></script>
+<script src="js/grapple.js?v=21"></script>
+<script src="js/bots.js?v=21"></script>
+<script src="js/hud.js?v=21"></script>
+<script src="js/game.js?v=21"></script>
+<script src="js/net.js?v=21"></script>
+<script src="js/dof.js?v=21"></script>
+<script src="js/replay.js?v=21"></script>
+<script src="js/demos.js?v=21"></script>
+<script src="js/assets.js?v=21"></script>
+<script src="js/editor.js?v=21"></script>
+<script src="js/main.js?v=21"></script>
 </body>
 </html>
