@@ -1,6 +1,8 @@
 # SKY PUSH — MVP prototype
 
-**▶ Play it live: <https://sky-push.netlify.app>** · source: <https://github.com/sol1deo/sky-push>
+**▶ Play it live: <https://sky-push.netlify.app>**
+· mirror: <https://sol1deo.github.io/sky-push/>
+· source: <https://github.com/sol1deo/sky-push>
 
 First-person **clip-farm** party brawler: fast movement, instant bullets,
 momentum-scaled knockback, cinematic ragdolls — built so a future **match
@@ -21,12 +23,14 @@ Peer-to-peer over WebRTC (PeerJS + its free public signaling cloud — no
 account, no hosted server):
 
 **Playing with a friend:** the game is deployed at
-**<https://sky-push.netlify.app>** — send that link, one of you hits
-🌐 ONLINE → CREATE PRIVATE, shares the 4-letter code, the other JOINs
-(or both QUICK JOIN into the same public lobby). No server, no account —
-the site serves static files and gameplay is P2P.
-Deploying updates: `netlify deploy --prod --dir <staging>` (site `sky-push`)
-or push to the GitHub repo and redeploy.
+**<https://sky-push.netlify.app>** and mirrored at
+**<https://sol1deo.github.io/sky-push/>** (use whichever isn't blocked
+on your network — they interconnect, so one player can be on each).
+Send a link, one of you hits 🌐 ONLINE → CREATE PRIVATE, shares the
+4-letter code, the other JOINs (or both QUICK JOIN into the same public
+lobby). No server, no account — the sites serve static files and gameplay
+is P2P. Deploying updates: `git push` rebuilds the GitHub Pages mirror
+automatically; `netlify deploy --prod --dir <staging>` updates Netlify.
 
 - **Nickname** prompt on first online visit (stored locally, editable).
 - **QUICK JOIN** probes the public lobby slots and joins the first open one —
