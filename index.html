@@ -156,6 +156,9 @@
     background:var(--bg2); font-size:12px; font-weight:600; color:var(--txt); }
   #mp-status { min-height:18px; margin-top:10px; font-size:11px; color:var(--dim);
     text-align:center; }
+  #net-test-out { margin:12px auto 0; padding:12px 18px; max-width:420px; text-align:left;
+    font:11.5px/1.7 Consolas,monospace; color:var(--dim); background:rgba(255,255,255,.04);
+    border:1px solid var(--line2); border-radius:8px; white-space:pre-wrap; }
 
   /* ================= HUD ================= */
   #hud { position:absolute; inset:0; z-index:10; pointer-events:none; color:var(--txt); }
@@ -662,6 +665,8 @@
         </div>
         <div class="hint" style="margin-left:auto;margin-right:auto">Quick Join finds a public lobby or opens one.
           Private lobbies give you a 4-letter code. Peer-to-peer — no account, no server.</div>
+        <button class="btn small" id="net-test-btn">Network test</button>
+        <pre id="net-test-out" class="hidden"></pre>
       </div>
 
       <div id="mp-lobby" class="hidden">
@@ -713,7 +718,8 @@
     <div id="panel-servers" class="hidden">
       <div class="panel-title">Public servers</div>
       <div id="srv-list" style="margin-top:14px; text-align:left; min-width:420px;">
-        <div class="srv-empty">Press refresh to scan for lobbies.</div>
+        <div class="srv-empty">Press refresh to scan for lobbies. Private lobbies never
+          show up here — exchange the 4-letter code and use JOIN instead.</div>
       </div>
       <button class="btn small" id="srv-refresh" style="margin-top:16px">Refresh</button>
     </div>

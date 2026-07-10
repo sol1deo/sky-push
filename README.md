@@ -46,6 +46,18 @@ overtime, map events, loot), client-simulated movement + bullets streamed at
 pawns. See `js/net.js`. Debug: open two browsers with
 `?nethost=ABCD` / `?netjoin=ABCD`; add `?relay` to force TURN-only.
 
+### Blocked networks (dual signaling + NETWORK TEST)
+
+The default PeerJS cloud sits behind Cloudflare, which some countries/ISPs
+block — the symptom is hanging forever on "Creating lobby…". Lobbies are
+therefore **dual-homed**: the host registers its code on the main cloud AND
+on a backup PeerServer (`peerjs.92k.de`); joiners try both automatically.
+The two players only need ONE server in common. The **NETWORK TEST** button
+(Online tab) checks both servers, STUN, the TURN relay, and runs a real
+relay-forced loopback connection — have both players run it when things
+don't connect; the verdict line says exactly what's blocked.
+Debug: `?sigonly=main|backup` pretends the other server doesn't exist.
+
 ### Cross-country / strict-NAT play (TURN relay)
 
 Strict NATs on both ends (common between countries) block direct P2P — the

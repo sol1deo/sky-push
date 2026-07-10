@@ -66,16 +66,139 @@ SKY.Net = (function () {
       .catch(() => { /* relay stays off; STUN-only still works for easy NATs */ });
   }
 
-  function peerOpts() {
-    return {
+  /* ---------------- signaling servers ----------------
+   * The default PeerJS cloud (0.peerjs.com) sits behind Cloudflare, which is
+   * blocked/throttled on some networks — a player then hangs forever on
+   * "Creating lobby…". So lobbies are DUAL-HOMED: the host registers the same
+   * code on every server below, joiners try them in order. Both players only
+   * need ONE common reachable server. */
+  const SIGNALS = [
+    { name: 'main', opts: null },                                    // PeerJS cloud
+    { name: 'backup', opts: { host: 'peerjs.92k.de', port: 443, secure: true } },
+  ].filter((s, i, all) => {
+    // ?sigonly=backup pretends the other servers don't exist (testing —
+    // simulates a player whose network blocks the main cloud)
+    const only = (location.search.match(/[?&]sigonly=(\w+)/) || [])[1];
+    return !only || s.name === only;
+  });
+
+  function peerOpts(forceRelay, sigOpts) {
+    return Object.assign({}, sigOpts || {}, {
       config: {
         iceServers,
-        iceTransportPolicy: /[?&]relay\b/.test(location.search) ? 'relay' : 'all',
+        iceTransportPolicy: (forceRelay || /[?&]relay\b/.test(location.search)) ? 'relay' : 'all',
       },
-    };
+    });
   }
 
-  let peer = null;
+  function hasTurn() {
+    return iceServers.some(s => String(s.urls).indexOf('turn') === 0);
+  }
+
+  /* ---------------- connectivity self-test ----------------
+   * Four independent checks so "it doesn't work" becomes actionable:
+   *   SIG  — can we reach the lobby (signaling) server at all?
+   *   STUN — does the network let us discover our public address?
+   *   TURN — does the relay hand out relay candidates?
+   *   LOOP — full in-stack P2P connection forced THROUGH the relay
+   *          (if this passes on both machines, they can play together)
+   * A VPN / privacy extension that disables WebRTC shows up as SIG ✓ with
+   * everything else ✗. */
+  function netTest(onUpdate) {
+    const out = [];
+    const line = (ok, label) => { out.push((ok ? '✓ ' : '✗ ') + label); onUpdate(out.join('\n') + '\n…'); };
+
+    const sigTest = (sigIdx) => new Promise((res) => {
+      let done = false;
+      const p = new Peer(peerOpts(false, SIGNALS[sigIdx].opts));
+      const fin = (ok) => { if (!done) { done = true; try { p.destroy(); } catch (e) {} res(ok); } };
+      setTimeout(() => fin(false), 8000);
+      p.on('open', () => fin(true));
+      p.on('error', () => fin(false));
+    });
+
+    const iceTest = new Promise((res) => {
+      let srflx = false, relay = false, done = false, pc = null;
+      const fin = () => {
+        if (done) return;
+        done = true;
+        try { pc.close(); } catch (e) {}
+        res({ srflx, relay });
+      };
+      try { pc = new RTCPeerConnection({ iceServers }); } catch (e) { res({ srflx, relay }); return; }
+      try {
+        pc.createDataChannel('t');
+        pc.onicecandidate = (e) => {
+          if (!e.candidate) { fin(); return; }        // gathering complete
+          if (/ typ srflx /.test(e.candidate.candidate)) srflx = true;
+          if (/ typ relay /.test(e.candidate.candidate)) relay = true;
+          if (srflx && relay) fin();                  // got everything we need
+        };
+        pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => {});
+      } catch (e) { /* WebRTC disabled */ }
+      setTimeout(fin, 12000);
+    });
+
+    const loopTest = (sigIdx) => new Promise((res) => {
+      let done = false;
+      const id = PREFIX + '-nettest-' + randCode(6);
+      const a = new Peer(id, peerOpts(true, SIGNALS[sigIdx].opts));   // relay-forced on purpose
+      let b = null;
+      const fin = (ok) => {
+        if (done) return;
+        done = true;
+        try { a.destroy(); } catch (e) {}
+        try { if (b) b.destroy(); } catch (e) {}
+        res(ok);
+      };
+      setTimeout(() => fin(false), 16000);
+      a.on('connection', (c) => c.on('data', () => c.send('pong')));
+      a.on('error', () => fin(false));
+      a.on('open', () => {
+        b = new Peer(peerOpts(true, SIGNALS[sigIdx].opts));
+        b.on('error', () => fin(false));
+        b.on('open', () => {
+          const c = b.connect(id, { reliable: true });
+          c.on('open', () => c.send('ping'));
+          c.on('data', () => fin(true));
+          c.on('error', () => fin(false));
+        });
+      });
+    });
+
+    return (async () => {
+      const sigs = [];
+      for (let i = 0; i < SIGNALS.length; i++) {
+        sigs[i] = await sigTest(i);
+        line(sigs[i], 'Lobby server ' + (i + 1) + ' (' + SIGNALS[i].name + ')');
+      }
+      const anySig = sigs.indexOf(true);
+      const ice = await iceTest;
+      line(ice.srflx, 'Public address (STUN)');
+      const loop = anySig >= 0 && await loopTest(anySig);
+      // a successful relay-forced loop PROVES the relay works, even when the
+      // candidate gather was too slow to list it
+      const relay = ice.relay || loop;
+      line(relay, 'Relay (TURN)');
+      line(loop, 'P2P through the relay');
+      const sum = 'SIG' + sigs.map(s => s ? '+' : '-').join('') +
+        ' STUN' + (ice.srflx ? '+' : '-') +
+        ' TURN' + (relay ? '+' : '-') + ' LOOP' + (loop ? '+' : '-');
+      const verdict = loop
+        ? 'ALL GOOD — this device can play with anyone whose test also passes.'
+        : anySig < 0 ? 'No lobby server reachable — firewall/DNS blocks them (try a VPN).'
+        : !ice.srflx && !relay ? 'WebRTC seems disabled — check VPN / browser privacy extensions.'
+        : !relay ? 'Relay unreachable — metered.ca hosts may be blocked on this network.'
+        : 'Relay reachable but the loop failed — run the test again.';
+      out.push('', sum, verdict);
+      onUpdate(out.join('\n'));
+      return { sigs, srflx: ice.srflx, relay, loop, sum };
+    })();
+  }
+
+  let peer = null;           // primary connection to signaling
+  let peer2 = null;          // host only: twin registration on the backup server
+  let sessionId = 0;         // bumped on destroyPeer — stale-callback guard
   const conns = new Map();   // host: peerId -> conn
   let hostConn = null;       // client: conn to host
   let sendTimer = null;
@@ -100,9 +223,11 @@ SKY.Net = (function () {
   }
 
   function destroyPeer() {
+    sessionId++;
     if (sendTimer) { clearInterval(sendTimer); sendTimer = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (peer) { const old = peer; peer = null; try { old.destroy(); } catch (e) {} }
+    if (peer2) { const old = peer2; peer2 = null; try { old.destroy(); } catch (e) {} }
     conns.clear(); hostConn = null;
     lastStates.clear(); pendingLoot.clear();
     for (const k of Object.keys(pings)) delete pings[k];
@@ -113,52 +238,82 @@ SKY.Net = (function () {
   /* PeerJS drops its signaling socket now and then ('network'); reconnect
      quietly instead of surfacing an error — data channels keep working. */
   function attachRecovery(p) {
+    const sess = sessionId;
     p.on('disconnected', () => {
-      if (peer !== p) return;
+      if (sess !== sessionId) return;
       try { p.reconnect(); } catch (e) {}
     });
   }
 
-  /* ===================== hosting ===================== */
+  /* ===================== hosting =====================
+   * The lobby code is registered on EVERY signaling server (dual-homed) so
+   * a joiner only needs one server in common with us. The lobby opens as
+   * soon as the first registration succeeds. */
   function host(isPublic, slot, forcedCode) {
     destroyPeer();
+    const sess = sessionId;
     const code = forcedCode ? 'priv-' + forcedCode
       : isPublic ? 'pub-' + (slot || 1) : 'priv-' + randCode(4);
     status('Creating lobby…');
-    const p = peer = new Peer(PREFIX + '-' + code, peerOpts());
-    attachRecovery(p);
-    p.on('open', () => {
-      if (peer !== p) return;
-      api.online = true; api.role = 'host'; api.code = code; api.isPublic = isPublic;
-      api.myId = 'host';
-      api.roster = [{ id: 'host', name: nickname(), color: COLORS[0] }];
-      pings.host = 0;
-      showLobby();
-      status('');
-      startStream();
-      startPing();
-    });
-    p.on('error', (err) => {
-      if (peer !== p) return;                    // stale peer, ignore
-      if (err.type === 'network') {              // signaling blip — recover
-        try { p.reconnect(); } catch (e) {}
-        return;
-      }
-      if (err.type === 'unavailable-id' && isPublic && (slot || 1) < PUB_SLOTS) {
-        host(true, (slot || 1) + 1);            // slot taken, try the next
-      } else if (err.type === 'unavailable-id') {
-        host(isPublic, 1);                       // regenerate private code
-      } else if (err.type !== 'peer-unavailable') {
-        status('Connection error: ' + err.type);
-        destroyPeer();
-      }
-    });
-    peer.on('connection', (conn) => {
-      conn.on('open', () => { /* wait for hello */ });
-      conn.on('data', (m) => onHostMessage(conn, m));
-      conn.on('close', () => dropClient(conn));
-      conn.on('error', () => dropClient(conn));
-    });
+    let openedAny = false;
+    let hardFails = 0;
+
+    const mkHost = (sigIdx) => {
+      const p = new Peer(PREFIX + '-' + code, peerOpts(false, SIGNALS[sigIdx].opts));
+      attachRecovery(p);
+      p.on('open', () => {
+        if (sess !== sessionId || openedAny) return;
+        openedAny = true;
+        api.online = true; api.role = 'host'; api.code = code; api.isPublic = isPublic;
+        api.myId = 'host';
+        api.roster = [{ id: 'host', name: nickname(), color: COLORS[0] }];
+        pings.host = 0;
+        showLobby();
+        status('');
+        startStream();
+        startPing();
+      });
+      p.on('error', (err) => {
+        if (sess !== sessionId) return;            // stale peer, ignore
+        if (err.type === 'network') {              // signaling blip — recover
+          try { p.reconnect(); } catch (e) {}
+          return;
+        }
+        if (err.type === 'unavailable-id') {
+          // code taken: the PRIMARY server drives slot/code selection; a
+          // collision that exists only on the backup is ignored
+          if (sigIdx !== 0) return;
+          if (isPublic && (slot || 1) < PUB_SLOTS) host(true, (slot || 1) + 1);
+          else host(isPublic, 1);
+          return;
+        }
+        if (err.type !== 'peer-unavailable') {
+          hardFails++;
+          if (hardFails >= SIGNALS.length && !openedAny) {
+            status('Connection error: ' + err.type + ' — run NETWORK TEST below.');
+            destroyPeer();
+          }
+        }
+      });
+      p.on('connection', (conn) => {
+        if (sess !== sessionId) return;
+        conn.on('open', () => { /* wait for hello */ });
+        conn.on('data', (m) => onHostMessage(conn, m));
+        conn.on('close', () => dropClient(conn));
+        conn.on('error', () => dropClient(conn));
+      });
+      return p;
+    };
+
+    peer = mkHost(0);
+    peer2 = SIGNALS.length > 1 ? mkHost(1) : null;
+
+    // neither server answered: don't hang on "Creating lobby…" forever
+    setTimeout(() => {
+      if (sess !== sessionId || openedAny) return;
+      status('Lobby servers unreachable — run NETWORK TEST below.');
+      destroyPeer();
+    }, 14000);
   }
 
   function dropClient(conn) {
@@ -235,54 +390,106 @@ SKY.Net = (function () {
     }
   }
 
-  /* ===================== joining ===================== */
+  /* ===================== joining =====================
+   * The lobby may live on any signaling server (the host dual-homes it), and
+   * a direct WebRTC link may need the TURN relay. So joining walks a strategy
+   * queue: [main, backup] × [direct, relay-forced]. A 'peer-unavailable' on a
+   * server means the lobby isn't registered there — its relay attempt is
+   * skipped too. */
   function join(code, onFail) {
     destroyPeer();
-    status('Joining ' + code + '… (up to ~15 s between countries)');
-    const p = peer = new Peer(peerOpts());   // anonymous id
-    attachRecovery(p);
-    let opened = false;
-    p.on('open', () => {
-      if (peer !== p) return;
-      const conn = p.connect(PREFIX + '-' + code, { reliable: true });
-      const fail = (why) => { if (!opened) { destroyPeer(); onFail ? onFail(why) : status(why); } };
-      // ICE across countries/relays takes a while — don't give up early
-      const timeout = setTimeout(() =>
-        fail('Could not connect — wrong code, or both networks block P2P (needs a TURN relay, see README).'), 15000);
-      conn.on('open', () => {
-        status('Connected — entering lobby…');
-        conn.send({ t: 'hello', name: nickname() });
+    const sess = sessionId;
+    const skipSig = new Set();
+    const attempts = SIGNALS.map((s, i) => ({ sig: i, relay: false }))
+      .concat(SIGNALS.map((s, i) => ({ sig: i, relay: true })));
+    let ai = -1;
+    const fail = (why) => {
+      if (sess !== sessionId) return;
+      destroyPeer();
+      onFail ? onFail(why) : status(why);
+    };
+
+    const tryNext = (lastWhy) => {
+      if (sess !== sessionId) return;
+      ai++;
+      while (ai < attempts.length &&
+             (skipSig.has(attempts[ai].sig) || (attempts[ai].relay && !hasTurn()))) ai++;
+      if (ai >= attempts.length) {
+        fail(lastWhy || 'Could not connect — wrong code, or this network blocks P2P (run NETWORK TEST below).');
+        return;
+      }
+      const at = attempts[ai];
+      status('Joining ' + code + '… (' + SIGNALS[at.sig].name + ' server' +
+        (at.relay ? ', relay' : '') + ')');
+
+      // replace the previous attempt's peer WITHOUT ending the session
+      if (peer) { const old = peer; peer = null; try { old.destroy(); } catch (e) {} }
+      const p = peer = new Peer(peerOpts(at.relay, SIGNALS[at.sig].opts));
+      attachRecovery(p);
+      let finished = false, opened = false, sigOpen = false;
+      const advance = (why) => {
+        if (finished || sess !== sessionId) return;
+        finished = true;
+        tryNext(why);
+      };
+      const sigTimeout = setTimeout(() => {
+        if (!sigOpen) { skipSig.add(at.sig); advance('Lobby server unreachable — run NETWORK TEST below.'); }
+      }, 9000);
+
+      p.on('open', () => {
+        if (sess !== sessionId || finished) return;
+        sigOpen = true;
+        clearTimeout(sigTimeout);
+        const conn = p.connect(PREFIX + '-' + code, { reliable: true });
+        const connTimeout = setTimeout(() => advance(), at.relay ? 16000 : 12000);
+        conn.on('open', () => {
+          if (sess !== sessionId) return;
+          status('Connected — entering lobby…');
+          conn.send({ t: 'hello', name: nickname() });
+        });
+        conn.on('data', (m) => {
+          if (sess !== sessionId) return;
+          if (m.t === 'welcome') {
+            clearTimeout(connTimeout);
+            opened = true; finished = true;
+            hostConn = conn;
+            api.online = true; api.role = 'client'; api.code = code;
+            api.myId = m.you;
+            api.roster = m.roster;
+            api.settings = m.settings;
+            SKY.Game.previewMap(api.settings.map);
+            showLobby();
+            status('');
+            startStream();
+            startPing();
+          } else if (m.t === 'full') {
+            clearTimeout(connTimeout);
+            finished = true;
+            fail('That lobby is full or already playing.');
+          } else {
+            onClientMessage(m);
+          }
+        });
+        conn.on('close', () => {
+          if (opened) { leaveWithMessage('Host left the game.'); return; }
+          clearTimeout(connTimeout);
+          advance();
+        });
+        conn.on('error', () => { if (!opened) { clearTimeout(connTimeout); advance(); } });
       });
-      conn.on('data', (m) => {
-        if (m.t === 'welcome') {
-          clearTimeout(timeout);
-          opened = true;
-          hostConn = conn;
-          api.online = true; api.role = 'client'; api.code = code;
-          api.myId = m.you;
-          api.roster = m.roster;
-          api.settings = m.settings;
-          SKY.Game.previewMap(api.settings.map);
-          showLobby();
-          status('');
-          startStream();
-          startPing();
-        } else if (m.t === 'full') {
-          clearTimeout(timeout);
-          fail('That lobby is full or already playing.');
+      p.on('error', (err) => {
+        if (sess !== sessionId || finished) return;
+        if (err.type === 'network') { try { p.reconnect(); } catch (e) {} return; }
+        clearTimeout(sigTimeout);
+        if (err.type === 'peer-unavailable') {
+          skipSig.add(at.sig);                    // lobby isn't on this server
+          advance('No lobby found for that code.');
         } else {
-          onClientMessage(m);
+          advance('Connection error: ' + err.type);
         }
       });
-      conn.on('close', () => { if (opened) leaveWithMessage('Host left the game.'); else fail('No lobby found for that code.'); });
-      conn.on('error', () => fail('Could not reach that lobby.'));
-    });
-    p.on('error', (err) => {
-      if (peer !== p) return;                    // stale peer, ignore
-      if (err.type === 'network') { try { p.reconnect(); } catch (e) {} return; }
-      if (err.type === 'peer-unavailable') { if (!opened) { destroyPeer(); onFail ? onFail('none') : status('No lobby found for that code.'); } }
-      else if (!opened) { destroyPeer(); onFail ? onFail(err.type) : status('Connection error: ' + err.type); }
-    });
+    };
+    tryNext();
   }
 
   function quickJoin(slot) {
@@ -726,6 +933,12 @@ SKY.Net = (function () {
       SKY.Demos.renderPanel();
     };
     $('srv-refresh').onclick = () => { if (!api._browsing) refreshServers(); };
+    $('net-test-btn').onclick = () => {
+      const out = $('net-test-out');
+      out.classList.remove('hidden');
+      out.textContent = 'Running (takes ~30 s)…';
+      netTest((txt) => { out.textContent = txt; });
+    };
     $('mp-nick').onclick = () => {
       SKY.Settings.data.nickname = '';
       ensureNickname(() => {});
@@ -769,7 +982,16 @@ SKY.Net = (function () {
 
     get roster() { return api.roster; },
     get pings() { return pings; },
-    init() { initUI(); fetchTurn(); },
+    netTest,
+    init() {
+      initUI();
+      fetchTurn();
+      // ?nettest — run the connectivity self-test headlessly (autotest hook)
+      if (/[?&]nettest\b/.test(location.search)) {
+        const boot = document.getElementById('boot-status');
+        netTest((txt) => { boot.textContent = 'NETTEST: ' + txt.replace(/\n/g, ' | '); });
+      }
+    },
     lerpPawn,
     send, broadcast,
     /* test hooks */
@@ -786,27 +1008,35 @@ SKY.Net = (function () {
       }
     },
 
-    /* ---------- server browser: probe the public slots ---------- */
+    /* ---------- server browser: probe the public slots ----------
+     * Probes every slot on every signaling server (lobbies are dual-homed,
+     * but a host may only have reached one). A server that never answers
+     * once is skipped for its remaining slots. */
     browse(onRow, onDone) {
-      let slot = 1;
+      let sig = 0, slot = 1;
       const results = [];
+      const seen = new Set();
       const next = () => {
-        if (slot > PUB_SLOTS) { onDone(results); return; }
+        if (slot > PUB_SLOTS) { sig++; slot = 1; }
+        if (sig >= SIGNALS.length) { onDone(results); return; }
         const code = 'pub-' + slot;
-        const probe = new Peer(peerOpts());
-        let finished = false;
+        if (seen.has(code)) { slot++; next(); return; }
+        const probe = new Peer(peerOpts(false, SIGNALS[sig].opts));
+        let finished = false, sigOpened = false;
         const finish = (info) => {
           if (finished) return;
           finished = true;
           try { probe.destroy(); } catch (e) {}
-          if (info) { results.push(info); onRow(info); }
-          slot++;
+          if (info) { seen.add(code); results.push(info); onRow(info); }
+          if (!sigOpened) sig++;   // server unreachable — skip its other slots
+          else slot++;
           next();
         };
         // empty slots fail fast (peer-unavailable); occupied ones may need
         // several seconds of ICE before the info comes back
         const to = setTimeout(() => finish(null), 6000);
         probe.on('open', () => {
+          sigOpened = true;
           const c = probe.connect(PREFIX + '-' + code, { reliable: true });
           c.on('open', () => c.send({ t: 'query' }));
           c.on('data', (m) => {
@@ -814,7 +1044,11 @@ SKY.Net = (function () {
           });
           c.on('error', () => { clearTimeout(to); finish(null); });
         });
-        probe.on('error', () => { clearTimeout(to); finish(null); });
+        probe.on('error', (err) => {
+          if (err && err.type === 'peer-unavailable') sigOpened = true;  // server answered: slot empty
+          clearTimeout(to);
+          finish(null);
+        });
       };
       next();
     },
