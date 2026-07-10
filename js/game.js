@@ -78,10 +78,11 @@ SKY.Game = (function () {
         if (!locked) {
           if (api.lootOpen) return;              // reward picker owns the cursor
           if (SKY.Net.online) {
-            // ONLINE never pauses. ESC (window still focused) opens the menu;
-            // alt-tab shows only a small "click to play" hint — no menu in
-            // your face when you tab back.
-            if (document.hasFocus()) SKY.HUD.setPause(true);
+            // ONLINE never pauses. ESC while ALIVE opens the in-match menu
+            // (quit/settings — the game keeps running behind it); everything
+            // else — alt-tab, dying, waiting to respawn — only shows the
+            // small "click to play" hint. No surprise menus.
+            if (document.hasFocus() && api.player && api.player.alive) SKY.HUD.setPause(true);
             else SKY.HUD.relockHint(true);
             return;
           }
@@ -211,10 +212,14 @@ SKY.Game = (function () {
         ? 'First to ' + SKY.TUNING.spark.target + ' sparks — KOs drop the goods'
         : 'Round ' + api.roundNum + ' — first to ' + SKY.TUNING.game.roundsToWin + ' wins', 2.5);
       // returning from an unlocked state (e.g. reward picker was open):
-      // offline re-pauses; online just shows the overlay (match keeps running)
+      // offline re-pauses; online NEVER pops a menu — just a click-to-play hint
       if (!fromMenu && !SKY.Input.locked) {
-        if (!SKY.Net.online) api.paused = true;
-        SKY.HUD.setPause(true);
+        if (!SKY.Net.online) {
+          api.paused = true;
+          SKY.HUD.setPause(true);
+        } else {
+          SKY.HUD.relockHint(true);
+        }
       }
     },
 
@@ -523,6 +528,7 @@ SKY.Game = (function () {
 
     /* ---------------- KOs, respawns, winning ---------------- */
     handleKO(pawn) {
+      if (!pawn.alive) return;   // can't die twice without a respawn between
       pawn.deaths++;
       if (api.mode !== 'crown' && api.mode !== 'spark') pawn.lives--;
       pawn.alive = false;
@@ -696,6 +702,7 @@ SKY.Game = (function () {
       }
       // no gun / crosshair / combat HUD while in menus, dead or spectating
       const combat = !spectating && !!p && p.alive;
+      SKY.Effects.speedLines(rdt, combat ? p.speed3() : 0, !combat || p.grounded);
       SKY.Effects.setViewmodelVisible(combat);
       if (!combat) SKY.Effects.setHands(false);
       SKY.HUD.combat(combat);

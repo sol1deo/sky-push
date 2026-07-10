@@ -68,6 +68,10 @@ window.SKY = window.SKY || {};
       this.sparkLevel = 0;
       this.lastGroundPos = new THREE.Vector3();
 
+      // online: bumped by the host each respawn, echoed by the client in its
+      // state stream — lets the host drop stale pre-respawn snapshots
+      this.respawnSeq = 0;
+
       // taunt (T)
       this.tauntT = 0;
 

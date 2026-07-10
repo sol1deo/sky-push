@@ -210,6 +210,7 @@ SKY.Net = (function () {
   const pendingLoot = new Map(); // host: pawnId -> {choices, seq, at}
   let lootSeq = 0;               // host: KO counter — clients dedup loot by it
   let lootSeenSeq = 0;           // client: highest loot seq already handled
+  let lastPick = null;           // client: { seq, item } — re-sent if 'pick' is lost
   const pings = {};              // id -> ms (host-collected, broadcast to all)
   const _v = new THREE.Vector3();
 
@@ -237,7 +238,7 @@ SKY.Net = (function () {
     pendingDirect = null;
     conns.clear(); hostConn = null;
     lastStates.clear(); pendingLoot.clear();
-    lootSeenSeq = 0;
+    lootSeenSeq = 0; lastPick = null;
     for (const k of Object.keys(pings)) delete pings[k];
     api.online = false; api.role = null; api.code = null; api.roster = [];
     api.inGame = false;
@@ -357,7 +358,27 @@ SKY.Net = (function () {
         renderLobby();
         break;
       }
-      case 'state': lastStates.set(conn.__id, m.s); break;
+      case 'state': {
+        // drop PRE-RESPAWN snapshots: the client hasn't processed its respawn
+        // yet, and lerping toward its stale (falling/void) position would drag
+        // the fresh spawn straight back below the kill plane and KO it AGAIN
+        // — that was the double-death / double-reward bug
+        const pawn = SKY.Game.pawns.find(p => p.netId === conn.__id);
+        if (pawn && (m.s[12] || 0) < (pawn.respawnSeq || 0)) {
+          // still stale after ~2s = the client lost the respawn message in a
+          // reconnect blip. Re-send it (idempotent) so it can't freeze forever.
+          pawn._staleN = (pawn._staleN || 0) + 1;
+          if (pawn.alive && pawn._staleN % 40 === 0) {
+            conn.send({ t: 'respawn', id: pawn.netId,
+              pos: [+pawn.pos.x.toFixed(2), +pawn.pos.y.toFixed(2), +pawn.pos.z.toFixed(2)],
+              yaw: +pawn.yaw.toFixed(3), seq: pawn.respawnSeq });
+          }
+          break;
+        }
+        if (pawn) pawn._staleN = 0;
+        lastStates.set(conn.__id, m.s);
+        break;
+      }
       case 'pong': pings[conn.__id] = Math.round(performance.now() - m.ts); break;
       case 'hit': routeHit(m); break;
       case 'fire': broadcast(m, conn.__id); onFire(m); break;
@@ -719,6 +740,9 @@ SKY.Net = (function () {
       case 'ko': {
         const pawn = G.pawns.find(p => p.netId === m.id);
         if (!pawn) break;
+        // a pawn can't die twice without a respawn in between — duplicates
+        // (races on the wire) must not re-run the death flow / re-deal cards
+        if (!pawn.alive) { pawn.eliminated = pawn.eliminated || !!m.elim; break; }
         pawn.alive = false;
         pawn.lives = m.lives;
         pawn.eliminated = !!m.elim;
@@ -738,10 +762,19 @@ SKY.Net = (function () {
         // seq dedup: a 3s resend can CROSS our 'pick' on the wire at high
         // ping — same-seq repeats must never re-open (= the double-reward bug)
         if (m.seq !== undefined) {
-          if (m.seq <= lootSeenSeq) break;
+          if (m.seq <= lootSeenSeq) {
+            // repeat of a reward we already picked = our 'pick' never reached
+            // the host (it's re-sending because it still waits). Remind it —
+            // otherwise BOTH sides wait forever and the player never respawns.
+            if (lastPick && lastPick.seq === m.seq) {
+              send({ t: 'pick', id: api.myId, item: lastPick.item });
+            }
+            break;
+          }
           lootSeenSeq = m.seq;
         } else if (G.lootOpen && G.lootChoices) break;
         const items = m.choices.map(id => SKY.Loot.ITEMS.find(it => it.id === id)).filter(Boolean);
+        const seq = m.seq;
         G.lootChoices = items;
         G.lootOpen = true;
         let picked = false;                        // double-click guard (laggy fingers)
@@ -749,6 +782,7 @@ SKY.Net = (function () {
           const item = items[i];
           if (!item || picked) return;
           picked = true;
+          lastPick = { seq, item: item.id };
           SKY.Loot.apply(G.player, item);
           send({ t: 'pick', id: api.myId, item: item.id });
           G.lootChoices = null; G.lootOpen = false;
@@ -769,6 +803,8 @@ SKY.Net = (function () {
         if (!pawn) break;
         pawn.teleport(_v.set(m.pos[0], m.pos[1], m.pos[2]), m.yaw);
         pawn.alive = true;
+        pawn.respawnSeq = m.seq || 0;   // echoed in our state stream from now on
+        pawn.netTarget = null;          // never lerp back toward a pre-death snapshot
         SKY.Effects.respawnBeam(_v, pawn.color);
         if (pawn.isLocal) SKY.HUD.showRespawn(null);
         break;
@@ -881,7 +917,8 @@ SKY.Net = (function () {
     return [p.netId,
       +p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2),
       +p.vel.x.toFixed(2), +p.vel.y.toFixed(2), +p.vel.z.toFixed(2),
-      +p.yaw.toFixed(3), +p.pitch.toFixed(3), flags, p.weapon, p.sparks || 0];
+      +p.yaw.toFixed(3), +p.pitch.toFixed(3), flags, p.weapon, p.sparks || 0,
+      p.respawnSeq || 0];   // echoed so the host can drop pre-respawn states
   }
 
   function startPing() {
@@ -1257,7 +1294,13 @@ SKY.Net = (function () {
       return true;
     },
     hostRespawn(pawn, pos, yaw) {
-      broadcast({ t: 'respawn', id: pawn.netId, pos: [pos.x, pos.y, pos.z], yaw });
+      // bump the staleness key and forget the corpse's last snapshot: state
+      // packets sent before the client processes this respawn get dropped
+      pawn.respawnSeq = (pawn.respawnSeq || 0) + 1;
+      pawn.netTarget = null;
+      lastStates.delete(pawn.netId);
+      broadcast({ t: 'respawn', id: pawn.netId, pos: [pos.x, pos.y, pos.z], yaw,
+        seq: pawn.respawnSeq });
     },
     hostRoundEnd(winner, champion) {
       broadcast({ t: 'roundend', winner: winner ? winner.netId : null,

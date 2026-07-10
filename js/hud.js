@@ -113,7 +113,14 @@ SKY.HUD = (function () {
     hideMenu() { el.menu.classList.add('hidden'); el.hud.classList.remove('hidden'); },
     setPause(on) {
       el.pause.classList.toggle('hidden', !on);
-      if (on) api.relockHint(false);
+      if (on) {
+        // online it's an in-match MENU (the game keeps running), not a pause
+        const online = SKY.Net.online;
+        $('pause-title').textContent = online ? 'Menu' : 'Paused';
+        $('pause-hint').classList.toggle('hidden', !online);
+        $('resume-btn').textContent = online ? 'Back to game' : 'Resume';
+        api.relockHint(false);
+      }
     },
     relockHint(on) {
       const h = $('relock-hint');

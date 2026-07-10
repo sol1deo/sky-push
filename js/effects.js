@@ -316,6 +316,7 @@ SKY.Effects = (function () {
    * that pops up while the rope is out (and the weapon dips away). */
   const vm = {
     group: null, kind: null, kick: 0, bobT: 0, sway: { x: 0, y: 0 },
+    baseX: 0.3, baseY: -0.27,   // rest/bob position BEFORE anim offsets
     tipWorld: new THREE.Vector3(),
     swapPhase: null, swapNext: null, swapBlend: 1,   // holster/draw anim
     hook: null, hookTipWorld: new THREE.Vector3(),
@@ -361,6 +362,59 @@ SKY.Effects = (function () {
     if (!tip) return null;
     tip.getWorldPosition(vm.hookTipWorld);
     return vm.hookTipWorld;
+  }
+
+  /* ---------------- speed lines ----------------
+   * Anime wind streaks around the screen edges when you're moving FAST —
+   * strongest in the air. Camera-space sprites sliding radially outward;
+   * the center stays clear so they never block aim. */
+  let spdGroup = null;
+  const spdLines = [];
+  function resetSpeedLine(L, scatter) {
+    L.ang = Math.random() * Math.PI * 2;
+    L.r = scatter ? SKY.U.rand(0.5, 1.3) : SKY.U.rand(0.45, 0.7);
+    L.speed = SKY.U.rand(2.2, 4.5);
+    L.len = SKY.U.rand(0.5, 1.1);
+    L.o = SKY.U.rand(0.35, 0.85);
+  }
+  function ensureSpeedLines() {
+    if (spdGroup || !camera) return;
+    spdGroup = new THREE.Group();
+    spdGroup.visible = false;
+    camera.add(spdGroup);
+    for (let i = 0; i < 16; i++) {
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.blobTexture(), color: 0xdcecff, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+      }));
+      spr.renderOrder = 30;
+      const L = { spr, ang: 0, r: 0, speed: 1, len: 1, o: 0.5 };
+      resetSpeedLine(L, true);
+      spdGroup.add(spr);
+      spdLines.push(L);
+    }
+  }
+  function speedLinesTick(dt, speed, grounded) {
+    if (!spdGroup) {
+      if (speed > 17) ensureSpeedLines();
+      if (!spdGroup) return;
+    }
+    let k = SKY.U.clamp01((speed - 16) / 9);
+    if (grounded) k *= 0.35;               // subtle on foot, real in the air
+    if (k <= 0.02) {
+      if (spdGroup.visible) spdGroup.visible = false;
+      return;
+    }
+    spdGroup.visible = true;
+    for (const L of spdLines) {
+      L.r += L.speed * dt * (0.6 + k);
+      if (L.r > 1.45) resetSpeedLine(L, false);
+      const fade = SKY.U.clamp01((L.r - 0.45) / 0.2) * SKY.U.clamp01((1.45 - L.r) / 0.3);
+      L.spr.material.opacity = k * L.o * fade * 0.5;
+      L.spr.material.rotation = L.ang - Math.PI / 2;   // long axis radial
+      L.spr.position.set(Math.cos(L.ang) * L.r, Math.sin(L.ang) * L.r, -1.5);
+      L.spr.scale.set(0.02 + 0.012 * k, L.len * (0.7 + k * 0.6), 1);
+    }
   }
 
   /* ------------------------- tracers & muzzle light ------------------------- */
@@ -581,18 +635,21 @@ SKY.Effects = (function () {
       vm.group.rotation.x = vm.kick * 0.5 + vm.sway.y + spin +
         SKY.U.clamp(velY * 0.004, -0.08, 0.08);
       vm.group.rotation.z = SKY.U.damp(vm.group.rotation.z, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
+      // base (rest/bob) position is tracked SEPARATELY from the anim offsets:
+      // damping the final position would fight the dip/holster offsets and
+      // blow them up ~16x while airborne (the old jump-mid-reload glitch)
       if (grounded && speed > 1) {
         vm.bobT += dt * speed * 1.4;
-        vm.group.position.y = -0.27 + Math.sin(vm.bobT) * 0.006 * Math.min(speed, 12);
-        vm.group.position.x = 0.3 + Math.cos(vm.bobT * 0.5) * 0.004 * Math.min(speed, 12);
+        vm.baseY = -0.27 + Math.sin(vm.bobT) * 0.006 * Math.min(speed, 12);
+        vm.baseX = 0.3 + Math.cos(vm.bobT * 0.5) * 0.004 * Math.min(speed, 12);
       } else {
-        vm.group.position.y = SKY.U.damp(vm.group.position.y, -0.27, 8, dt);
-        vm.group.position.x = SKY.U.damp(vm.group.position.x, 0.3, 8, dt);
+        vm.baseY = SKY.U.damp(vm.baseY, -0.27, 8, dt);
+        vm.baseX = SKY.U.damp(vm.baseX, 0.3, 8, dt);
       }
-      vm.group.position.y -= dip;
       // holstering / grappling pulls the weapon down out of frame
       const lower = (1 - vm.swapBlend) * 0.55 + vm.hookBlend * 0.62;
-      vm.group.position.y -= lower;
+      vm.group.position.y = vm.baseY - dip - lower;
+      vm.group.position.x = vm.baseX;
       vm.group.rotation.x += (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8;
       // the left hook arm mirrors the sway and pops up while grappling
       if (vm.hook) {
@@ -605,6 +662,7 @@ SKY.Effects = (function () {
       }
     },
     ensureWeapon, setHands, hookTip,
+    speedLines: speedLinesTick,
 
     viewmodelTip() {
       if (!vm.group) return null;
