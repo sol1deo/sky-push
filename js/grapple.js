@@ -274,10 +274,10 @@ SKY.Grapple = (function () {
       const g = pawn.grapple;
       if (!g) { if (pawn._rope) pawn._rope.visible = false; continue; }
 
-      // rope start: viewmodel tip for the local player, hand-ish for others
+      // rope start: the HOOK-GUN tip for the local player, hand-ish for others
       if (pawn.isLocal) {
         camera.updateMatrixWorld();
-        const tip = SKY.Effects.viewmodelTip();
+        const tip = SKY.Effects.hookTip() || SKY.Effects.viewmodelTip();
         if (tip) _start.copy(tip);
         else pawn.eyePos(_start).y -= 0.25;
       } else {

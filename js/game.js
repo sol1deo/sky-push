@@ -201,6 +201,9 @@ SKY.Game = (function () {
         SKY.Grapple.release(p); p.grappleCd = 0; p.pbCd = 0; p.acCd = 0; p.dashCd = 0;
         p.tauntT = 0; p.zoomed = false;
         p.weapon = 'pistol'; p.deaths = 0;
+        p.slots = { 1: null, 2: 'pistol' };
+        p.slotAmmo = { 1: 0, 2: SKY.TUNING.weapons.pistol.mag };
+        p.activeSlot = 2; p.drawT = 0;
         p.mods = { speedMult: 1, jumpMult: 1, cdMult: 1, knockResist: 1,
                    grappleRangeMult: 1, grappleCdMult: 1, magMult: 1, gravMult: 1, powerMult: 1 };
         p.abilities = { doubleJump: false, dash: false, pound: false };
@@ -244,7 +247,12 @@ SKY.Game = (function () {
         p.lastHitBy = null; p.lastHitT = -99;
         SKY.Grapple.release(p); p.grappleCd = 0; p.pbCd = 0; p.acCd = 0; p.dashCd = 0;
         p.tauntT = 0; p.zoomed = false;
-        if (!p._survived) { p.weapon = 'pistol'; p.nades = { type: 'he', count: 0 }; }
+        if (!p._survived) {
+          p.weapon = 'pistol'; p.nades = { type: 'he', count: 0 };
+          p.slots = { 1: null, 2: 'pistol' };
+          p.slotAmmo = { 1: 0, 2: SKY.TUNING.weapons.pistol.mag };
+          p.activeSlot = 2; p.drawT = 0;
+        }
         const s = p.team === 'atk' ? atkS[ai++ % atkS.length] : defS[di++ % defS.length];
         p.teleport(s.pos, s.yaw);
         p.visualTick(0.016);
@@ -295,9 +303,7 @@ SKY.Game = (function () {
       if (isNade) {
         p.nades = { type: id, count: (p.nades && p.nades.type === id ? p.nades.count : 0) + 2 };
       } else {
-        p.weapon = id;
-        p.ammo = Math.round(SKY.TUNING.weapons[id].mag * p.mods.magMult);
-        p.reloadT = 0;
+        p.giveWeapon(id);
       }
       if (SKY.HUD.refreshBuyMenu) SKY.HUD.refreshBuyMenu();
     },
@@ -647,7 +653,16 @@ SKY.Game = (function () {
       c.grappleHeld = In.action('grapple');
       p._acting = In.action('interact');
 
-      p.zoomed = In.action('aim') && !p.ragdoll;
+      // weapon slots: 1 = pickup, 2 = pistol; wheel = quick swap.
+      // (blocked while the reward cards or the buy menu own the number keys)
+      if (!api.lootChoices && !SKY.HUD._buyOpen) {
+        if (In.consumePressed('Digit1')) p.switchSlot(1);
+        if (In.consumePressed('Digit2')) p.switchSlot(2);
+        const wd = In.takeWheel();
+        if (wd) p.switchSlot(p.activeSlot === 1 ? 2 : 1);
+      }
+
+      p.zoomed = In.action('aim') && !p.ragdoll && !p.grapple;
 
       const auto = SKY.Weapons.defOf(p).auto;
       if (auto ? In.action('fire') : In.actionPressed('fire')) SKY.Weapons.tryFirePrimary(p);
@@ -847,6 +862,7 @@ SKY.Game = (function () {
         camera.updateProjectionMatrix();
         SKY.HUD.scope(!!(p.zoomed && wDef.scope));
         SKY.Effects.ensureWeapon(p.weapon);
+        SKY.Effects.setHands(!!p.grapple);   // rope out = hook-gun arm up
         const reloadFrac = p.reloadT > 0
           ? 1 - p.reloadT / (wDef.reloadTime * p.mods.cdMult) : -1;
         SKY.Effects.viewmodelMotion(rdt, spd, p.grounded, p.vel.y, p.sliding, reloadFrac);
@@ -854,6 +870,7 @@ SKY.Game = (function () {
       // no gun / crosshair / combat HUD while in menus, dead or spectating
       const combat = !spectating && !!p && p.alive;
       SKY.Effects.setViewmodelVisible(combat);
+      if (!combat) SKY.Effects.setHands(false);
       SKY.HUD.combat(combat);
       if (!combat) { SKY.Input.sensMult = 1; SKY.HUD.scope(false); }
 

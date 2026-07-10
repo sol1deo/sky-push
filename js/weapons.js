@@ -81,6 +81,7 @@ SKY.Weapons = (function () {
   function tryFirePrimary(pawn) {
     const W = defOf(pawn);
     if (pawn.pbCd > 0 || !pawn.alive || pawn.tauntT > 0 || pawn.ragdoll || pawn.reloadT > 0) return false;
+    if (pawn.grapple || pawn.drawT > 0) return false;   // hook arm out / mid-draw
     if (SKY.Game.roundTime < 0.75) return false;   // no spawn-cheese at GO!
     if (pawn.ammo <= 0) {
       if (pawn.isLocal) SKY.SFX.dry();

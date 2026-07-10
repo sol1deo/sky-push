@@ -34,6 +34,7 @@ SKY.HUD = (function () {
         dmgFlash: $('dmg-flash'), dmgDir: $('dmg-dir'),
         loot: $('loot-ov'), lootCards: $('loot-cards'),
         ammo: $('ammo'), ammoMax: $('ammo-max'), scope: $('scope'),
+        slot1: $('slot-1'), slot2: $('slot-2'),
         nades: $('nades'), money: $('money'), actbar: $('actbar'), actfill: $('actfill'),
         actlabel: $('actlabel'), buy: $('buy-ov'), buyBody: $('buy-body'), buyMoney: $('buy-money'),
         cd: { pb: $('cd-pb'), ac: $('cd-ac'), gr: $('cd-gr'), ab: $('cd-ab') },
@@ -254,6 +255,20 @@ SKY.HUD = (function () {
         lastTier = push.tier;
         el.chLines.forEach(l => { l.style.background = push.color; });
         el.crosshair.style.transform = `translate(-50%,-50%) scale(${1 + push.tier * 0.14})`;
+      }
+
+      // weapon slots (1 = pickup, 2 = pistol)
+      if (p.slots) {
+        const w1 = p.slots[1];
+        const key = (w1 || '') + '|' + p.activeSlot;
+        if (el.slot1._k !== key) {
+          el.slot1._k = key;
+          el.slot1.querySelector('.sn').textContent = w1
+            ? (SKY.TUNING.weapons[w1].short || w1) : '—';
+          el.slot1.classList.toggle('empty', !w1);
+          el.slot1.classList.toggle('on', p.activeSlot === 1);
+          el.slot2.classList.toggle('on', p.activeSlot === 2);
+        }
       }
 
       // grenade counter

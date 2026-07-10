@@ -21,6 +21,7 @@ SKY.Input = (function () {
     yaw: 0, pitch: 0,
     frameDX: 0, frameDY: 0,   // per-render-frame mouse delta (weapon sway)
     sensMult: 1,              // lowered while aiming/scoped
+    wheel: 0,                 // accumulated scroll steps (weapon swap)
     locked: false,
     onLockChange: null,   // callback(locked)
 
@@ -37,6 +38,9 @@ SKY.Input = (function () {
       canvas.addEventListener('mousedown', (e) => { mouse[e.button] = true; clicked.add(e.button); });
       window.addEventListener('mouseup', (e) => { mouse[e.button] = false; });
       window.addEventListener('contextmenu', (e) => e.preventDefault());
+      window.addEventListener('wheel', (e) => {
+        if (api.locked && !(SKY.Replay && SKY.Replay.active)) api.wheel += Math.sign(e.deltaY);
+      }, { passive: true });
 
       document.addEventListener('mousemove', (e) => {
         const now = performance.now();
@@ -111,7 +115,8 @@ SKY.Input = (function () {
       if (clicked.has(btn)) { clicked.delete(btn); return true; }
       return false;
     },
-    clearEdges() { pressed.clear(); clicked.clear(); },
+    clearEdges() { pressed.clear(); clicked.clear(); api.wheel = 0; },
+    takeWheel() { const w = api.wheel; api.wheel = 0; return w; },
     takeFrameDelta() {
       const d = { dx: api.frameDX, dy: api.frameDY };
       api.frameDX = 0; api.frameDY = 0;

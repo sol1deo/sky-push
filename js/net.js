@@ -378,7 +378,7 @@ SKY.Net = (function () {
         if (price === undefined || pawn.money < price) break;
         pawn.money -= price;
         if (isNade) pawn.nades = { type: m.id, count: (pawn.nades && pawn.nades.type === m.id ? pawn.nades.count : 0) + 2 };
-        else { pawn.weapon = m.id; pawn.ammo = SKY.TUNING.weapons[m.id].mag; }
+        else pawn.giveWeapon(m.id);
         conn.send({ t: 'bought', id: m.id, isNade, money: pawn.money });
         break;
       }
@@ -708,7 +708,7 @@ SKY.Net = (function () {
         if (!p) break;
         p.money = m.money;
         if (m.isNade) p.nades = { type: m.id, count: (p.nades && p.nades.type === m.id ? p.nades.count : 0) + 2 };
-        else { p.weapon = m.id; p.ammo = SKY.TUNING.weapons[m.id].mag; p.reloadT = 0; }
+        else p.giveWeapon(m.id);
         SKY.SFX.cash();
         if (SKY.HUD.refreshBuyMenu) SKY.HUD.refreshBuyMenu();
         break;

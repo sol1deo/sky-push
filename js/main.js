@@ -199,6 +199,20 @@
         boot.textContent = 'TRACERS';
         return;
       }
+      // &hookvm: fire the grapple and freeze with the hook arm up (screenshots)
+      if (/hookvm/.test(location.search)) {
+        const s0 = SKY.World.spawnPoints[0];
+        p.alive = true; p.ragdoll = null;
+        p.teleport(s0.pos, s0.yaw);
+        SKY.Input.yaw = s0.yaw; SKY.Input.pitch = -0.3;
+        p.cmd.yaw = p.yaw = s0.yaw; p.cmd.pitch = p.pitch = -0.3;
+        p.airGrapples = 1; p.grappleCd = 0; p.cmd.grappleHeld = true;
+        SKY.Grapple.tryFire(p);
+        for (let i = 0; i < 40; i++) SKY.Game.renderTick(1 / 60);
+        renderer.render(scene, camera);
+        boot.textContent = 'HOOKVM:' + !!p.grapple;
+        return;
+      }
       // &cards: pop the reward cards over the live HUD and stop (screenshots).
       // Delayed past hideLoot's 420ms dismiss timer from any earlier pick.
       if (/cards/.test(location.search)) {

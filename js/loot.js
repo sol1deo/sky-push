@@ -139,9 +139,7 @@ SKY.Loot = (function () {
   function apply(pawn, item) {
     if (!item) return;
     if (item.kind === 'weapon') {
-      pawn.weapon = item.id;
-      pawn.ammo = Math.round(SKY.TUNING.weapons[item.id].mag * pawn.mods.magMult);
-      pawn.reloadT = 0;
+      pawn.giveWeapon(item.id);      // slot 1, drawn immediately
     } else if (item.kind === 'nade') {
       pawn.nades = { type: item.nade, count: item.count };
     } else {

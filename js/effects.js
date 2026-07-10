@@ -202,6 +202,27 @@ SKY.Effects = (function () {
         box(0.012, 0.03, 0.012, M.dark, 0, 0.09, -0.24);
         T(0, 0.02, -0.34);
         break;
+      case 'hookgun': {  // the left-hand grapple launcher
+        const rope = new THREE.MeshLambertMaterial({
+          color: 0xd8c49a, emissive: new THREE.Color(0xd8c49a).multiplyScalar(0.25),
+        });
+        box(0.075, 0.095, 0.17, M.body, 0, 0, -0.02);            // housing
+        cyl(0.032, 0.038, 0.15, M.dark, 0, 0.012, -0.17);        // launch barrel
+        cyl(0.052, 0.052, 0.05, rope, 0.055, 0.005, 0.02, false); // rope drum (side)
+        cyl(0.056, 0.056, 0.014, M.dark, 0.084, 0.005, 0.02, false);
+        box(0.05, 0.11, 0.055, M.grip, 0, -0.095, 0.05, 0.3);    // grip
+        box(0.04, 0.012, 0.05, M.dark, 0, -0.05, -0.05);         // guard
+        for (let i = 0; i < 3; i++) {                             // hook prongs
+          const a = (i / 3) * Math.PI * 2;
+          const prong = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.06, 6), M.metal);
+          prong.position.set(Math.cos(a) * 0.03, 0.012 + Math.sin(a) * 0.03, -0.26);
+          prong.rotation.x = -Math.PI / 2;
+          prong.rotation.z = a;
+          grp.add(prong);
+        }
+        T(0, 0.012, -0.25);
+        break;
+      }
       default: {  // blaster -> PUSH RIFLE
         box(0.06, 0.075, 0.34, M.body, 0, 0.01, -0.02);          // receiver
         cyl(0.02, 0.024, 0.24, M.dark, 0, 0.025, -0.3);          // barrel
@@ -263,18 +284,57 @@ SKY.Effects = (function () {
     } catch (e) { return null; }   // headless / no-GL fallback
   }
 
-  /* ------------------------- viewmodel ------------------------- */
-  const vm = { group: null, kind: null, kick: 0, bobT: 0, sway: { x: 0, y: 0 }, tipWorld: new THREE.Vector3() };
+  /* ------------------------- viewmodel -------------------------
+   * Right hand: the active weapon, with an animated HOLSTER→DRAW swap
+   * (drops off-screen, new gun snaps up). Left hand: the grapple hook-gun
+   * that pops up while the rope is out (and the weapon dips away). */
+  const vm = {
+    group: null, kind: null, kick: 0, bobT: 0, sway: { x: 0, y: 0 },
+    tipWorld: new THREE.Vector3(),
+    swapPhase: null, swapNext: null, swapBlend: 1,   // holster/draw anim
+    hook: null, hookTipWorld: new THREE.Vector3(),
+    hookTarget: 0, hookBlend: 0,                     // left arm up/down
+    visible: true,
+  };
 
-  function ensureWeapon(kind) {
-    if (vm.kind === kind || !camera) return;
+  function mountWeapon(kind) {
     if (vm.group) camera.remove(vm.group);
     vm.kind = kind;
     vm.group = buildWeaponMesh(kind);
     vm.group.scale.setScalar(0.85);
     vm.group.position.set(0.3, -0.27, -0.52);
+    vm.group.visible = vm.visible;
     camera.add(vm.group);
-    vm.kick = 1.1;   // little "draw" animation on swap
+  }
+
+  function ensureWeapon(kind) {
+    if (!camera || vm.kind === kind || vm.swapNext === kind) return;
+    if (!vm.group) { mountWeapon(kind); return; }   // first equip: instant
+    vm.swapNext = kind;                              // animated holster→draw
+    vm.swapPhase = 'down';
+  }
+
+  function ensureHook() {
+    if (vm.hook || !camera) return;
+    vm.hook = buildWeaponMesh('hookgun');
+    vm.hook.scale.setScalar(0.85);
+    vm.hook.position.set(-0.32, -0.9, -0.5);
+    vm.hook.visible = vm.visible;
+    camera.add(vm.hook);
+  }
+
+  /* grapple active? left arm up, weapon away — snappy both ways */
+  function setHands(hooking) {
+    vm.hookTarget = hooking ? 1 : 0;
+    if (hooking) ensureHook();
+  }
+
+  function hookTip() {
+    if (!vm.hook || vm.hookBlend < 0.3) return null;
+    const tip = vm.hook.getObjectByName('tip');
+    if (!tip) return null;
+    tip.getWorldPosition(vm.hookTipWorld);
+    return vm.hookTipWorld;
   }
 
   /* ------------------------- tracers & muzzle light ------------------------- */
@@ -430,6 +490,20 @@ SKY.Effects = (function () {
         vm.kick = Math.max(0, vm.kick - vm.kick * 10 * dt);
         vm.group.position.z = -0.5 + vm.kick * 0.16;   // punchy slide-back
       }
+      // holster→draw swap: drop fast, raise snappy
+      if (vm.swapPhase === 'down') {
+        vm.swapBlend = Math.max(0, vm.swapBlend - dt / 0.09);
+        if (vm.swapBlend === 0 && vm.swapNext) {
+          mountWeapon(vm.swapNext);
+          vm.swapNext = null;
+          vm.swapPhase = 'up';
+        }
+      } else if (vm.swapPhase === 'up') {
+        vm.swapBlend = Math.min(1, vm.swapBlend + dt / 0.13);
+        if (vm.swapBlend === 1) vm.swapPhase = null;
+      }
+      // left hook arm in/out — quick and springy
+      vm.hookBlend = SKY.U.damp(vm.hookBlend, vm.hookTarget, 22, dt);
       // tracers fade
       for (const tr of tracers) {
         if (tr.life <= 0) continue;
@@ -456,7 +530,9 @@ SKY.Effects = (function () {
     },
 
     setViewmodelVisible(v) {
+      vm.visible = v;
       if (vm.group) vm.group.visible = v;
+      if (vm.hook) vm.hook.visible = v;
     },
 
     /* weapon feel: mouse-lag sway, run bob, fall tilt, slide roll, fire kick,
@@ -485,8 +561,21 @@ SKY.Effects = (function () {
         vm.group.position.x = SKY.U.damp(vm.group.position.x, 0.3, 8, dt);
       }
       vm.group.position.y -= dip;
+      // holstering / grappling pulls the weapon down out of frame
+      const lower = (1 - vm.swapBlend) * 0.55 + vm.hookBlend * 0.62;
+      vm.group.position.y -= lower;
+      vm.group.rotation.x += (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8;
+      // the left hook arm mirrors the sway and pops up while grappling
+      if (vm.hook) {
+        const hb = vm.hookBlend;
+        vm.hook.position.set(
+          -0.32 - vm.sway.x * 0.4,
+          -0.28 - (1 - hb) * 0.62 + Math.sin(vm.bobT) * 0.004 * Math.min(speed, 12),
+          -0.5);
+        vm.hook.rotation.set((1 - hb) * 0.9 + vm.sway.y, -vm.sway.x * 0.6, -0.08);
+      }
     },
-    ensureWeapon,
+    ensureWeapon, setHands, hookTip,
 
     viewmodelTip() {
       if (!vm.group) return null;

@@ -72,6 +72,12 @@ window.SKY = window.SKY || {};
       this.reloadT = 0;
       this.zoomed = false;
 
+      // two-slot inventory: 1 = picked-up weapon, 2 = the trusty pistol
+      this.slots = { 1: null, 2: 'pistol' };
+      this.slotAmmo = { 1: 0, 2: SKY.TUNING.weapons.pistol.mag };
+      this.activeSlot = 2;
+      this.drawT = 0;                     // weapon-draw lockout after a switch
+
       // ragdoll: null | { mode:'head'|'air', t } — control is locked while set
       this.ragdoll = null;
       this.ragdollImpulse = new THREE.Vector3();
@@ -109,6 +115,7 @@ window.SKY = window.SKY || {};
       this.padLockT = Math.max(0, this.padLockT - dt);
       this.dashCd = Math.max(0, this.dashCd - dt);
       this.tauntT = Math.max(0, this.tauntT - dt);
+      this.drawT = Math.max(0, this.drawT - dt);
       this.timeSinceJump += dt;
 
       // reload completes
@@ -327,6 +334,31 @@ window.SKY = window.SKY || {};
       this.yaw = this.cmd.yaw;   // wake up facing where the player is looking
     }
 
+    /* =================== weapon slots =================== */
+    /* a new weapon always lands in slot 1 and gets drawn immediately */
+    giveWeapon(id) {
+      if (!SKY.TUNING.weapons[id]) return;
+      this.slots[1] = id;
+      this.slotAmmo[1] = Math.round(SKY.TUNING.weapons[id].mag * this.mods.magMult);
+      this.switchSlot(1, true);
+    }
+
+    switchSlot(n, force) {
+      if (!this.slots[n]) return false;
+      if (this.activeSlot === n && !force) return false;
+      // force = weapon granted (loot picks happen while DEAD, waiting to respawn)
+      if (!force && (!this.alive || this.ragdoll)) return false;
+      this.slotAmmo[this.activeSlot] = this.ammo;   // remember what's left
+      this.activeSlot = n;
+      this.weapon = this.slots[n];
+      this.ammo = this.slotAmmo[n];
+      this.reloadT = 0;
+      this.zoomed = false;
+      this.drawT = 0.22;                            // matches the draw anim
+      if (this.isLocal) SKY.SFX.grapMiss();         // soft holster click
+      return true;
+    }
+
     /* TAUNT (T): pure disrespect. Can't fire while taunting. */
     tryTaunt() {
       if (!this.alive || !this.grounded || this.tauntT > 0 || this.ragdoll) return false;
@@ -468,8 +500,11 @@ window.SKY = window.SKY || {};
       this.airGrapples = SKY.TUNING.grapple.airHooks;
       this.ragdoll = null;
       this.pounding = false;
-      this.reloadT = 0;
-      this.ammo = Math.round(SKY.Weapons.defOf(this).mag * this.mods.magMult);
+      this.reloadT = 0; this.drawT = 0;
+      // respawn refills BOTH slots
+      this.slotAmmo[2] = Math.round(SKY.TUNING.weapons.pistol.mag * this.mods.magMult);
+      if (this.slots[1]) this.slotAmmo[1] = Math.round(SKY.TUNING.weapons[this.slots[1]].mag * this.mods.magMult);
+      this.ammo = this.slotAmmo[this.activeSlot];
       if (SKY.Game.mode !== 'bomb') this.nades = { ...SKY.TUNING.nadeStart };
       if (this.grapple) { this.grapple = null; }
       if (this.isLocal) { SKY.Input.yaw = yaw; SKY.Input.pitch = 0; }
