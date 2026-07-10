@@ -58,6 +58,7 @@ SKY.Game = (function () {
     init(sc, cam) {
       scene = sc; camera = cam;
       camFov = SKY.TUNING.camera.baseFov;
+      SKY.Attract.init(sc);
       SKY.HUD.onPlay = () => {
         SKY.SFX.init();
         api.startMatch(SKY.HUD.botCount, SKY.HUD.mapSel, SKY.HUD.modeSel, {
@@ -105,6 +106,7 @@ SKY.Game = (function () {
 
     /* ---------------- match / round setup ---------------- */
     startMatch(nBots, mapId, mode, rules) {
+      SKY.Attract.stop();
       for (const p of api.pawns) p.dispose();
       api.pawns = []; api.bots = [];
       SKY.Weapons.clear(); SKY.Grenades.clear();
@@ -151,6 +153,7 @@ SKY.Game = (function () {
 
     /* online variant: pawns come from the lobby roster (host order) */
     startMatchNet(cfg) {
+      SKY.Attract.stop();
       for (const p of api.pawns) p.dispose();
       api.pawns = []; api.bots = [];
       SKY.Weapons.clear();
@@ -192,6 +195,7 @@ SKY.Game = (function () {
     previewMap(id) {
       if (api.state !== 'menu') return;
       SKY.Map.load(scene, id);
+      SKY.Attract.reset();      // recast the menu show on the new map
     },
 
     startRound(fromMenu) {
@@ -829,6 +833,7 @@ SKY.Game = (function () {
       SKY.Map.tick(rdt, api.time);
       SKY.Effects.tick(rdt);
       SKY.Pickups.visualTick(rdt);
+      SKY.Attract.tick(rdt);    // slow-mo menu show (self-gates on state)
 
       // crown prop
       if (crownMesh && api.mode === 'crown') {
@@ -845,7 +850,10 @@ SKY.Game = (function () {
 
       if (spectating) {
         orbitA += rdt * 0.12;
-        camera.position.set(Math.cos(orbitA) * 34, 14, Math.sin(orbitA) * 34);
+        // menus orbit closer/lower so the attract-mode cast reads well
+        const rad = api.state === 'menu' ? 26 : 34;
+        const hgt = api.state === 'menu' ? 9 : 14;
+        camera.position.set(Math.cos(orbitA) * rad, hgt, Math.sin(orbitA) * rad);
         camera.lookAt(CENTER);
         camera.fov = SKY.U.damp(camera.fov, 70, 4, rdt);
         camera.updateProjectionMatrix();

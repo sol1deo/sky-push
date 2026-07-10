@@ -60,7 +60,14 @@ SKY.HUD = (function () {
         api.mapSel = b.dataset.m;
         SKY.Game.previewMap(b.dataset.m);
       });
-      bindSel('mode-btn', 'm', v => { api.modeSel = v; });
+      bindSel('mode-btn', 'm', v => {
+        api.modeSel = v;
+        $('crown-row').classList.toggle('hidden', v !== 'crown');
+      });
+      // PLAY hub sub-tabs: vs bots ↔ online
+      document.querySelectorAll('.play-sub').forEach(b => {
+        b.addEventListener('click', () => api.playSub(b.dataset.v));
+      });
       SKY.MapData.onListChange = () => api.refreshCustomMaps();
       api.refreshCustomMaps();
       bindSel('rounds-btn', 'v', v => { api.roundsSel = parseInt(v, 10); });
@@ -88,6 +95,15 @@ SKY.HUD = (function () {
           row.appendChild(b);
         }
       }
+    },
+
+    /* PLAY hub sub-tab switch (Net calls this with 'online' when a lobby opens) */
+    playSub(v) {
+      document.querySelectorAll('.play-sub').forEach(b =>
+        b.classList.toggle('sel', b.dataset.v === v));
+      $('play-bots').classList.toggle('hidden', v !== 'bots');
+      $('play-online').classList.toggle('hidden', v !== 'online');
+      if (v === 'online') SKY.Net.enterOnline();
     },
 
     showMenu() { el.menu.classList.remove('hidden'); el.hud.classList.add('hidden'); api.relockHint(false); },

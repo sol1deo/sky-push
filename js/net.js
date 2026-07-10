@@ -1019,7 +1019,8 @@ SKY.Net = (function () {
   }
   function showLobby() {
     $('menu').classList.remove('hidden');
-    selectTab('tab-online');
+    selectTab('tab-offline');
+    SKY.HUD.playSub('online');
     $('mp-home').classList.add('hidden');
     $('mp-lobby').classList.remove('hidden');
     renderLobby();
@@ -1078,12 +1079,10 @@ SKY.Net = (function () {
   }
 
   function selectTab(id) {
-    for (const t of ['tab-offline', 'tab-online', 'tab-servers', 'tab-matches']) {
+    for (const t of ['tab-offline', 'tab-matches']) {
       $(t).classList.toggle('sel', t === id);
     }
     $('panel-offline').classList.toggle('hidden', id !== 'tab-offline');
-    $('panel-online').classList.toggle('hidden', id !== 'tab-online');
-    $('panel-servers').classList.toggle('hidden', id !== 'tab-servers');
     $('panel-matches').classList.toggle('hidden', id !== 'tab-matches');
   }
 
@@ -1102,87 +1101,32 @@ SKY.Net = (function () {
       btn.className = 'sel-btn';
       btn.textContent = info.inGame || info.players >= info.cap ? 'Full' : 'Join';
       if (!info.inGame && info.players < info.cap) {
-        btn.onclick = () => ensureNickname(() => { selectTab('tab-online'); join(info.code); });
+        btn.onclick = () => ensureNickname(() => join(info.code));
       } else btn.classList.add('locked');
       row.appendChild(btn);
       list.appendChild(row);
     }, (results) => {
       api._browsing = false;
-      if (!results.length) list.innerHTML = '<div class="srv-empty">No public lobbies right now — create one from the Online tab.</div>';
+      if (!results.length) list.innerHTML = '<div class="srv-empty">No public servers right now — create one!</div>';
     });
   }
 
   function initUI() {
     // rail navigation
     $('tab-offline').onclick = () => { if (!api.online) selectTab('tab-offline'); };
-    $('tab-online').onclick = () => {
-      selectTab('tab-online');
-      $('mp-nick').textContent = SKY.Settings.data.nickname || '(pick a nickname)';
-      ensureNickname(() => {});
-    };
-    $('tab-servers').onclick = () => {
-      if (api.online) return;
-      selectTab('tab-servers');
-      if (!api._browsing) refreshServers();
-    };
     $('tab-matches').onclick = () => {
       if (api.online) return;
       selectTab('tab-matches');
       SKY.Demos.renderPanel();
     };
     $('srv-refresh').onclick = () => { if (!api._browsing) refreshServers(); };
-    $('net-test-btn').onclick = () => {
-      const out = $('net-test-out');
-      out.classList.remove('hidden');
-      out.textContent = 'Running (takes ~30 s)…';
-      netTest((txt) => { out.textContent = txt; });
-    };
-
-    /* ----- direct connect: ONE box, paste-driven — the box recognises what
-       was pasted (invite vs reply) and does the right thing automatically */
-    const dlText = $('dl-text');
-    const dlSay = (s) => { $('dl-step').textContent = s; };
-    $('dl-invite').onclick = () => {
-      ensureNickname(() => {
-        dlSay('Creating code…');
-        directHost((inv) => {
-          dlText.value = inv;
-          try { navigator.clipboard.writeText(inv); } catch (e) {}
-          dlSay('Code copied — send it to your friend. When their reply comes, just paste it in the box.');
-        });
-      });
-    };
-    $('dl-copy').onclick = () => {
-      try { navigator.clipboard.writeText(dlText.value); dlSay('Copied.'); } catch (e) {}
-    };
-    dlText.addEventListener('input', () => {
-      const t = dlText.value.trim();
-      if (t.indexOf('SKY1.') !== 0) return;
-      let d;
-      try { d = JSON.parse(atob(t.slice(5).replace(/\s+/g, ''))); } catch (e) { return; }  // partial paste
-      if (d.o === 1) {
-        // an INVITE was pasted → build the reply
-        dlSay('Building your reply…');
-        ensureNickname(() => {
-          directJoin(t, (ans) => {
-            dlText.value = ans;
-            try { navigator.clipboard.writeText(ans); } catch (e) {}
-            dlSay('Reply copied — send it back. You join automatically once they paste it (~15 s).');
-          }).catch(() => dlSay('That code didn\'t work — ask for a fresh one.'));
-        });
-      } else if (d.o === 0) {
-        // a REPLY was pasted → finish the handshake
-        if (directComplete(t)) dlSay('Connecting… your friend appears in the lobby in a few seconds.');
-        else dlSay('Press CREATE CODE first, then paste their reply.');
-      }
-    });
     $('mp-nick').onclick = () => {
       SKY.Settings.data.nickname = '';
       ensureNickname(() => {});
     };
     $('mp-quick').onclick = () => ensureNickname(() => quickJoin(1));
-    $('mp-host-pub').onclick = () => ensureNickname(() => host(true, 1));
-    $('mp-host-priv').onclick = () => ensureNickname(() => host(false));
+    // ONE create button; the checkbox decides public (listed) vs private (code)
+    $('mp-create').onclick = () => ensureNickname(() => host(!$('mp-private').checked, 1));
     $('mp-join').onclick = () => ensureNickname(() => {
       const code = $('mp-code').value.trim().toUpperCase();
       if (code) join('priv-' + code);
@@ -1233,6 +1177,11 @@ SKY.Net = (function () {
     },
     lerpPawn,
     send, broadcast,
+    /* PLAY → Online sub-tab was opened: prep nick label + kick off a scan */
+    enterOnline() {
+      $('mp-nick').textContent = SKY.Settings.data.nickname || '(pick a nickname)';
+      if (!api.online && !api._browsing) refreshServers();
+    },
     /* test hooks */
     _host: host, _join: join, _start: hostStart,
 
@@ -1248,48 +1197,55 @@ SKY.Net = (function () {
     },
 
     /* ---------- server browser: probe the public slots ----------
-     * Probes every slot on every signaling server (lobbies are dual-homed,
-     * but a host may only have reached one). A server that never answers
-     * once is skipped for its remaining slots. */
+     * v2: ALL slots on ALL signaling servers probed in PARALLEL (lobbies are
+     * dual-homed but a host may only have reached one signal). 5 s per probe
+     * plus a 15 s watchdog for the whole sweep — refresh can never hang. */
     browse(onRow, onDone) {
-      let sig = 0, slot = 1;
       const results = [];
       const seen = new Set();
-      const next = () => {
-        if (slot > PUB_SLOTS) { sig++; slot = 1; }
-        if (sig >= SIGNALS.length) { onDone(results); return; }
-        const code = 'pub-' + slot;
-        if (seen.has(code)) { slot++; next(); return; }
-        const probe = new Peer(peerOpts(false, SIGNALS[sig].opts));
-        let finished = false, sigOpened = false;
-        const finish = (info) => {
-          if (finished) return;
-          finished = true;
-          try { probe.destroy(); } catch (e) {}
-          if (info) { seen.add(code); results.push(info); onRow(info); }
-          if (!sigOpened) sig++;   // server unreachable — skip its other slots
-          else slot++;
-          next();
-        };
-        // empty slots fail fast (peer-unavailable); occupied ones may need
-        // several seconds of ICE before the info comes back
-        const to = setTimeout(() => finish(null), 6000);
-        probe.on('open', () => {
-          sigOpened = true;
-          const c = probe.connect(PREFIX + '-' + code, { reliable: true });
-          c.on('open', () => c.send({ t: 'query' }));
-          c.on('data', (m) => {
-            if (m.t === 'info') { clearTimeout(to); finish({ code, ...m }); }
-          });
-          c.on('error', () => { clearTimeout(to); finish(null); });
-        });
-        probe.on('error', (err) => {
-          if (err && err.type === 'peer-unavailable') sigOpened = true;  // server answered: slot empty
-          clearTimeout(to);
-          finish(null);
-        });
+      const probes = [];
+      let pending = 0, done = false;
+      const finishAll = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(watchdog);
+        for (const p of probes) { try { p.destroy(); } catch (e) {} }
+        onDone(results);
       };
-      next();
+      const watchdog = setTimeout(finishAll, 15000);
+      const oneDone = () => { if (--pending <= 0) finishAll(); };
+      for (let sig = 0; sig < SIGNALS.length; sig++) {
+        for (let slot = 1; slot <= PUB_SLOTS; slot++) {
+          pending++;
+          const code = 'pub-' + slot;
+          const probe = new Peer(peerOpts(false, SIGNALS[sig].opts));
+          probes.push(probe);
+          let finished = false;
+          const finish = (info) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(to);
+            try { probe.destroy(); } catch (e) {}
+            if (info && !done && !seen.has(info.code)) {
+              seen.add(info.code);
+              results.push(info);
+              onRow(info);
+            }
+            oneDone();
+          };
+          // empty slots fail fast (peer-unavailable); occupied ones may need
+          // a few seconds of ICE before the info comes back
+          const to = setTimeout(() => finish(null), 5000);
+          probe.on('open', () => {
+            const c = probe.connect(PREFIX + '-' + code, { reliable: true });
+            c.on('open', () => c.send({ t: 'query' }));
+            c.on('data', (m) => { if (m.t === 'info') finish({ code, ...m }); });
+            c.on('error', () => finish(null));
+          });
+          probe.on('error', () => finish(null));
+        }
+      }
+      if (!pending) finishAll();
     },
     sendHit(victimId, imp, head) {
       if (!api.online) return;

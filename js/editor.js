@@ -263,7 +263,14 @@ SKY.Editor = (function () {
       d.r = [m.rotation.x, m.rotation.y, m.rotation.z];
     } else if (o.kind === 'pad') {
       d.p = [m.position.x, m.position.y - 0.11, m.position.z];
-      m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+      // rotating a pad ROTATES ITS LAUNCH VECTOR (the arrow follows)
+      if (m.rotation.x || m.rotation.y || m.rotation.z) {
+        const v = new THREE.Vector3(d.launch[0], d.launch[1], d.launch[2]).applyEuler(m.rotation);
+        d.launch = [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2)];
+        m.rotation.set(0, 0, 0);
+        rebuildMarker(o);
+      }
+      m.scale.setScalar(1);
     } else if (o.kind === 'spawn') {
       d.p = [m.position.x, m.position.y, m.position.z];
       d.yaw = m.rotation.y;
@@ -303,9 +310,11 @@ SKY.Editor = (function () {
       group.add(selBox);
       if (gizmo) {
         gizmo.attach(o.mesh);
-        if (o.kind !== 'block' && o.kind !== 'prop' && gizmo.mode !== 'translate') {
-          gizmo.setMode(o.kind === 'spawn' ? gizmo.mode === 'rotate' ? 'rotate' : 'translate' : 'translate');
-        }
+        // blocks/props: move+rotate+scale · pads/spawns: move+rotate · items: move
+        const allowed = (o.kind === 'block' || o.kind === 'prop')
+          ? ['translate', 'rotate', 'scale']
+          : o.kind === 'item' ? ['translate'] : ['translate', 'rotate'];
+        if (allowed.indexOf(gizmo.mode) < 0) gizmo.setMode('translate');
       }
     }
     syncInspector();
@@ -706,6 +715,7 @@ SKY.Editor = (function () {
   function open(defOrId) {
     if (api.active) return;
     api.active = true;
+    SKY.Attract.stop();   // the menu show must not leak into the editor scene
     def = SKY.MapData.normalize(typeof defOrId === 'string'
       ? JSON.parse(JSON.stringify(SKY.MapData.get(defOrId) || SKY.MapData.blank()))
       : (defOrId || SKY.MapData.blank()));

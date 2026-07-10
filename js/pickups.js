@@ -76,13 +76,18 @@ SKY.Pickups = (function () {
   }
 
   function hostSpawn() {
-    // custom maps can place explicit item spots; otherwise use roam points
-    const pts = SKY.World.itemPoints.length ? SKY.World.itemPoints : SKY.World.roamPoints;
+    // custom maps can place explicit item spots (used as-is); otherwise use
+    // roam points but NEVER ones sitting on player spawns — a weapon crate
+    // on a spawn pad reads as "the spawn points are swapped"
+    const explicit = SKY.World.itemPoints.length > 0;
+    const pts = explicit ? SKY.World.itemPoints
+      : SKY.World.roamPoints.filter(rp =>
+          !SKY.World.spawnPoints.some(s => s.pos.distanceTo(rp) < 4));
     if (!pts.length) return;
     let pos = null;
     for (let tries = 0; tries < 8 && !pos; tries++) {
       const c = SKY.U.pick(pts);
-      const nearPlayer = SKY.Game.pawns.some(p => p.alive && p.pos.distanceTo(c) < 7);
+      const nearPlayer = !explicit && SKY.Game.pawns.some(p => p.alive && p.pos.distanceTo(c) < 7);
       const nearPickup = active.some(pk => pk.pos.distanceTo(c) < 5);
       if (!nearPlayer && !nearPickup) pos = c;
     }
