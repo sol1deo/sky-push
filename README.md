@@ -1,5 +1,7 @@
 # SKY PUSH — MVP prototype
 
+**▶ Play it live: <https://sky-push.netlify.app>** · source: <https://github.com/sol1deo/sky-push>
+
 First-person **clip-farm** party brawler: fast movement, instant bullets,
 momentum-scaled knockback, cinematic ragdolls — built so a future **match
 editor** (free cam / keyframes / POV replays) has something worth filming.
@@ -18,15 +20,13 @@ for a bot match — or go **🌐 ONLINE**.
 Peer-to-peer over WebRTC (PeerJS + its free public signaling cloud — no
 account, no hosted server):
 
-**Playing with a friend:** the game is 100% static files — no game server
-needed. Either:
-1. **Netlify / GitHub Pages** (recommended): drag the project folder onto
-   [netlify.com/drop](https://app.netlify.com/drop) (or push to a GitHub Pages
-   repo). Send your friend the URL. One of you CREATE PRIVATE, share the
-   4-letter code, the other JOINs. Traffic is P2P; the site only serves files.
-2. **No upload at all**: send the folder as a zip — both open `index.html`
-   locally and connect through the same lobby codes (signaling goes through
-   the PeerJS cloud either way).
+**Playing with a friend:** the game is deployed at
+**<https://sky-push.netlify.app>** — send that link, one of you hits
+🌐 ONLINE → CREATE PRIVATE, shares the 4-letter code, the other JOINs
+(or both QUICK JOIN into the same public lobby). No server, no account —
+the site serves static files and gameplay is P2P.
+Deploying updates: `netlify deploy --prod --dir <staging>` (site `sky-push`)
+or push to the GitHub repo and redeploy.
 
 - **Nickname** prompt on first online visit (stored locally, editable).
 - **QUICK JOIN** probes the public lobby slots and joins the first open one —
