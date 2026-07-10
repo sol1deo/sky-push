@@ -62,9 +62,12 @@ SKY.Input = (function () {
         // 90-180°.
         // 1) hard outlier drop: a single event wildly above the recent average
         //    delta is a sensor glitch, not a flick — discard it entirely.
-        const mag = Math.max(Math.abs(dx), Math.abs(dy));
-        if (mag > Math.max(140, emaDelta * 14)) { lastMoveT = now; return; }
-        emaDelta = emaDelta * 0.9 + mag * 0.1;
+        //    (part of the "Raw mouse input" setting; OFF = classic behavior)
+        if (SKY.Settings && SKY.Settings.data.rawInput) {
+          const mag = Math.max(Math.abs(dx), Math.abs(dy));
+          if (mag > Math.max(240, emaDelta * 20)) { lastMoveT = now; return; }
+          emaDelta = emaDelta * 0.9 + mag * 0.1;
+        }
         // 2) look-speed clamp: everything else is capped to a believable flick
         //    speed for the time since the previous event — real aim passes
         //    through untouched, residual spikes get flattened.
@@ -93,8 +96,16 @@ SKY.Input = (function () {
 
     requestLock() {
       // unadjustedMovement = raw mouse input, no OS acceleration — the main
-      // cure for Chromium's pointer-lock delta spikes. Falls back silently
+      // cure for Chromium's pointer-lock delta spikes, but it changes flick
+      // feel; the "Raw mouse input" setting turns it off. Falls back silently
       // where unsupported.
+      if (SKY.Settings && !SKY.Settings.data.rawInput) {
+        try {
+          const r = api._canvas.requestPointerLock();
+          if (r && r.catch) r.catch(() => {});
+        } catch (e) { /* headless / unsupported */ }
+        return;
+      }
       try {
         const r = api._canvas.requestPointerLock({ unadjustedMovement: true });
         if (r && r.catch) {

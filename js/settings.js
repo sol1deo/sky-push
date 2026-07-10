@@ -16,6 +16,7 @@ SKY.Settings = (function () {
     shadows: 'high',    // high | low | off  (applies on next round)
     vignette: true,
     showFps: false,
+    rawInput: true,     // unadjusted mouse + spike filter; OFF = classic feel
     binds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
       jump: 'Space', crouch: 'KeyC',
@@ -88,6 +89,7 @@ SKY.Settings = (function () {
       <h4>MOUSE & VIEW</h4>
       ${slider('Sensitivity', 'sens', 0.2, 3, 0.05, v => (+v).toFixed(2) + 'x')}
       ${slider('Field of view', 'fov', 80, 115, 1, v => v + '°')}
+      ${check('Raw mouse input', 'rawInput', 'no OS accel + spike filter — turn OFF for the classic feel')}
       <h4>GRAPHICS</h4>
       ${slider('Render scale', 'renderScale', 0.5, 1.5, 0.05, v => Math.round(v * 100) + '%')}
       <div class="set-row"><span>Shadows</span>
