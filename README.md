@@ -48,21 +48,16 @@ pawns. See `js/net.js`. Debug: open two browsers with
 
 ### Cross-country / strict-NAT play (TURN relay)
 
-If both of you can CREATE lobbies but JOIN times out, both networks have
-strict NATs and the P2P link needs a **TURN relay**. There is no reliable
-free keyless TURN service anymore, so bring your own (2 minutes, free):
-
-1. Create a free app at <https://www.metered.ca> (50 GB/month TURN free) —
-   or any TURN provider.
-2. Put its credentials URL into `TURN_FETCH_URL` at the top of `js/net.js`:
-   `https://<app>.metered.live/api/v1/turn/credentials?apiKey=<KEY>`
-   (this key is designed to be public in client code), or put static
-   credentials into `TURN_STATIC`.
-3. Redeploy. Both players automatically pick up the relay; verify with
-   `?relay` (forces every connection through TURN).
-
-Without TURN, STUN-only still connects the majority of NAT pairs — just not
-the strict ones.
+Strict NATs on both ends (common between countries) block direct P2P — the
+game therefore ships with a **TURN relay**: a free metered.ca app
+(`skypush.metered.live`, 50 GB/month). Credentials are fetched at startup
+(`TURN_FETCH_URL` in `js/net.js`, with static fallbacks in `TURN_STATIC`);
+the apiKey there is public by design — it can only mint relay credentials.
+WebRTC uses the relay automatically only when a direct link fails, so easy
+NAT pairs stay serverless. Debug: `?relay` forces ALL traffic through TURN
+(verified in-game: full match runs relay-only). If the free quota ever runs
+out mid-month, direct-connectable pairs keep working; strict pairs wait for
+the quota reset or a new key.
 
 ## Settings (menu and pause screen)
 

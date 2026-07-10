@@ -40,8 +40,15 @@ SKY.Net = (function () {
    *      https://<app>.metered.live/api/v1/turn/credentials?apiKey=<KEY>
    * (the key is meant to be public client-side; it only mints TURN creds)
    * Debug: add ?relay to the URL to FORCE all traffic through TURN. */
-  const TURN_FETCH_URL = '';
-  const TURN_STATIC = [];    // or hardcode: [{ urls: 'turn:host:443?transport=tcp', username: 'u', credential: 'p' }]
+  // metered.ca app 'skypush' — this apiKey is PUBLIC by design (it can only
+  // mint TURN credentials; usage is capped by the free tier)
+  const TURN_FETCH_URL = 'https://skypush.metered.live/api/v1/turn/credentials?apiKey=23989c167668b6049fa285eca33ab8775b1e';
+  // static fallback (same relay) in case the credentials fetch is unreachable
+  const TURN_STATIC = [
+    { urls: 'turn:global.relay.metered.ca:80', username: '7b0a19efbb68cceef88e741f', credential: 'D+BHVnDLTFPZittQ' },
+    { urls: 'turn:global.relay.metered.ca:443', username: '7b0a19efbb68cceef88e741f', credential: 'D+BHVnDLTFPZittQ' },
+    { urls: 'turns:global.relay.metered.ca:443?transport=tcp', username: '7b0a19efbb68cceef88e741f', credential: 'D+BHVnDLTFPZittQ' },
+  ];
   const STUN_SERVERS = [
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
     { urls: 'stun:stun.cloudflare.com:3478' },
