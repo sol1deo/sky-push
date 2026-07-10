@@ -58,6 +58,17 @@ relay-forced loopback connection — have both players run it when things
 don't connect; the verdict line says exactly what's blocked.
 Debug: `?sigonly=main|backup` pretends the other server doesn't exist.
 
+### DIRECT LINK — when even the servers are blocked (e.g. Russia)
+
+State-level firewalls can block every lobby server AND the relay. The
+Online tab's **Direct link** section removes servers from the equation:
+player A presses CREATE INVITE and sends the generated code through any
+chat app (Telegram, WhatsApp — that chat becomes the signaling channel);
+player B presses ACCEPT INVITE, pastes it, and sends the REPLY code back;
+A pastes the reply — lobby joins automatically. After the handshake the
+game is normal P2P (with whatever STUN/TURN each side can reach;
+`stun.sipnet.ru` is included for reachability from inside Russia).
+
 ### Cross-country / strict-NAT play (TURN relay)
 
 Strict NATs on both ends (common between countries) block direct P2P — the

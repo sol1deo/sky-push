@@ -53,6 +53,7 @@ SKY.Net = (function () {
     { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:global.stun.twilio.com:3478' },
+    { urls: 'stun:stun.sipnet.ru:3478' },   // reachable from inside Russia
   ];
   let iceServers = TURN_STATIC.concat(STUN_SERVERS);
 
@@ -199,6 +200,8 @@ SKY.Net = (function () {
   let peer = null;           // primary connection to signaling
   let peer2 = null;          // host only: twin registration on the backup server
   let sessionId = 0;         // bumped on destroyPeer — stale-callback guard
+  const directPcs = [];      // DIRECT LINK RTCPeerConnections (manual signaling)
+  let pendingDirect = null;  // host: invite awaiting the guest's reply
   const conns = new Map();   // host: peerId -> conn
   let hostConn = null;       // client: conn to host
   let sendTimer = null;
@@ -228,6 +231,8 @@ SKY.Net = (function () {
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (peer) { const old = peer; peer = null; try { old.destroy(); } catch (e) {} }
     if (peer2) { const old = peer2; peer2 = null; try { old.destroy(); } catch (e) {} }
+    for (const pc of directPcs.splice(0)) { try { pc.close(); } catch (e) {} }
+    pendingDirect = null;
     conns.clear(); hostConn = null;
     lastStates.clear(); pendingLoot.clear();
     for (const k of Object.keys(pings)) delete pings[k];
@@ -497,6 +502,134 @@ SKY.Net = (function () {
     if (slot > PUB_SLOTS) { status('No public lobbies — creating one!'); host(true, 1); return; }
     status('Searching public lobbies… (' + slot + '/' + PUB_SLOTS + ')');
     join('pub-' + slot, () => quickJoin(slot + 1));
+  }
+
+  /* ===================== DIRECT LINK (serverless manual signaling) =====
+   * For networks where every lobby server is blocked (state firewalls etc.):
+   * the WebRTC offer/answer is carried BY THE PLAYERS THEMSELVES through any
+   * chat app. The chat IS the signaling channel — zero blockable
+   * infrastructure. Gameplay afterwards is the usual P2P (+TURN if usable).
+   * A raw RTCDataChannel is wrapped to look like a PeerJS DataConnection so
+   * the rest of this file doesn't know the difference. */
+
+  function wrapChannel(pc, ch) {
+    const handlers = {};
+    const conn = {
+      peer: 'direct',
+      open: false,
+      send(m) { try { ch.send(JSON.stringify(m)); } catch (e) {} },
+      close() { try { ch.close(); } catch (e) {} try { pc.close(); } catch (e) {} },
+      on(ev, fn) { (handlers[ev] = handlers[ev] || []).push(fn); },
+      _emit(ev, arg) { (handlers[ev] || []).forEach(fn => { try { fn(arg); } catch (e) {} }); },
+    };
+    ch.onopen = () => { conn.open = true; conn._emit('open'); };
+    ch.onmessage = (e) => { try { conn._emit('data', JSON.parse(e.data)); } catch (err) {} };
+    ch.onclose = () => { const was = conn.open; conn.open = false; if (was) conn._emit('close'); };
+    ch.onerror = () => conn._emit('error', { type: 'channel' });
+    return conn;
+  }
+
+  /* wait for ICE gathering, then encode the whole description as base64 */
+  function gatherLocal(pc) {
+    return new Promise((res) => {
+      let done = false;
+      const fin = () => {
+        if (done) return;
+        done = true;
+        res(btoa(unescape(encodeURIComponent(JSON.stringify(pc.localDescription)))));
+      };
+      if (pc.iceGatheringState === 'complete') { fin(); return; }
+      setTimeout(fin, 5000);   // ship whatever candidates we have by then
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') fin();
+      };
+    });
+  }
+  function parseDesc(s) {
+    return JSON.parse(decodeURIComponent(escape(atob(String(s).replace(/\s+/g, '')))));
+  }
+
+  /* become (or stay) a lobby host without needing any signaling server */
+  function ensureHostState() {
+    if (api.online && api.role === 'host') return;
+    destroyPeer();
+    api.online = true; api.role = 'host'; api.code = 'direct'; api.isPublic = false;
+    api.myId = 'host';
+    api.roster = [{ id: 'host', name: nickname(), color: COLORS[0] }];
+    pings.host = 0;
+    showLobby();
+    status('');
+    startStream();
+    startPing();
+  }
+
+  /* host side: create an invite string for ONE guest */
+  async function directHost(onInvite) {
+    ensureHostState();
+    const pc = new RTCPeerConnection({ iceServers });
+    directPcs.push(pc);
+    pendingDirect = pc;
+    const ch = pc.createDataChannel('sky', { ordered: true });
+    const conn = wrapChannel(pc, ch);
+    conn.on('data', (m) => onHostMessage(conn, m));
+    conn.on('close', () => dropClient(conn));
+    await pc.setLocalDescription(await pc.createOffer());
+    onInvite(await gatherLocal(pc));
+  }
+
+  /* host side: paste the guest's reply to finish the handshake */
+  function directComplete(answerStr) {
+    if (!pendingDirect) return false;
+    try {
+      pendingDirect.setRemoteDescription(parseDesc(answerStr));
+      pendingDirect = null;
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /* guest side: paste the invite, produce the reply string */
+  async function directJoin(offerStr, onAnswer) {
+    const desc = parseDesc(offerStr);           // throws on garbage — caller catches
+    destroyPeer();
+    const sess = sessionId;
+    const pc = new RTCPeerConnection({ iceServers });
+    directPcs.push(pc);
+    pc.ondatachannel = (e) => {
+      if (sess !== sessionId) return;
+      const conn = wrapChannel(pc, e.channel);
+      conn.on('open', () => {
+        if (sess !== sessionId) return;
+        status('Connected — entering lobby…');
+        conn.send({ t: 'hello', name: nickname() });
+      });
+      conn.on('data', (m) => {
+        if (sess !== sessionId) return;
+        if (m.t === 'welcome') {
+          hostConn = conn;
+          api.online = true; api.role = 'client'; api.code = 'direct';
+          api.myId = m.you;
+          api.roster = m.roster;
+          api.settings = m.settings;
+          SKY.Game.previewMap(api.settings.map);
+          showLobby();
+          status('');
+          startStream();
+          startPing();
+        } else if (m.t === 'full') {
+          status('That lobby is full or already playing.');
+          conn.close();
+        } else {
+          onClientMessage(m);
+        }
+      });
+      conn.on('close', () => {
+        if (sess !== sessionId) return;
+        if (api.online && api.role === 'client') leaveWithMessage('Host left the game.');
+      });
+    };
+    await pc.setRemoteDescription(desc);
+    await pc.setLocalDescription(await pc.createAnswer());
+    onAnswer(await gatherLocal(pc));
   }
 
   function leaveWithMessage(msg) {
@@ -939,6 +1072,55 @@ SKY.Net = (function () {
       out.textContent = 'Running (takes ~30 s)…';
       netTest((txt) => { out.textContent = txt; });
     };
+
+    /* ----- direct link (manual copy-paste signaling) ----- */
+    let dlMode = null;   // 'invite-out' | 'answer-in' | 'offer-in'
+    const dlShow = (step, text, mode) => {
+      $('dl-box').classList.remove('hidden');
+      $('dl-step').textContent = step;
+      $('dl-text').value = text || '';
+      dlMode = mode;
+    };
+    $('dl-invite').onclick = () => {
+      ensureNickname(() => {
+        dlShow('Creating invite…', '', null);
+        directHost((inv) => {
+          dlShow('1) COPY this invite and send it to your friend (any chat). ' +
+            '2) Paste their REPLY over it and press CONTINUE.', inv, 'invite-out');
+          try { navigator.clipboard.writeText(inv); status('Invite copied!'); } catch (e) {}
+        });
+      });
+    };
+    $('dl-accept').onclick = () => {
+      ensureNickname(() => {
+        dlShow('Paste the INVITE from the host here, then press CONTINUE.', '', 'offer-in');
+      });
+    };
+    $('dl-copy').onclick = () => {
+      try { navigator.clipboard.writeText($('dl-text').value); status('Copied!'); } catch (e) {}
+    };
+    $('dl-go').onclick = async () => {
+      const text = $('dl-text').value.trim();
+      if (!text) return;
+      try {
+        if (dlMode === 'offer-in') {
+          dlShow('Building your reply…', '', null);
+          await directJoin(text, (ans) => {
+            dlShow('Send this REPLY back to the host — you join automatically ' +
+              'once they paste it. (Can take ~15 s.)', ans, 'answer-out');
+            try { navigator.clipboard.writeText(ans); status('Reply copied!'); } catch (e) {}
+          });
+        } else if (dlMode === 'invite-out') {
+          if (directComplete(text)) {
+            dlShow('Connecting… your friend appears in the lobby in a few seconds.', '', null);
+          } else {
+            status('That reply doesn\'t look right — paste the WHOLE code.');
+          }
+        }
+      } catch (e) {
+        status('That code doesn\'t look right — paste the WHOLE thing.');
+      }
+    };
     $('mp-nick').onclick = () => {
       SKY.Settings.data.nickname = '';
       ensureNickname(() => {});
@@ -982,7 +1164,7 @@ SKY.Net = (function () {
 
     get roster() { return api.roster; },
     get pings() { return pings; },
-    netTest,
+    netTest, directHost, directComplete, directJoin,
     init() {
       initUI();
       fetchTurn();

@@ -159,6 +159,11 @@
   #net-test-out { margin:12px auto 0; padding:12px 18px; max-width:420px; text-align:left;
     font:11.5px/1.7 Consolas,monospace; color:var(--dim); background:rgba(255,255,255,.04);
     border:1px solid var(--line2); border-radius:8px; white-space:pre-wrap; }
+  #dl-text { width:100%; max-width:420px; height:84px; margin:0 auto; display:block;
+    padding:10px 12px; font:10.5px/1.5 Consolas,monospace; color:var(--txt);
+    background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:8px;
+    resize:none; outline:none; word-break:break-all; }
+  #dl-text:focus { border-color:rgba(255,255,255,.35); }
 
   /* ================= HUD ================= */
   #hud { position:absolute; inset:0; z-index:10; pointer-events:none; color:var(--txt); }
@@ -665,6 +670,25 @@
         </div>
         <div class="hint" style="margin-left:auto;margin-right:auto">Quick Join finds a public lobby or opens one.
           Private lobbies give you a 4-letter code. Peer-to-peer — no account, no server.</div>
+
+        <div class="panel-title" style="margin-top:26px">Direct link — no lobby server</div>
+        <div class="hint" style="margin:8px auto 0">If lobbies won't connect (blocked networks):
+          exchange the codes below through any chat app instead.
+          One player CREATEs an invite and sends it; the other ACCEPTs it and
+          sends the reply back; the first player pastes the reply. Done.</div>
+        <div class="sel-row" style="margin-top:12px">
+          <button class="sel-btn" id="dl-invite">Create invite</button>
+          <button class="sel-btn" id="dl-accept">Accept invite</button>
+        </div>
+        <div id="dl-box" class="hidden">
+          <div id="dl-step" class="hint" style="margin:10px auto 6px"></div>
+          <textarea id="dl-text" spellcheck="false"></textarea>
+          <div class="sel-row">
+            <button class="sel-btn" id="dl-copy">Copy</button>
+            <button class="sel-btn" id="dl-go">Continue</button>
+          </div>
+        </div>
+
         <button class="btn small" id="net-test-btn">Network test</button>
         <pre id="net-test-out" class="hidden"></pre>
       </div>
