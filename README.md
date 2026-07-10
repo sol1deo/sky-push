@@ -44,7 +44,25 @@ Architecture: host-authoritative rules (lives, KOs, respawns, rounds, crown,
 overtime, map events, loot), client-simulated movement + bullets streamed at
 20 Hz, shooter-reported hits arbitrated by the host, interpolated remote
 pawns. See `js/net.js`. Debug: open two browsers with
-`?nethost=ABCD` / `?netjoin=ABCD`.
+`?nethost=ABCD` / `?netjoin=ABCD`; add `?relay` to force TURN-only.
+
+### Cross-country / strict-NAT play (TURN relay)
+
+If both of you can CREATE lobbies but JOIN times out, both networks have
+strict NATs and the P2P link needs a **TURN relay**. There is no reliable
+free keyless TURN service anymore, so bring your own (2 minutes, free):
+
+1. Create a free app at <https://www.metered.ca> (50 GB/month TURN free) —
+   or any TURN provider.
+2. Put its credentials URL into `TURN_FETCH_URL` at the top of `js/net.js`:
+   `https://<app>.metered.live/api/v1/turn/credentials?apiKey=<KEY>`
+   (this key is designed to be public in client code), or put static
+   credentials into `TURN_STATIC`.
+3. Redeploy. Both players automatically pick up the relay; verify with
+   `?relay` (forces every connection through TURN).
+
+Without TURN, STUN-only still connects the majority of NAT pairs — just not
+the strict ones.
 
 ## Settings (menu and pause screen)
 

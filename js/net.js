@@ -30,6 +30,44 @@ SKY.Net = (function () {
     inGame: false,
   };
 
+  /* ---------------- ICE: STUN + optional TURN relay ----------------
+   * STUN discovers your public address (enough when at least one side has
+   * a friendly NAT). TURN relays the traffic when both NATs are strict —
+   * which is COMMON between different countries/ISPs. There is no reliable
+   * keyless public TURN anymore, so plug a free credentials endpoint in:
+   *   1. create a free app at https://www.metered.ca (50 GB/mo TURN)
+   *   2. set TURN_FETCH_URL to its credentials URL:
+   *      https://<app>.metered.live/api/v1/turn/credentials?apiKey=<KEY>
+   * (the key is meant to be public client-side; it only mints TURN creds)
+   * Debug: add ?relay to the URL to FORCE all traffic through TURN. */
+  const TURN_FETCH_URL = '';
+  const TURN_STATIC = [];    // or hardcode: [{ urls: 'turn:host:443?transport=tcp', username: 'u', credential: 'p' }]
+  const STUN_SERVERS = [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
+  ];
+  let iceServers = TURN_STATIC.concat(STUN_SERVERS);
+
+  function fetchTurn() {
+    if (!TURN_FETCH_URL) return;
+    fetch(TURN_FETCH_URL)
+      .then(r => r.json())
+      .then(list => {
+        if (Array.isArray(list) && list.length) iceServers = list.concat(STUN_SERVERS);
+      })
+      .catch(() => { /* relay stays off; STUN-only still works for easy NATs */ });
+  }
+
+  function peerOpts() {
+    return {
+      config: {
+        iceServers,
+        iceTransportPolicy: /[?&]relay\b/.test(location.search) ? 'relay' : 'all',
+      },
+    };
+  }
+
   let peer = null;
   const conns = new Map();   // host: peerId -> conn
   let hostConn = null;       // client: conn to host
@@ -80,7 +118,7 @@ SKY.Net = (function () {
     const code = forcedCode ? 'priv-' + forcedCode
       : isPublic ? 'pub-' + (slot || 1) : 'priv-' + randCode(4);
     status('Creating lobby…');
-    const p = peer = new Peer(PREFIX + '-' + code);
+    const p = peer = new Peer(PREFIX + '-' + code, peerOpts());
     attachRecovery(p);
     p.on('open', () => {
       if (peer !== p) return;
@@ -193,16 +231,19 @@ SKY.Net = (function () {
   /* ===================== joining ===================== */
   function join(code, onFail) {
     destroyPeer();
-    status('Joining ' + code + '…');
-    const p = peer = new Peer();   // anonymous id
+    status('Joining ' + code + '… (up to ~15 s between countries)');
+    const p = peer = new Peer(peerOpts());   // anonymous id
     attachRecovery(p);
     let opened = false;
     p.on('open', () => {
       if (peer !== p) return;
       const conn = p.connect(PREFIX + '-' + code, { reliable: true });
       const fail = (why) => { if (!opened) { destroyPeer(); onFail ? onFail(why) : status(why); } };
-      const timeout = setTimeout(() => fail('No lobby found for that code.'), 4500);
+      // ICE across countries/relays takes a while — don't give up early
+      const timeout = setTimeout(() =>
+        fail('Could not connect — wrong code, or both networks block P2P (needs a TURN relay, see README).'), 15000);
       conn.on('open', () => {
+        status('Connected — entering lobby…');
         conn.send({ t: 'hello', name: nickname() });
       });
       conn.on('data', (m) => {
@@ -721,7 +762,7 @@ SKY.Net = (function () {
 
     get roster() { return api.roster; },
     get pings() { return pings; },
-    init() { initUI(); },
+    init() { initUI(); fetchTurn(); },
     lerpPawn,
     send, broadcast,
     /* test hooks */
@@ -745,7 +786,7 @@ SKY.Net = (function () {
       const next = () => {
         if (slot > PUB_SLOTS) { onDone(results); return; }
         const code = 'pub-' + slot;
-        const probe = new Peer();
+        const probe = new Peer(peerOpts());
         let finished = false;
         const finish = (info) => {
           if (finished) return;
@@ -755,7 +796,9 @@ SKY.Net = (function () {
           slot++;
           next();
         };
-        const to = setTimeout(() => finish(null), 2600);
+        // empty slots fail fast (peer-unavailable); occupied ones may need
+        // several seconds of ICE before the info comes back
+        const to = setTimeout(() => finish(null), 6000);
         probe.on('open', () => {
           const c = probe.connect(PREFIX + '-' + code, { reliable: true });
           c.on('open', () => c.send({ t: 'query' }));
