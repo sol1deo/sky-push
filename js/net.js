@@ -754,11 +754,14 @@ SKY.Net = (function () {
       }
       case 'loot': {
         const items = m.choices.map(id => SKY.Loot.ITEMS.find(it => it.id === id)).filter(Boolean);
+        if (G.lootOpen && G.lootChoices) break;   // resend while already showing — ignore
         G.lootChoices = items;
         G.lootOpen = true;
+        let picked = false;                        // double-click guard (laggy fingers)
         SKY.HUD.showLoot(items, (i) => {
           const item = items[i];
-          if (!item) return;
+          if (!item || picked) return;
+          picked = true;
           SKY.Loot.apply(G.player, item);
           send({ t: 'pick', id: api.myId, item: item.id });
           G.lootChoices = null; G.lootOpen = false;
@@ -1291,12 +1294,23 @@ SKY.Net = (function () {
       });
       if (pawn.isRemote && !pawn.eliminated) {
         const choices = SKY.Loot.roll(pawn).map(it => it.id);
-        pendingLoot.set(pawn.netId, true);
+        pendingLoot.set(pawn.netId, { choices, at: performance.now() });
         const conn = conns.get(pawn.netId);
         if (conn) conn.send({ t: 'loot', choices });
       }
     },
-    hostWaitingLoot(pawn) { return pendingLoot.has(pawn.netId); },
+    hostWaitingLoot(pawn) {
+      const entry = pendingLoot.get(pawn.netId);
+      if (!entry) return false;
+      // belt & braces: the 'loot' message could get lost in a reconnect blip —
+      // re-send while the victim still hasn't picked (client ignores repeats)
+      if (performance.now() - entry.at > 3000) {
+        entry.at = performance.now();
+        const conn = conns.get(pawn.netId);
+        if (conn) conn.send({ t: 'loot', choices: entry.choices });
+      }
+      return true;
+    },
     hostRespawn(pawn, pos, yaw) {
       broadcast({ t: 'respawn', id: pawn.netId, pos: [pos.x, pos.y, pos.z], yaw });
     },
@@ -1304,7 +1318,7 @@ SKY.Net = (function () {
       broadcast({ t: 'roundend', winner: winner ? winner.netId : null,
         wins: winner ? winner.roundWins : 0, champion });
     },
-    hostNewRound() { broadcast({ t: 'newround' }); },
+    hostNewRound() { pendingLoot.clear(); broadcast({ t: 'newround' }); },
     hostOvertime() { broadcast({ t: 'overtime' }); },
     hostToLobby() { api.inGame = false; broadcast({ t: 'tolobby' }); showLobby(); },
     hostLoadoutFromLocalPick(item) {

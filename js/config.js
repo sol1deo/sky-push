@@ -238,6 +238,7 @@ SKY.TUNING = {
     missCooldown: 0.12,   // short cooldown if you fire and hit nothing
     assistDeg:    6.0,    // aim assist: cone-search this many degrees around the
                           // crosshair when the exact ray misses (panic saves!)
+    airHooks:     1,      // hooks per airtime — landing (or getting hit) refills
     // hooking a PLAYER reels THEM to YOU (hold to keep pulling)
     playerYank:      9.0,   // instant impulse toward you on attach
     playerYankUp:    4.5,   // instant lift on attach (pops them off the ground)

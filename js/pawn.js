@@ -56,6 +56,7 @@ window.SKY = window.SKY || {};
       this.abilities = { doubleJump: false, dash: false, pound: false };
       this.owned = new Set();             // powerup/ability ids already taken
       this.airJumps = 0; this.dashCd = 0;
+      this.airGrapples = 1;               // hooks left this airtime (grapple.js)
       this.pounding = false; this._crouchWas = false;
 
       // grenades (G) + bomb-mode economy/team
@@ -171,7 +172,10 @@ window.SKY = window.SKY || {};
       else this.jumpBufferT = Math.max(0, this.jumpBufferT - dt);
       const wantJump = this.jumpBufferT > 0 || (T.autoBhop && cmd.jumpHeld);
       this.coyoteT = this.grounded ? T.coyoteTime : Math.max(0, this.coyoteT - dt);
-      if (this.grounded) this.airJumps = 1;
+      if (this.grounded) {
+        this.airJumps = 1;
+        this.airGrapples = SKY.TUNING.grapple.airHooks;   // landing refills hooks
+      }
 
       // ---- slide state ----
       if (!this.sliding && cmd.crouch && this.grounded && this.slideCd <= 0 && this.speedH() > T.slideMinSpeed) {
@@ -311,7 +315,10 @@ window.SKY = window.SKY || {};
       this.sliding = false;
       this.zoomed = false;
       if (this.grapple) this.grapple = null;
-      if (this.isLocal) SKY.Effects.shake(1.2);
+      if (this.isLocal) {
+        SKY.Effects.shake(1.2);
+        if (mode === 'head') SKY.HUD.damage(this.ragdollImpulse, true);
+      }
     }
 
     exitRagdoll() {
@@ -427,6 +434,10 @@ window.SKY = window.SKY || {};
       const r = this.mods.knockResist;   // Heavyweight powerup reduces this
       this.vel.addScaledVector(impulse, r);
       const m = impulse.length() * r;
+      // getting hit refreshes the air-hook — you can always TRY to save yourself
+      this.airGrapples = Math.max(this.airGrapples, SKY.TUNING.grapple.airHooks);
+      // incoming-damage feedback for the local player (flash + direction arc)
+      if (this.isLocal && m > 2.5) SKY.HUD.damage(impulse, false);
       // Standing is NOT a defensive stance: grounded victims pop AIRBORNE so
       // friction can't eat the push — standing/running victims take the same
       // effective hit as airborne ones. Tuned in TUNING.knock.groundPop.
@@ -454,6 +465,7 @@ window.SKY = window.SKY || {};
       this.fellScreamed = false;
       this.padLockT = 0;
       this.airJumps = 1;
+      this.airGrapples = SKY.TUNING.grapple.airHooks;
       this.ragdoll = null;
       this.pounding = false;
       this.reloadT = 0;

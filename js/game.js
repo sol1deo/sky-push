@@ -75,6 +75,9 @@ SKY.Game = (function () {
         if (api.state !== 'playing' && api.state !== 'countdown') return;
         if (!locked) {
           if (api.lootOpen) return;              // reward picker owns the cursor
+          // ONLINE never pauses — the match runs on; you just get the menu
+          // overlay until you click back in
+          if (SKY.Net.online) { SKY.HUD.setPause(true); return; }
           api.paused = true; SKY.HUD.setPause(true);
         } else { api.paused = false; SKY.HUD.setPause(false); }
       };
@@ -218,8 +221,12 @@ SKY.Game = (function () {
       lastCdNum = -1;
       SKY.HUD.showRespawn(null);
       SKY.HUD.subMsg('Round ' + api.roundNum + ' — first to ' + SKY.TUNING.game.roundsToWin + ' wins', 2.5);
-      // returning from an unlocked state (e.g. reward picker was open): re-pause
-      if (!fromMenu && !SKY.Input.locked) { api.paused = true; SKY.HUD.setPause(true); }
+      // returning from an unlocked state (e.g. reward picker was open):
+      // offline re-pauses; online just shows the overlay (match keeps running)
+      if (!fromMenu && !SKY.Input.locked) {
+        if (!SKY.Net.online) api.paused = true;
+        SKY.HUD.setPause(true);
+      }
     },
 
     /* ---------------- BOMB mode ---------------- */

@@ -77,12 +77,18 @@ SKY.Grapple = (function () {
   function tryFire(pawn) {
     const G = SKY.TUNING.grapple;
     if (!pawn.alive) return false;
+    if (pawn.grapple) { release(pawn); return false; }   // press again = detach
+    // ONE hook per airtime — land (or take a hit) to refill
+    const airborne = !pawn.grounded;
+    if (airborne && pawn.airGrapples <= 0) {
+      if (pawn.isLocal) SKY.SFX.grapMiss();
+      return false;
+    }
     if (pawn.ragdoll) {
       // heroic save: web out of an airborne tumble (headshot knockdowns stay)
       if (pawn.ragdoll.mode !== 'air') return false;
       pawn.exitRagdoll();
     }
-    if (pawn.grapple) { release(pawn); return false; }   // press again = detach
     if (pawn.grappleCd > 0) { if (pawn.isLocal) SKY.SFX.grapMiss(); return false; }
 
     SKY.U.dirFromYawPitch(pawn.yaw, pawn.pitch, _dir);
@@ -107,6 +113,7 @@ SKY.Grapple = (function () {
       SKY.Effects.hitBurst(_to.clone(), 1, '#d8c49a');
       if (v.isLocal) SKY.Effects.shake(SKY.TUNING.camera.shakeHitTaken * 0.7);
       SKY.SFX.grapple();
+      if (airborne) pawn.airGrapples--;
       return true;
     }
     if (!hit) {
@@ -122,6 +129,7 @@ SKY.Grapple = (function () {
       t: 0,
     };
     SKY.SFX.grapple();
+    if (airborne) pawn.airGrapples--;
     return true;
   }
 

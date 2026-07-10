@@ -10,6 +10,7 @@ SKY.HUD = (function () {
   const $ = (id) => document.getElementById(id);
   let el = {};
   let hitT = 0, centerT = 0, subT = 0, sbRefreshT = 0;
+  let dmgT = 0, dmgMax = 1;
   let lastTier = -1, lastWeapon = '';
   let lootKeyHandler = null, buyKeyHandler = null;
 
@@ -30,6 +31,7 @@ SKY.HUD = (function () {
         center: $('center-msg'), sub: $('sub-msg'),
         respawn: $('respawn-ov'), sb: $('scoreboard'), sbBody: $('sb-body'),
         hitmark: $('hitmark'), crosshair: $('crosshair'),
+        dmgFlash: $('dmg-flash'), dmgDir: $('dmg-dir'),
         loot: $('loot-ov'), lootCards: $('loot-cards'),
         ammo: $('ammo'), ammoMax: $('ammo-max'), scope: $('scope'),
         nades: $('nades'), money: $('money'), actbar: $('actbar'), actfill: $('actfill'),
@@ -101,6 +103,25 @@ SKY.HUD = (function () {
       const s = 1 + tier * 0.25;
       el.hitmark.style.transform = `translate(-50%,-50%) rotate(45deg) scale(${s})`;
       el.hitmark.querySelectorAll('.l').forEach(l => { l.style.background = head ? '#ff5a4a' : '#ffffff'; });
+    },
+
+    /* incoming damage: red flash scaled by force + an arc toward the shooter.
+       Headshots flash harder and the arc goes white. */
+    damage(impulse, head) {
+      if (!el.dmgFlash) return;
+      const k = SKY.U.clamp01(impulse.length() / 22);
+      dmgT = Math.max(dmgT, 0.22 + k * 0.4 + (head ? 0.25 : 0));
+      dmgMax = dmgT;
+      el.dmgFlash.classList.toggle('head', !!head);
+      // the shot came from the opposite of the push direction
+      const src = Math.atan2(-impulse.x, -impulse.z);
+      const rel = SKY.U.angDelta(SKY.Input.yaw, src);
+      const arc = document.createElement('div');
+      arc.className = 'dmg-arc' + (head ? ' head' : '');
+      arc.style.transform = `rotate(${(-rel * 180 / Math.PI).toFixed(1)}deg)`;
+      el.dmgDir.appendChild(arc);
+      while (el.dmgDir.children.length > 4) el.dmgDir.removeChild(el.dmgDir.firstChild);
+      setTimeout(() => { if (arc.parentNode) arc.parentNode.removeChild(arc); }, 850);
     },
 
     scope(on) {
@@ -212,6 +233,10 @@ SKY.HUD = (function () {
       if (centerT > 0) { centerT -= dt; if (centerT <= 0) el.center.style.opacity = 0; }
       if (subT > 0) { subT -= dt; if (subT <= 0) el.sub.style.opacity = 0; }
       if (hitT > 0) { hitT -= dt; if (hitT <= 0) el.hitmark.style.opacity = 0; }
+      if (dmgT > 0) {
+        dmgT -= dt;
+        el.dmgFlash.style.opacity = Math.max(0, dmgT / Math.max(0.001, dmgMax)) * 0.95;
+      }
 
       const p = G.player;
       if (!p || G.state === 'menu') return;

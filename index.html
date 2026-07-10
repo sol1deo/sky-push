@@ -217,6 +217,18 @@
     width:30px; height:30px; opacity:0; }
   #hitmark .l { position:absolute; background:#fff; border-radius:1px; }
 
+  /* incoming damage: red screen flash + an arc pointing at the shooter */
+  #dmg-flash { position:absolute; inset:0; pointer-events:none; z-index:9; opacity:0;
+    background:radial-gradient(ellipse at 50% 50%, transparent 42%, rgba(255,45,40,.55) 100%); }
+  #dmg-flash.head {
+    background:radial-gradient(ellipse at 50% 50%, rgba(255,90,70,.12) 20%, rgba(255,30,25,.7) 100%); }
+  #dmg-dir { position:absolute; left:50%; top:50%; width:0; height:0; pointer-events:none; z-index:9; }
+  .dmg-arc { position:absolute; left:-80px; top:-80px; width:160px; height:160px;
+    border-radius:50%; border:4px solid transparent;
+    border-top-color:rgba(255,70,55,.95); animation:dmgfade .8s ease-out forwards; }
+  .dmg-arc.head { border-top-color:#ffffff; border-top-width:5px; }
+  @keyframes dmgfade { from { opacity:1; transform:scale(.92); } to { opacity:0; transform:scale(1.12); } }
+
   #lives { position:absolute; left:26px; bottom:24px; font-size:15px; letter-spacing:8px;
     color:var(--txt); }
   #lives .lost { color:var(--faint); }
@@ -296,6 +308,7 @@
   @keyframes deal { from { opacity:0; transform:translateY(34px) rotateX(28deg) scale(.9); } }
   .loot-card:hover { transform:translateY(-7px) scale(1.03);
     background:rgba(22,25,32,.9); filter:brightness(1.07); }
+  .loot-card.picked, .loot-card.dismissed { pointer-events:none; }  /* no double-grab */
   .loot-card.picked { animation:pickout .35s cubic-bezier(.34,1.56,.64,1) forwards;
     border-color:#fff !important; box-shadow:0 0 60px rgba(255,255,255,.35) !important; }
   @keyframes pickout { 40% { transform:scale(1.1); opacity:1; }
@@ -503,6 +516,8 @@
     <div class="l" style="width:11px;height:2px;bottom:0;right:0"></div>
     <div class="l" style="width:2px;height:11px;bottom:0;right:0"></div>
   </div>
+  <div id="dmg-flash"></div>
+  <div id="dmg-dir"></div>
   <div id="lives"></div>
   <div id="money" class="hidden"></div>
   <div id="nades" class="hidden"></div>
