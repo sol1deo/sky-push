@@ -1,0 +1,4 @@
+# stray local scratch files
+/15
+*.log
+.netlify/

@@ -1,0 +1,564 @@
+/* =============================================================================
+ * SKY PUSH — juice: particles, rings, camera shake, floating text, viewmodel
+ * All placeholder-quality but tuned so hits/launches READ clearly.
+ * ============================================================================= */
+window.SKY = window.SKY || {};
+
+SKY.Effects = (function () {
+  const POOL = 220;
+  const parts = [];
+  let scene = null, camera = null;
+  let shakeAmp = 0;
+  const shakeOff = new THREE.Vector3();
+  let fovKick = 0;
+  const texts = [];       // floating text sprites
+  const fireworks = [];   // scheduled celebration bursts
+  const _v = new THREE.Vector3();
+
+  /* ------------------------- particle pool ------------------------- */
+  function spawn(o) {
+    for (const p of parts) {
+      if (p.life > 0) continue;
+      p.spr.visible = true;
+      p.spr.position.copy(o.pos);
+      p.vel.copy(o.vel || _v.set(0, 0, 0));
+      p.life = p.maxLife = o.life || 0.5;
+      p.size0 = o.size || 0.5;
+      p.size1 = o.sizeEnd !== undefined ? o.sizeEnd : p.size0 * 0.2;
+      p.gravity = o.gravity || 0;
+      p.drag = o.drag || 0;
+      p.spr.material.color.set(o.color || '#ffffff');
+      p.spr.material.opacity = o.opacity !== undefined ? o.opacity : 1;
+      p.fade = o.opacity !== undefined ? o.opacity : 1;
+      p.ring = !!o.ring;
+      p.spr.material.map = o.ring ? SKY.U.ringTexture() : SKY.U.blobTexture();
+      return p;
+    }
+    return null;
+  }
+
+  function burst(pos, opts) {
+    opts = opts || {};
+    const n = opts.count || 10;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const up = SKY.U.rand(-0.3, 1);
+      const sp = SKY.U.rand(0.3, 1) * (opts.speed || 5);
+      spawn({
+        pos,
+        vel: new THREE.Vector3(Math.cos(a) * sp, up * sp, Math.sin(a) * sp),
+        life: SKY.U.rand(0.25, opts.life || 0.6),
+        size: SKY.U.rand(0.5, 1.2) * (opts.size || 0.5),
+        color: opts.color || '#ffffff',
+        gravity: opts.gravity !== undefined ? opts.gravity : 6,
+        drag: 2,
+      });
+    }
+  }
+
+  function ring(pos, color, size, life) {
+    const p = spawn({ pos, life: life || 0.4, size: 0.4, sizeEnd: size || 3.5, color, ring: true, opacity: 0.9 });
+    return p;
+  }
+
+  /* ------------------------- floating text ------------------------- */
+  function floatText(pos, text, color) {
+    if (texts.length > 6) return;
+    const spr = SKY.U.makeTextSprite(text, { color, px: 48, scale: 0.007 });
+    spr.position.copy(pos);
+    scene.add(spr);
+    texts.push({ spr, life: 1.0 });
+  }
+
+  /* ------------------------- weapon models (v2) -------------------------
+   * Detailed low-poly guns built from primitives — shared by the first-person
+   * viewmodel AND the characters' hands. -Z is the barrel direction.
+   * ---------------------------------------------------------------------- */
+  const WMAT = {};
+  function wmats() {
+    if (WMAT.metal) return WMAT;
+    WMAT.metal = new THREE.MeshLambertMaterial({ color: 0x2b3450 });
+    WMAT.dark = new THREE.MeshLambertMaterial({ color: 0x1b2336 });
+    WMAT.body = new THREE.MeshLambertMaterial({ color: 0x3b486b });
+    WMAT.grip = new THREE.MeshLambertMaterial({ color: 0x232c44 });
+    WMAT.wood = new THREE.MeshLambertMaterial({ color: 0x7a5a3f });
+    return WMAT;
+  }
+
+  function buildWeaponMesh(kind) {
+    const W = SKY.TUNING.weapons[kind] || SKY.TUNING.weapons.blaster;
+    const M = wmats();
+    const accent = new THREE.MeshLambertMaterial({
+      color: W.color, emissive: new THREE.Color(W.color).multiplyScalar(0.6),
+    });
+    const grp = new THREE.Group();
+    const box = (w, h, d, m, x, y, z, rx, rz) => {
+      const q = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+      q.position.set(x, y, z);
+      if (rx) q.rotation.x = rx;
+      if (rz) q.rotation.z = rz;
+      grp.add(q); return q;
+    };
+    const cyl = (r0, r1, l, m, x, y, z, alongZ) => {
+      const q = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, l, 10), m);
+      if (alongZ !== false) q.rotation.x = Math.PI / 2;
+      q.position.set(x, y, z);
+      grp.add(q); return q;
+    };
+    let tip;
+    const T = (x, y, z) => {
+      tip = new THREE.Object3D();
+      tip.position.set(x, y, z);
+      tip.name = 'tip';
+      grp.add(tip);
+    };
+
+    switch (kind) {
+      case 'pistol':
+        box(0.055, 0.07, 0.2, M.metal, 0, 0.02, -0.04);          // slide
+        box(0.05, 0.05, 0.16, M.body, 0, -0.03, -0.03);          // frame
+        box(0.012, 0.05, 0.14, accent, 0.032, 0.02, -0.04);      // side stripe
+        box(0.012, 0.05, 0.14, accent, -0.032, 0.02, -0.04);
+        cyl(0.016, 0.018, 0.05, M.dark, 0, 0.02, -0.165);        // muzzle
+        box(0.045, 0.12, 0.06, M.grip, 0, -0.1, 0.045, 0.28);    // grip
+        box(0.04, 0.012, 0.05, M.dark, 0, -0.06, -0.06);         // trigger guard
+        box(0.012, 0.022, 0.012, M.dark, 0, 0.065, -0.12);       // front sight
+        box(0.03, 0.02, 0.012, M.dark, 0, 0.065, 0.05);          // rear sight
+        T(0, 0.02, -0.2);
+        break;
+      case 'scatter':
+        cyl(0.028, 0.03, 0.36, M.dark, 0, 0.045, -0.24);         // top barrel
+        cyl(0.028, 0.03, 0.36, M.dark, 0, -0.015, -0.24);        // bottom barrel
+        box(0.07, 0.045, 0.03, M.metal, 0, 0.015, -0.41);        // muzzle band
+        box(0.06, 0.1, 0.14, M.metal, 0, 0, -0.02);              // receiver
+        box(0.065, 0.06, 0.18, M.wood, 0, -0.02, -0.22);         // pump/forend
+        box(0.055, 0.09, 0.2, M.wood, 0, -0.045, 0.15, 0.12);    // stock
+        box(0.06, 0.11, 0.045, M.wood, 0, -0.07, 0.26, 0.12);    // butt
+        box(0.012, 0.03, 0.012, accent, 0, 0.075, -0.4);         // bead sight
+        box(0.014, 0.014, 0.12, accent, 0.036, 0.015, -0.02);
+        T(0, 0.015, -0.44);
+        break;
+      case 'longshot':
+        cyl(0.02, 0.024, 0.5, M.dark, 0, 0.02, -0.36);           // long barrel
+        box(0.05, 0.05, 0.07, M.metal, 0, 0.02, -0.63);          // muzzle brake
+        box(0.06, 0.09, 0.3, M.body, 0, 0, 0.0);                 // receiver
+        box(0.05, 0.07, 0.26, M.body, 0, -0.045, 0.24, 0.06);    // cheek stock
+        box(0.055, 0.1, 0.04, M.grip, 0, -0.09, 0.35);           // butt pad
+        box(0.045, 0.11, 0.055, M.grip, 0, -0.1, 0.1, 0.3);      // grip
+        box(0.04, 0.1, 0.06, M.dark, 0, -0.09, -0.06);           // magazine
+        cyl(0.03, 0.03, 0.2, M.dark, 0, 0.085, -0.06);           // scope tube
+        cyl(0.036, 0.036, 0.045, M.metal, 0, 0.085, -0.17);      // objective
+        cyl(0.034, 0.034, 0.04, M.metal, 0, 0.085, 0.05);        // eyepiece
+        (() => {                                                  // glowing lens
+          const lens = new THREE.Mesh(new THREE.CircleGeometry(0.026, 10), accent);
+          lens.position.set(0, 0.085, -0.193);
+          lens.rotation.y = Math.PI;
+          grp.add(lens);
+          const lens2 = lens.clone();
+          lens2.position.z = 0.071;
+          lens2.rotation.y = 0;
+          grp.add(lens2);
+        })();
+        box(0.012, 0.03, 0.03, M.metal, 0, 0.05, -0.1);          // scope mounts
+        box(0.012, 0.03, 0.03, M.metal, 0, 0.05, 0.0);
+        cyl(0.012, 0.012, 0.06, M.metal, 0.05, 0.01, 0.06, false); // bolt handle
+        T(0, 0.02, -0.67);
+        break;
+      case 'mega':
+        box(0.1, 0.12, 0.42, M.body, 0, 0, -0.03);               // fat receiver
+        cyl(0.034, 0.04, 0.3, M.dark, 0, 0.03, -0.38);           // barrel
+        box(0.08, 0.07, 0.09, M.metal, 0, 0.03, -0.52);          // brake
+        box(0.02, 0.05, 0.34, accent, 0.062, 0.02, -0.05);       // glow rails
+        box(0.02, 0.05, 0.34, accent, -0.062, 0.02, -0.05);
+        box(0.05, 0.13, 0.07, M.dark, 0.02, -0.11, -0.02, 0.12); // twin mags
+        box(0.05, 0.13, 0.07, M.dark, -0.02, -0.11, 0.02, 0.12);
+        box(0.06, 0.1, 0.05, M.grip, 0, -0.1, 0.16, 0.3);        // grip
+        box(0.06, 0.08, 0.12, M.grip, 0, -0.02, 0.24);           // stock
+        for (let i = 0; i < 3; i++) box(0.11, 0.012, 0.03, M.dark, 0, 0.068, -0.16 + i * 0.07);
+        T(0, 0.03, -0.57);
+        break;
+      case 'smg':
+        box(0.055, 0.07, 0.24, M.body, 0, 0.01, -0.04);          // receiver
+        cyl(0.018, 0.02, 0.14, M.dark, 0, 0.03, -0.22);          // stub barrel
+        box(0.05, 0.1, 0.05, M.grip, 0, -0.08, 0.06, 0.25);      // grip
+        box(0.035, 0.14, 0.05, M.dark, 0, -0.1, -0.05, 0.1);     // long mag
+        box(0.012, 0.035, 0.16, accent, 0.032, 0.02, -0.05);
+        box(0.04, 0.04, 0.1, M.grip, 0, 0.005, 0.12);            // stock
+        T(0, 0.03, -0.3);
+        break;
+      case 'magnum':
+        box(0.05, 0.065, 0.16, M.metal, 0, 0.03, -0.1);          // frame
+        cyl(0.024, 0.026, 0.2, M.dark, 0, 0.035, -0.22);         // heavy barrel
+        cyl(0.036, 0.036, 0.05, M.metal, 0, 0.005, -0.02, false); // cylinder
+        box(0.045, 0.11, 0.055, M.wood, 0, -0.08, 0.055, 0.3);   // wooden grip
+        box(0.012, 0.02, 0.012, accent, 0, 0.075, -0.3);         // sight
+        T(0, 0.035, -0.33);
+        break;
+      case 'lobber':
+        cyl(0.055, 0.06, 0.26, M.body, 0, 0.02, -0.16);          // fat tube
+        cyl(0.062, 0.062, 0.05, accent, 0, 0.02, -0.3);          // muzzle ring
+        box(0.05, 0.09, 0.12, M.grip, 0, -0.07, 0.06, 0.3);      // grip
+        box(0.05, 0.05, 0.1, M.grip, 0, 0.01, 0.12);             // stock
+        box(0.012, 0.03, 0.012, M.dark, 0, 0.09, -0.24);
+        T(0, 0.02, -0.34);
+        break;
+      default: {  // blaster -> PUSH RIFLE
+        box(0.06, 0.075, 0.34, M.body, 0, 0.01, -0.02);          // receiver
+        cyl(0.02, 0.024, 0.24, M.dark, 0, 0.025, -0.3);          // barrel
+        box(0.045, 0.045, 0.05, M.metal, 0, 0.025, -0.43);       // muzzle
+        box(0.05, 0.055, 0.16, M.grip, 0, -0.015, -0.24);        // handguard
+        box(0.014, 0.04, 0.26, accent, 0.035, 0.01, -0.05);      // glow strips
+        box(0.014, 0.04, 0.26, accent, -0.035, 0.01, -0.05);
+        box(0.04, 0.12, 0.06, M.dark, 0, -0.1, -0.1, 0.15);      // magazine
+        box(0.045, 0.1, 0.05, M.grip, 0, -0.09, 0.1, 0.3);       // grip
+        box(0.05, 0.06, 0.12, M.grip, 0, 0, 0.2);                // stock
+        box(0.04, 0.08, 0.03, M.grip, 0, -0.02, 0.27);           // butt
+        box(0.012, 0.028, 0.012, M.dark, 0, 0.06, -0.36);        // front sight
+        box(0.028, 0.022, 0.012, M.dark, 0, 0.06, 0.02);         // rear sight
+        T(0, 0.025, -0.46);
+      }
+    }
+    grp.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return grp;
+  }
+
+  /* --------------------- weapon thumbnails (UI) ---------------------
+   * Renders the actual 3D weapon model to a small transparent canvas —
+   * used by the death-reward cards so a weapon reads at a glance. */
+  const thumbCache = {};
+  let thumbRig = null;
+  function weaponThumb(kind) {
+    if (thumbCache[kind]) return thumbCache[kind];
+    try {
+      if (!thumbRig) {
+        const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+        r.setSize(280, 150);
+        r.setPixelRatio(1);
+        r.outputEncoding = THREE.sRGBEncoding;
+        const sc = new THREE.Scene();
+        const cam = new THREE.PerspectiveCamera(26, 280 / 150, 0.01, 10);
+        sc.add(new THREE.HemisphereLight(0xe8f0ff, 0x3a4150, 1.15));
+        const key = new THREE.DirectionalLight(0xffffff, 1.5);
+        key.position.set(1.4, 1.9, 1.2);
+        sc.add(key);
+        thumbRig = { r, sc, cam };
+      }
+      const mesh = buildWeaponMesh(kind);
+      const box = new THREE.Box3().setFromObject(mesh);
+      const c = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length();
+      mesh.position.sub(c);
+      const grp = new THREE.Group();
+      grp.add(mesh);
+      grp.rotation.y = 2.45;    // 3/4 view, barrel to the left
+      grp.rotation.x = 0.22;
+      thumbRig.sc.add(grp);
+      thumbRig.cam.position.set(0, 0.05, size * 1.28);
+      thumbRig.cam.lookAt(0, 0, 0);
+      thumbRig.r.render(thumbRig.sc, thumbRig.cam);
+      const url = thumbRig.r.domElement.toDataURL();
+      thumbRig.sc.remove(grp);
+      thumbCache[kind] = url;
+      return url;
+    } catch (e) { return null; }   // headless / no-GL fallback
+  }
+
+  /* ------------------------- viewmodel ------------------------- */
+  const vm = { group: null, kind: null, kick: 0, bobT: 0, sway: { x: 0, y: 0 }, tipWorld: new THREE.Vector3() };
+
+  function ensureWeapon(kind) {
+    if (vm.kind === kind || !camera) return;
+    if (vm.group) camera.remove(vm.group);
+    vm.kind = kind;
+    vm.group = buildWeaponMesh(kind);
+    vm.group.scale.setScalar(0.85);
+    vm.group.position.set(0.3, -0.27, -0.52);
+    camera.add(vm.group);
+    vm.kick = 1.1;   // little "draw" animation on swap
+  }
+
+  /* ------------------------- tracers & muzzle light ------------------------- */
+  const tracers = [];
+  let muzzleLightObj = null;
+
+  function tracer(from, to, isHead) {
+    let tr = tracers.find(t => t.life <= 0);
+    if (!tr) {
+      if (tracers.length >= 24) return;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color: 0xffedc0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      line.frustumCulled = false;
+      const spark = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.blobTexture(), color: 0xfff4d8, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      spark.scale.set(0.5, 0.5, 1);
+      scene.add(line); scene.add(spark);
+      tr = { line, spark, from: new THREE.Vector3(), to: new THREE.Vector3(), life: 0, max: 1 };
+      tracers.push(tr);
+    }
+    tr.from.copy(from); tr.to.copy(to);
+    tr.max = 0.11;
+    tr.life = tr.max;
+    tr.line.material.color.set(isHead ? 0xffb0a0 : 0xffedc0);
+    const a = tr.line.geometry.attributes.position.array;
+    a[0] = from.x; a[1] = from.y; a[2] = from.z;
+    a[3] = to.x; a[4] = to.y; a[5] = to.z;
+    tr.line.geometry.attributes.position.needsUpdate = true;
+    tr.line.visible = true;
+    tr.spark.visible = true;
+  }
+
+  function muzzleLight(pos) {
+    if (!muzzleLightObj) {
+      muzzleLightObj = new THREE.PointLight(0xffd9a0, 0, 9, 2);
+      scene.add(muzzleLightObj);
+    }
+    muzzleLightObj.position.copy(pos);
+    muzzleLightObj.intensity = 2.6;
+  }
+
+  /* ---------------- tracer darts (shared by weapons + replay) ----------------
+   * Bright head sprite + an additive RIBBON quad that always faces the camera
+   * and tapers toward the tail — reads far better than a 1px line. */
+  const _tside = new THREE.Vector3();
+  const _ttmp = new THREE.Vector3();
+
+  function makeTracer() {
+    const g = new THREE.Group();
+    const head = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: SKY.U.blobTexture(), color: 0xfff2d0, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    head.scale.set(0.38, 0.38, 1);   // bullet-sized, not a comet
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array([
+      1, 1, 1,  1, 1, 1,  0.2, 0.16, 0.1,  0.2, 0.16, 0.1,
+    ]), 3));
+    geo.setIndex([0, 2, 1, 1, 2, 3]);
+    const trail = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xffe2a8, transparent: true, opacity: 0.95, vertexColors: true,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    trail.frustumCulled = false;
+    g.add(head, trail);
+    scene.add(g);
+    return { g, head, trail };
+  }
+
+  /* place a tracer: head at pos, ribbon stretching len behind along dir */
+  function poseTracer(vis, pos, dir, len) {
+    vis.head.position.copy(pos);
+    _ttmp.copy(camera.position).sub(pos);
+    _tside.crossVectors(dir, _ttmp);
+    if (_tside.lengthSq() < 1e-8) _tside.set(-dir.z, 0, dir.x);   // dead-on view
+    _tside.normalize();
+    const wHead = 0.032, wTail = 0.006;
+    const a = vis.trail.geometry.attributes.position.array;
+    const tx = pos.x - dir.x * len, ty = pos.y - dir.y * len, tz = pos.z - dir.z * len;
+    a[0] = pos.x + _tside.x * wHead; a[1] = pos.y + _tside.y * wHead; a[2] = pos.z + _tside.z * wHead;
+    a[3] = pos.x - _tside.x * wHead; a[4] = pos.y - _tside.y * wHead; a[5] = pos.z - _tside.z * wHead;
+    a[6] = tx + _tside.x * wTail; a[7] = ty + _tside.y * wTail; a[8] = tz + _tside.z * wTail;
+    a[9] = tx - _tside.x * wTail; a[10] = ty - _tside.y * wTail; a[11] = tz - _tside.z * wTail;
+    vis.trail.geometry.attributes.position.needsUpdate = true;
+  }
+
+  /* collapse the ribbon onto a point (fresh spawn — no stale streak) */
+  function resetTracer(vis, pos) {
+    vis.head.position.copy(pos);
+    const a = vis.trail.geometry.attributes.position.array;
+    for (let i = 0; i < 12; i += 3) { a[i] = pos.x; a[i + 1] = pos.y; a[i + 2] = pos.z; }
+    vis.trail.geometry.attributes.position.needsUpdate = true;
+  }
+
+  /* ================================================================= */
+  return {
+    shakeOffset: shakeOff,
+
+    init(sc, cam) {
+      scene = sc; camera = cam;
+      for (let i = 0; i < POOL; i++) {
+        const mat = new THREE.SpriteMaterial({
+          map: SKY.U.blobTexture(), transparent: true, depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const spr = new THREE.Sprite(mat);
+        spr.visible = false;
+        scene.add(spr);
+        parts.push({ spr, vel: new THREE.Vector3(), life: 0, maxLife: 1, size0: 1, size1: 0, gravity: 0, drag: 0, fade: 1, ring: false });
+      }
+      ensureWeapon('blaster');
+    },
+
+    tick(dt) {
+      // particles
+      for (const p of parts) {
+        if (p.life <= 0) continue;
+        p.life -= dt;
+        if (p.life <= 0) { p.spr.visible = false; continue; }
+        const t = 1 - p.life / p.maxLife;
+        p.vel.y -= p.gravity * dt;
+        if (p.drag) p.vel.multiplyScalar(Math.max(0, 1 - p.drag * dt));
+        p.spr.position.addScaledVector(p.vel, dt);
+        const s = SKY.U.lerp(p.size0, p.size1, t);
+        p.spr.scale.set(s, s, 1);
+        p.spr.material.opacity = p.fade * (1 - t * t);
+      }
+      // floating text
+      for (let i = texts.length - 1; i >= 0; i--) {
+        const t = texts[i];
+        t.life -= dt;
+        t.spr.position.y += dt * 1.6;
+        t.spr.material.opacity = SKY.U.clamp01(t.life * 1.6);
+        if (t.life <= 0) {
+          scene.remove(t.spr);
+          t.spr.material.map.dispose(); t.spr.material.dispose();
+          texts.splice(i, 1);
+        }
+      }
+      // camera shake (light! see TUNING.camera)
+      shakeAmp = Math.max(0, shakeAmp - shakeAmp * 7 * dt - 0.1 * dt);
+      const a = shakeAmp * 0.05;
+      shakeOff.set(SKY.U.rand(-a, a), SKY.U.rand(-a, a), SKY.U.rand(-a, a));
+      fovKick = Math.max(0, fovKick - fovKick * 9 * dt);
+      // viewmodel kick recover (sway/bob handled in viewmodelMotion)
+      if (vm.group) {
+        vm.kick = Math.max(0, vm.kick - vm.kick * 10 * dt);
+        vm.group.position.z = -0.5 + vm.kick * 0.16;   // punchy slide-back
+      }
+      // tracers fade
+      for (const tr of tracers) {
+        if (tr.life <= 0) continue;
+        tr.life -= dt;
+        if (tr.life <= 0) { tr.line.visible = false; tr.spark.visible = false; continue; }
+        const k = 1 - tr.life / tr.max;
+        tr.line.material.opacity = 0.85 * (1 - k * k);
+        tr.spark.position.lerpVectors(tr.from, tr.to, Math.min(1, k * 2.2));
+        tr.spark.material.opacity = 1 - k;
+      }
+      if (muzzleLightObj && muzzleLightObj.intensity > 0.01) {
+        muzzleLightObj.intensity *= Math.exp(-18 * dt);
+      }
+      // fireworks scheduler
+      for (let i = fireworks.length - 1; i >= 0; i--) {
+        const f = fireworks[i];
+        f.t -= dt;
+        if (f.t <= 0) {
+          burst(f.pos, { count: 26, speed: 9, size: 0.8, color: f.color, gravity: 7, life: 1 });
+          ring(f.pos, f.color, 6, 0.6);
+          fireworks.splice(i, 1);
+        }
+      }
+    },
+
+    setViewmodelVisible(v) {
+      if (vm.group) vm.group.visible = v;
+    },
+
+    /* weapon feel: mouse-lag sway, run bob, fall tilt, slide roll, fire kick,
+       and a full backflip spin while reloading (reloadFrac 0..1, or -1) */
+    viewmodelMotion(dt, speed, grounded, velY, sliding, reloadFrac) {
+      if (!vm.group) return;
+      const d = SKY.Input.takeFrameDelta();
+      vm.sway.x = SKY.U.damp(vm.sway.x, SKY.U.clamp(-d.dx * 0.0022, -0.09, 0.09), 9, dt);
+      vm.sway.y = SKY.U.damp(vm.sway.y, SKY.U.clamp(d.dy * 0.0022, -0.07, 0.07), 9, dt);
+      let spin = 0, dip = 0;
+      if (reloadFrac !== undefined && reloadFrac >= 0) {
+        const k = reloadFrac * reloadFrac * (3 - 2 * reloadFrac);   // smoothstep
+        spin = -Math.PI * 2 * k;
+        dip = Math.sin(Math.PI * reloadFrac) * 0.07;
+      }
+      vm.group.rotation.y = vm.sway.x;
+      vm.group.rotation.x = vm.kick * 0.5 + vm.sway.y + spin +
+        SKY.U.clamp(velY * 0.004, -0.08, 0.08);
+      vm.group.rotation.z = SKY.U.damp(vm.group.rotation.z, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
+      if (grounded && speed > 1) {
+        vm.bobT += dt * speed * 1.4;
+        vm.group.position.y = -0.27 + Math.sin(vm.bobT) * 0.006 * Math.min(speed, 12);
+        vm.group.position.x = 0.3 + Math.cos(vm.bobT * 0.5) * 0.004 * Math.min(speed, 12);
+      } else {
+        vm.group.position.y = SKY.U.damp(vm.group.position.y, -0.27, 8, dt);
+        vm.group.position.x = SKY.U.damp(vm.group.position.x, 0.3, 8, dt);
+      }
+      vm.group.position.y -= dip;
+    },
+    ensureWeapon,
+
+    viewmodelTip() {
+      if (!vm.group) return null;
+      const tip = vm.group.getObjectByName('tip');
+      tip.getWorldPosition(vm.tipWorld);
+      return vm.tipWorld;
+    },
+
+    shake(amp) { shakeAmp = Math.min(shakeAmp + amp, 3); },
+    getFovKick() { return fovKick; },
+    ring(pos, color, size, life) { ring(pos, color, size, life); },
+    burst,
+
+    /* ---------------- gameplay-facing effect recipes ---------------- */
+    muzzle(pos, tierColor, isLocal, kick) {
+      burst(pos, { count: 8, speed: 3, size: 0.45, color: tierColor, gravity: 0, life: 0.2 });
+      if (isLocal) {
+        if (vm.group) vm.kick = Math.min((kick || 1) * 1.3, 2.6);
+        fovKick = 1.5 * Math.min((kick || 1), 1.6);
+      }
+    },
+    hitBurst(pos, tier, tierColor) {
+      // meaty: dense core flash + sparks + a ring from tier 1 up
+      burst(pos, { count: 14 + tier * 6, speed: 5 + tier * 3, size: 0.5 + tier * 0.15, color: tierColor, life: 0.45 });
+      burst(pos, { count: 4, speed: 2, size: 0.9, color: '#ffffff', life: 0.16, gravity: 0 });
+      if (tier >= 1) ring(pos, tierColor, 1.6 + tier, 0.3);
+    },
+    headshotBurst(pos) {
+      burst(pos, { count: 24, speed: 7, size: 0.5, color: '#ff8a7a', life: 0.55 });
+      burst(pos, { count: 5, speed: 2, size: 1.1, color: '#ffffff', life: 0.16, gravity: 0 });
+      ring(pos, '#ff8a7a', 2.6, 0.3);
+      ring(pos, '#ffffff', 1.4, 0.2);
+    },
+    impactSpark(pos, normal) {
+      for (let i = 0; i < 5; i++) {
+        const v = normal.clone().multiplyScalar(SKY.U.rand(2, 5));
+        v.x += SKY.U.rand(-2, 2); v.y += SKY.U.rand(-0.5, 2.5); v.z += SKY.U.rand(-2, 2);
+        spawn({ pos, vel: v, life: SKY.U.rand(0.15, 0.3), size: 0.22, color: '#ffd9a0', gravity: 10, drag: 2 });
+      }
+    },
+    tracer, muzzleLight, buildWeaponMesh, weaponThumb,
+    makeTracer, poseTracer, resetTracer,
+    cannonBlast(pos, dir) {
+      for (let i = 0; i < 14; i++) {
+        const v = dir.clone().multiplyScalar(SKY.U.rand(4, 11));
+        v.x += SKY.U.rand(-3, 3); v.y += SKY.U.rand(-1, 3); v.z += SKY.U.rand(-3, 3);
+        spawn({ pos, vel: v, life: SKY.U.rand(0.2, 0.45), size: 0.9, color: '#bfe9ff', gravity: 2, drag: 3 });
+      }
+      ring(pos, '#bfe9ff', 4, 0.3);
+    },
+    padRing(pos) { ring(pos, '#7dff9e', 3.2, 0.4); burst(pos, { count: 8, speed: 3, color: '#7dff9e', gravity: -2, life: 0.4 }); },
+    trailPuff(pos, color) { spawn({ pos, life: 0.28, size: 0.34, sizeEnd: 0.05, color, opacity: 0.8 }); },
+    respawnBeam(pos, color) {
+      for (let i = 0; i < 10; i++) {
+        spawn({ pos: new THREE.Vector3(pos.x, pos.y + i * 0.35, pos.z), life: 0.5, size: 0.9, sizeEnd: 0.1, color, opacity: 0.7 });
+      }
+      ring(new THREE.Vector3(pos.x, pos.y + 0.1, pos.z), color, 3, 0.5);
+    },
+    koBurst(pos, color) {
+      burst(pos, { count: 22, speed: 8, size: 0.8, color, life: 0.8 });
+      ring(pos, color, 5, 0.5);
+    },
+    celebrate(centerPos) {
+      const colors = ['#ffd34d', '#ff5db1', '#40c8ff', '#7dff9e'];
+      for (let i = 0; i < 10; i++) {
+        fireworks.push({
+          t: i * 0.35,
+          color: SKY.U.pick(colors),
+          pos: new THREE.Vector3(centerPos.x + SKY.U.rand(-12, 12), centerPos.y + SKY.U.rand(4, 10), centerPos.z + SKY.U.rand(-12, 12)),
+        });
+      }
+    },
+    floatText,
+  };
+})();
