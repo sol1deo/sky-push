@@ -361,16 +361,40 @@ SKY.U = {
 
   /* --- block geometry factory (editor + custom maps share it) ---
      Non-box shapes still collide as their bounding box — tops are what
-     matters for platforming. sx doubles as the diameter. */
+     matters for platforming. sx doubles as the diameter.
+     UVs are WORLD-LOCKED (1 texture tile per ~3 units on every face), so
+     resizing a block never stretches its texture. */
   blockGeometry(shape, sx, sy, sz) {
+    const D = 3;   // world units per texture tile
+    let g;
     switch (shape) {
-      case 'cyl':    return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 24);
-      case 'hex':    return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 6);
-      case 'cone':   return new THREE.CylinderGeometry(sx * 0.08, sx / 2, sy, 20);
-      case 'sphere': return new THREE.SphereGeometry(sx / 2, 18, 14);
-      case 'pyramid': return new THREE.CylinderGeometry(0.01, sx / 2, sy, 4);
-      default:       return new THREE.BoxGeometry(sx, sy, sz);
+      case 'cyl':    g = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 24); break;
+      case 'hex':    g = new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 6); break;
+      case 'cone':   g = new THREE.CylinderGeometry(sx * 0.08, sx / 2, sy, 20); break;
+      case 'sphere': g = new THREE.SphereGeometry(sx / 2, 18, 14); break;
+      case 'pyramid': g = new THREE.CylinderGeometry(0.01, sx / 2, sy, 4); break;
+      default: {
+        g = new THREE.BoxGeometry(sx, sy, sz);
+        // per-face UV density (face order: +x -x +y -y +z -z, 4 verts each)
+        const uv = g.attributes.uv;
+        const dims = [[sz, sy], [sz, sy], [sx, sz], [sx, sz], [sx, sy], [sx, sy]];
+        for (let f = 0; f < 6; f++) {
+          const du = dims[f][0] / D, dv = dims[f][1] / D;
+          for (let i = 0; i < 4; i++) {
+            const idx = f * 4 + i;
+            uv.setXY(idx, uv.getX(idx) * du, uv.getY(idx) * dv);
+          }
+        }
+        uv.needsUpdate = true;
+        return g;
+      }
     }
+    // round shapes: uniform approximate density
+    const uv = g.attributes.uv;
+    const du = Math.max(1, (Math.PI * sx) / D * 0.5), dv = Math.max(0.5, sy / D);
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * du, uv.getY(i) * dv);
+    uv.needsUpdate = true;
+    return g;
   },
 
   /* --- soft wide light-shaft band (dreamy godrays, not thin lines) --- */

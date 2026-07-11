@@ -34,7 +34,8 @@ SKY.GFX = (function () {
     boomstick: { file: 'q', len: 0.50 },
     bouncer:   { file: 'r', len: 0.40 },
     quad:      { file: 'o', len: 0.36 },
-    piston:    { file: 'h', len: 0.42 },
+    piston:    { file: 'l', len: 0.46 },
+    cannon:    { file: 'h', len: 0.44 },   // the Q air-cannon's left-hand tube
     grenade1:  { file: 'grenade1', len: 0.16 },
     grenade2:  { file: 'grenade2', len: 0.16 },
   };

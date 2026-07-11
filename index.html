@@ -288,8 +288,19 @@
   #lv-timer { margin:10px auto 0; height:3px; width:300px;
     background:rgba(255,255,255,.14); border-radius:2px; overflow:hidden; }
   #lv-timer div { height:100%; width:100%; background:#ffd34d; }
-  #nades { position:absolute; left:26px; bottom:52px; font-size:10.5px; font-weight:600;
-    letter-spacing:.16em; text-transform:uppercase; color:var(--dim); }
+  #nades { position:absolute; right:26px; bottom:118px; font-size:11px; font-weight:600;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--dim);
+    display:flex; align-items:center; gap:7px;
+    background:var(--bg2); border:1px solid var(--line2); border-radius:999px;
+    padding:5px 12px 5px 8px; backdrop-filter:blur(8px); }
+  #nades.hidden { display:none; }
+  #nades b { color:var(--txt); font-weight:700; }
+  #nades small { color:var(--faint); font-size:9px; letter-spacing:.2em; }
+  .nade-pip { width:10px; height:10px; border-radius:50%; display:inline-block; }
+  #ring { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:46px; height:46px; border-radius:50%; pointer-events:none; display:none;
+    -webkit-mask:radial-gradient(closest-side, transparent 70%, #000 73%);
+    mask:radial-gradient(closest-side, transparent 70%, #000 73%); }
   .loot-card .loot-kind { font-size:8.5px; font-weight:700; letter-spacing:.3em; text-indent:.3em;
     text-transform:uppercase; color:var(--faint); }
 
@@ -335,8 +346,9 @@
   #scope { position:absolute; inset:0; pointer-events:none; z-index:8;
     background:radial-gradient(circle at 50% 50%, transparent 31%, rgba(4,6,10,.97) 33.5%); }
   .scope-cross { position:absolute; background:rgba(235,240,250,.8); }
-  .scope-cross.h { left:50%; top:20%; width:1px; height:60%; transform:translateX(-50%); }
-  .scope-cross.v { top:50%; left:26%; height:1px; width:48%; transform:translateY(-50%); }
+  /* vmin so the lines stay INSIDE the circular glass on wide screens */
+  .scope-cross.h { left:50%; top:50%; width:1px; height:54vmin; transform:translate(-50%,-50%); }
+  .scope-cross.v { top:50%; left:50%; height:1px; width:54vmin; transform:translate(-50%,-50%); }
 
   #center-msg { position:absolute; left:50%; top:30%; transform:translate(-50%,-50%);
     font-size:56px; font-weight:800; letter-spacing:.22em; text-indent:.22em;
@@ -589,6 +601,9 @@
     border-radius:5px; font-size:10px; font-weight:700; color:var(--dim);
     cursor:ew-resize; user-select:none; background:rgba(255,255,255,.03); }
   .ed-face:hover { color:var(--txt); border-color:rgba(255,255,255,.35); }
+  .ed-face.sel { color:#ffd34d; border-color:#ffd34d; }
+  .ed-ext { cursor:pointer; }
+  .ed-row small { opacity:.5; font-size:8px; letter-spacing:.08em; }
   .ed-swatches { display:grid !important; grid-template-columns:repeat(4, 1fr);
     gap:6px !important; max-height:210px; overflow-y:auto; padding-right:4px; }
   .ed-swatches::-webkit-scrollbar { width:5px; }
@@ -690,6 +705,7 @@
     <div class="bar"><div id="spark-fill"></div></div>
   </div>
   <div id="nades" class="hidden"></div>
+  <div id="ring"></div>
   <div id="speedo">
     <div id="speed-num">0.0 <small>M/S</small></div>
     <div id="speed-bar"><div id="speed-bar-fill"></div></div>
@@ -777,7 +793,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 33</div>
+    <div class="rail-foot">prototype · build 34</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -1010,36 +1026,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=33"></script>
-<script src="js/profile.js?v=33"></script>
-<script src="js/utils.js?v=33"></script>
-<script src="js/gfx.js?v=33"></script>
-<script src="js/mapdata.js?v=33"></script>
-<script src="js/audio.js?v=33"></script>
-<script src="js/settings.js?v=33"></script>
-<script src="js/input.js?v=33"></script>
-<script src="js/world.js?v=33"></script>
-<script src="js/effects.js?v=33"></script>
-<script src="js/map.js?v=33"></script>
-<script src="js/characters.js?v=33"></script>
-<script src="js/pawn.js?v=33"></script>
-<script src="js/weapons.js?v=33"></script>
-<script src="js/loot.js?v=33"></script>
-<script src="js/pickups.js?v=33"></script>
-<script src="js/sparks.js?v=33"></script>
-<script src="js/grenades.js?v=33"></script>
-<script src="js/grapple.js?v=33"></script>
-<script src="js/bots.js?v=33"></script>
-<script src="js/hud.js?v=33"></script>
-<script src="js/game.js?v=33"></script>
-<script src="js/attract.js?v=33"></script>
-<script src="js/net.js?v=33"></script>
-<script src="js/dof.js?v=33"></script>
-<script src="js/replay.js?v=33"></script>
-<script src="js/demos.js?v=33"></script>
-<script src="js/locker.js?v=33"></script>
-<script src="js/assets.js?v=33"></script>
-<script src="js/editor.js?v=33"></script>
-<script src="js/main.js?v=33"></script>
+<script src="js/config.js?v=34"></script>
+<script src="js/profile.js?v=34"></script>
+<script src="js/utils.js?v=34"></script>
+<script src="js/gfx.js?v=34"></script>
+<script src="js/mapdata.js?v=34"></script>
+<script src="js/audio.js?v=34"></script>
+<script src="js/settings.js?v=34"></script>
+<script src="js/input.js?v=34"></script>
+<script src="js/world.js?v=34"></script>
+<script src="js/effects.js?v=34"></script>
+<script src="js/map.js?v=34"></script>
+<script src="js/characters.js?v=34"></script>
+<script src="js/pawn.js?v=34"></script>
+<script src="js/weapons.js?v=34"></script>
+<script src="js/loot.js?v=34"></script>
+<script src="js/pickups.js?v=34"></script>
+<script src="js/sparks.js?v=34"></script>
+<script src="js/grenades.js?v=34"></script>
+<script src="js/grapple.js?v=34"></script>
+<script src="js/bots.js?v=34"></script>
+<script src="js/hud.js?v=34"></script>
+<script src="js/game.js?v=34"></script>
+<script src="js/attract.js?v=34"></script>
+<script src="js/net.js?v=34"></script>
+<script src="js/dof.js?v=34"></script>
+<script src="js/replay.js?v=34"></script>
+<script src="js/demos.js?v=34"></script>
+<script src="js/locker.js?v=34"></script>
+<script src="js/assets.js?v=34"></script>
+<script src="js/editor.js?v=34"></script>
+<script src="js/main.js?v=34"></script>
 </body>
 </html>

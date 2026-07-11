@@ -26,6 +26,7 @@ SKY.Map = (function () {
   let crumbleTimer = 0;
   let overtime = false;
   let eventT = 0, eventCfg = null;
+  let starLayer = null, meteor = null, meteorT = 6;   // night-sky animation
   const _v = new THREE.Vector3();
 
   const MAPS = {
@@ -62,22 +63,22 @@ SKY.Map = (function () {
     '#e8c85a': ['hazard', '#ffffff'],     // hazard
   };
   const _matCache = {};   // shared materials — fewer GL programs/binds
+  // NOTE: block geometry carries WORLD-LOCKED UVs (1 tile ≈ 3 units), so
+  // materials use repeat 1 and never stretch when a block is resized
   function mat(colorHex, repeat) {
-    const rep = repeat || 4;
     const px = PAL_TEX[colorHex[0]];
     if (px && SKY.GFX && SKY.GFX.texImage(px[0])) {
-      const key = 't' + colorHex[0] + rep;
+      const key = 't' + colorHex[0];
       if (_matCache[key]) return _matCache[key];
       const m = new THREE.MeshLambertMaterial({ color: px[1] });
-      // real tiles read bigger than the old 2x2 checker — halve the repeat
-      m.map = SKY.GFX.texture(px[0], Math.max(1, Math.round(rep / 2)));
+      m.map = SKY.GFX.texture(px[0], 1);
       _matCache[key] = m;
       return m;
     }
-    const key = 'c' + colorHex[0] + colorHex[1] + rep;
+    const key = 'c' + colorHex[0] + colorHex[1];
     if (_matCache[key]) return _matCache[key];
     const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    m.map = SKY.U.checkerTexture(colorHex[0], colorHex[1], rep);
+    m.map = SKY.U.checkerTexture(colorHex[0], colorHex[1], 1);
     _matCache[key] = m;
     return m;
   }
@@ -194,6 +195,9 @@ SKY.Map = (function () {
       }));
       core.position.copy(pos);
       core.scale.set(size, size, 1);
+      // huge sprites at the far plane pop out of the frustum test while
+      // their glow should still be on screen — never cull them
+      glow.frustumCulled = core.frustumCulled = false;
       group.add(glow, core);
     } else {
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -208,6 +212,7 @@ SKY.Map = (function () {
       }));
       moon.position.copy(pos);
       moon.scale.set(size, size, 1);
+      halo.frustumCulled = moon.frustumCulled = false;
       group.add(halo, moon);
     }
   }
@@ -248,19 +253,40 @@ SKY.Map = (function () {
     );
     group.add(dome);
     if (stars) {
-      const sc = document.createElement('canvas');
-      sc.width = sc.height = 512;
-      const sg = sc.getContext('2d');
-      for (let i = 0; i < 240; i++) {
-        sg.fillStyle = `rgba(255,255,255,${SKY.U.rand(0.3, 1)})`;
-        sg.fillRect(Math.random() * 512, Math.random() * 320, SKY.U.rand(1, 2.4), SKY.U.rand(1, 2.4));
-      }
-      const st = new THREE.CanvasTexture(sc);
-      const sphere = new THREE.Mesh(
-        new THREE.SphereGeometry(370, 24, 14),
-        new THREE.MeshBasicMaterial({ map: st, side: THREE.BackSide, transparent: true, fog: false })
-      );
-      group.add(sphere);
+      // crisp glowing points, varied size/warmth — no more stretched blobs
+      const paint = (n, big) => {
+        const sc = document.createElement('canvas');
+        sc.width = 2048; sc.height = 1024;
+        const sg = sc.getContext('2d');
+        for (let i = 0; i < n; i++) {
+          const x = Math.random() * 2048;
+          const y = Math.random() * 560;         // upper sky band only
+          const r = big ? SKY.U.rand(1.6, 3.2) : SKY.U.rand(0.6, 1.6);
+          const a = big ? SKY.U.rand(0.7, 1) : SKY.U.rand(0.35, 0.9);
+          const warm = Math.random();
+          const col = warm < 0.15 ? '190,215,255' : warm < 0.3 ? '255,230,200' : '255,255,255';
+          const grad = sg.createRadialGradient(x, y, 0, x, y, r * 3);
+          grad.addColorStop(0, `rgba(${col},${a})`);
+          grad.addColorStop(0.35, `rgba(${col},${a * 0.5})`);
+          grad.addColorStop(1, `rgba(${col},0)`);
+          sg.fillStyle = grad;
+          sg.beginPath(); sg.arc(x, y, r * 3, 0, Math.PI * 2); sg.fill();
+          sg.fillStyle = `rgba(255,255,255,${Math.min(1, a * 1.3)})`;
+          sg.beginPath(); sg.arc(x, y, r * 0.55, 0, Math.PI * 2); sg.fill();
+        }
+        const st = new THREE.CanvasTexture(sc);
+        st.encoding = THREE.sRGBEncoding;
+        return st;
+      };
+      const base = new THREE.Mesh(
+        new THREE.SphereGeometry(370, 32, 18),
+        new THREE.MeshBasicMaterial({ map: paint(320, false), side: THREE.BackSide, transparent: true, fog: false }));
+      const bright = new THREE.Mesh(
+        new THREE.SphereGeometry(368, 32, 18),
+        new THREE.MeshBasicMaterial({ map: paint(50, true), side: THREE.BackSide, transparent: true, fog: false }));
+      base.frustumCulled = bright.frustumCulled = false;
+      group.add(base, bright);
+      starLayer = bright;      // twinkles + enables shooting stars in tick()
     }
   }
 
@@ -1193,15 +1219,44 @@ SKY.Map = (function () {
     return tex;
   }
 
+  /* per-block texture instance: optional density override (b.rep = tiles
+     across the block, like before) + a per-block random offset so repeated
+     grass/rock blocks don't look like identical clones */
+  function blockTex(b, name) {
+    const base = SKY.U.procTexture(name, 1);
+    const autoRep = Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
+    const density = b.rep ? b.rep / autoRep : 1;
+    const seed = Math.abs(Math.round(b.p[0] * 71 + b.p[2] * 137 + b.p[1] * 29));
+    const t = base.clone();
+    t.needsUpdate = true;
+    t.repeat.set(density, density);
+    t.offset.set((seed % 97) / 97, ((seed >> 2) % 89) / 89);
+    return t;
+  }
+
   function customBlockMaterial(b) {
     const rep = b.rep || Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
-    if (b.tex) return new THREE.MeshLambertMaterial({ map: texFromDataURL(b.tex, rep) });
-    if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
-      return new THREE.MeshLambertMaterial({ map: SKY.U.procTexture(b.ptex, rep) });
+    if (b.tex) return new THREE.MeshLambertMaterial({ map: texFromDataURL(b.tex, b.rep ? rep : 1) });
+    const single = () => {
+      if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
+        return new THREE.MeshLambertMaterial({ map: blockTex(b, b.ptex) });
+      }
+      const pal = SKY.MapData.PALETTES[b.pal];
+      if (pal) return mat(pal, 1);
+      return flat(b.color || '#8a94a8');
+    };
+    // per-face paint (boxes): face order +x -x +y(top) -y +z -z
+    if (b.ptexF && (!b.shape || b.shape === 'box')) {
+      const mats = [];
+      for (let f = 0; f < 6; f++) {
+        const pf = b.ptexF[f];
+        mats.push(pf && SKY.U.PROC_TEX[pf]
+          ? new THREE.MeshLambertMaterial({ map: blockTex(b, pf) })
+          : single());
+      }
+      return mats;
     }
-    const pal = SKY.MapData.PALETTES[b.pal];
-    if (pal) return mat(pal, rep);
-    return flat(b.color || '#8a94a8');
+    return single();
   }
 
   /* mover def -> plat() path function */
@@ -1295,19 +1350,30 @@ SKY.Map = (function () {
         if (!obj || group !== g) return;   // map changed while parsing
         // light-entity gizmo markers are editor-only
         obj.traverse((c) => { if (c.name === 'edmarker') c.visible = false; });
-        obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
         const rot = pr.r || [0, 0, 0];
-        obj.rotation.set(rot[0], rot[1], rot[2]);
+        obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
         obj.scale.setScalar(pr.scale || 1);
         group.add(obj);
         if (pr.solid !== false) {
+          // collision as a ROTATED OBB: measure the box in the prop's local
+          // frame (pre-rotation), then rotate the offset + pass the euler
+          obj.rotation.set(0, 0, 0);
           obj.updateMatrixWorld(true);
           const box = new THREE.Box3().setFromObject(obj);
           const c = box.getCenter(new THREE.Vector3());
           const s = box.getSize(new THREE.Vector3());
+          obj.rotation.set(rot[0], rot[1], rot[2]);
           if (isFinite(s.x) && s.x > 0.2 && s.y > 0.05 && s.z > 0.2) {
-            SKY.World.addSolid({ x: c.x, y: c.y, z: c.z, sx: s.x, sy: s.y, sz: s.z });
+            const lc = c.sub(obj.position);          // local center offset
+            obj.updateMatrixWorld(true);
+            lc.applyQuaternion(obj.quaternion).add(obj.position);
+            SKY.World.addSolid({
+              x: lc.x, y: lc.y, z: lc.z, sx: s.x, sy: s.y, sz: s.z,
+              rotX: rot[0], rotY: rot[1], rotZ: rot[2],
+            });
           }
+        } else {
+          obj.rotation.set(rot[0], rot[1], rot[2]);
         }
       }, pr.fx);
     }
@@ -1332,6 +1398,7 @@ SKY.Map = (function () {
     decor.length = 0; clouds.length = 0; crumbleList.length = 0;
     tickers.length = 0; fallingMeshes.length = 0; shaking = null;
     overtime = false; dirty = false;
+    starLayer = null; meteor = null; meteorT = 6;
     eventCfg = null; eventT = SKY.U.rand(8, 14);
     SKY.World.reset();
     SKY.World.rideSolids = [];
@@ -1383,6 +1450,39 @@ SKY.Map = (function () {
       c.a += c.speed * dt * 0.02;
       c.mesh.position.x = Math.cos(c.a) * c.r;
       c.mesh.position.z = Math.sin(c.a) * c.r;
+    }
+    // night sky life: the bright-star layer twinkles, meteors streak by
+    if (starLayer) {
+      starLayer.material.opacity = 0.75 + Math.sin(time * 1.7) * 0.14 + Math.sin(time * 4.3) * 0.08;
+      starLayer.rotation.y += dt * 0.002;
+      meteorT -= dt;
+      if (meteorT <= 0 && !meteor) {
+        const a = Math.random() * Math.PI * 2;
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: SKY.U.blobTexture(), color: '#e8f2ff', transparent: true,
+          opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+        }));
+        s.scale.set(14, 2.2, 1);
+        s.material.rotation = SKY.U.rand(-0.7, -0.3);
+        s.frustumCulled = false;
+        group.add(s);
+        meteor = {
+          mesh: s, t: 0,
+          from: new THREE.Vector3(Math.cos(a) * 300, SKY.U.rand(160, 240), Math.sin(a) * 300),
+          dir: new THREE.Vector3(Math.cos(a + 2.4), -0.55, Math.sin(a + 2.4)).normalize(),
+        };
+      }
+      if (meteor) {
+        meteor.t += dt;
+        const k = meteor.t / 1.1;
+        meteor.mesh.position.copy(meteor.from).addScaledVector(meteor.dir, k * 260);
+        meteor.mesh.material.opacity = 0.9 * (1 - k) * Math.min(1, k * 6);
+        if (k >= 1) {
+          group.remove(meteor.mesh);
+          meteor = null;
+          meteorT = SKY.U.rand(4, 11);
+        }
+      }
     }
     for (const d of decor) {
       if (d.spin) { d.mesh.rotation.x += d.spin.x * dt; d.mesh.rotation.y += d.spin.y * dt; }

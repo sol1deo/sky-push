@@ -38,6 +38,7 @@ SKY.Editor = (function () {
   let looking = false;
   let gizmo = null, gizmoDrag = false;
   let previewT = 0, previewOn = true;
+  let paintFace = -1;   // -1 = ALL faces; 0..5 = +x,-x,top,bot,+z,-z
   let ui = null;
   const ray = new THREE.Raycaster();
   const _m = new THREE.Vector2();
@@ -47,25 +48,52 @@ SKY.Editor = (function () {
   const api = { active: false, pendingReturn: null };
 
   /* ================= materials & meshes ================= */
+  /* geometry UVs are world-locked (1 tile ≈ 3 units) — repeat stays 1,
+     b.rep acts as a relative density override, blocks get a random texture
+     offset so identical materials don't tile in visible lockstep */
+  function edBlockTex(b, name) {
+    const base = SKY.U.procTexture(name, 1);
+    const autoRep = Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
+    const density = b.rep ? b.rep / autoRep : 1;
+    const seed = Math.abs(Math.round(b.p[0] * 71 + b.p[2] * 137 + b.p[1] * 29));
+    const t = base.clone();
+    t.needsUpdate = true;
+    t.repeat.set(density, density);
+    t.offset.set((seed % 97) / 97, ((seed >> 2) % 89) / 89);
+    return t;
+  }
+
   function blockMaterial(b) {
-    const rep = b.rep || Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
     if (b.tex) {
       const tex = new THREE.TextureLoader().load(b.tex);
       tex.encoding = THREE.sRGBEncoding;
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(rep, rep);
+      tex.repeat.set(b.rep || 1, b.rep || 1);
       return new THREE.MeshLambertMaterial({ map: tex });
     }
-    if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
-      return new THREE.MeshLambertMaterial({ map: SKY.U.procTexture(b.ptex, rep) });
+    const single = () => {
+      if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
+        return new THREE.MeshLambertMaterial({ map: edBlockTex(b, b.ptex) });
+      }
+      const pal = SKY.MapData.PALETTES[b.pal];
+      if (pal) {
+        const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
+        m.map = SKY.U.checkerTexture(pal[0], pal[1], 1);
+        return m;
+      }
+      return new THREE.MeshLambertMaterial({ color: b.color || '#8a94a8' });
+    };
+    if (b.ptexF && (!b.shape || b.shape === 'box')) {
+      const mats = [];
+      for (let f = 0; f < 6; f++) {
+        const pf = b.ptexF[f];
+        mats.push(pf && SKY.U.PROC_TEX[pf]
+          ? new THREE.MeshLambertMaterial({ map: edBlockTex(b, pf) })
+          : single());
+      }
+      return mats;
     }
-    const pal = SKY.MapData.PALETTES[b.pal];
-    if (pal) {
-      const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
-      m.map = SKY.U.checkerTexture(pal[0], pal[1], rep);
-      return m;
-    }
-    return new THREE.MeshLambertMaterial({ color: b.color || '#8a94a8' });
+    return single();
   }
 
   function buildBlockMesh(b) {
@@ -601,11 +629,17 @@ SKY.Editor = (function () {
       h += numRow(shp === 'box' ? 'Width' : 'Diameter', d.s[0], 's0')
         + numRow('Height', d.s[1], 's1')
         + numRow('Length', d.s[2], 's2');
-      h += `<div class="ed-row"><span>Extend faces</span></div>
+      h += `<div class="ed-row"><span>Extend faces <small>drag</small></span></div>
         <div class="ed-row ed-faces">
           <span class="ed-face" data-f="0,-1">−X</span><span class="ed-face" data-f="0,1">+X</span>
           <span class="ed-face" data-f="1,-1">−Y</span><span class="ed-face" data-f="1,1">+Y</span>
           <span class="ed-face" data-f="2,-1">−Z</span><span class="ed-face" data-f="2,1">+Z</span>
+        </div>`;
+      h += `<div class="ed-row"><span>Extrude <small>new flush block</small></span></div>
+        <div class="ed-row ed-faces">
+          <span class="ed-face ed-ext" data-e="0,-1">−X</span><span class="ed-face ed-ext" data-e="0,1">+X</span>
+          <span class="ed-face ed-ext" data-e="1,-1">−Y</span><span class="ed-face ed-ext" data-e="1,1">+Y</span>
+          <span class="ed-face ed-ext" data-e="2,-1">−Z</span><span class="ed-face ed-ext" data-e="2,1">+Z</span>
         </div>`;
       h += numRow('Rot X°', d.r[0] * 180 / Math.PI, 'r0', 5) + numRow('Rot Y°', d.r[1] * 180 / Math.PI, 'r1', 5) + numRow('Rot Z°', d.r[2] * 180 / Math.PI, 'r2', 5);
       h += `<div class="ed-row"><span>Palette</span><select data-k="pal">
@@ -613,11 +647,21 @@ SKY.Editor = (function () {
         ${Object.keys(SKY.MapData.PALETTES).map(p => `<option value="${p}"${d.pal === p ? ' selected' : ''}>${p}</option>`).join('')}
       </select></div>`;
       h += `<div class="ed-row"><span>Color</span><input type="color" data-k="color" value="${d.color || '#8a94a8'}"></div>`;
+      // which face the next texture click paints (boxes only)
+      const faceNames = ['ALL', '+X', '−X', 'TOP', 'BOT', '+Z', '−Z'];
+      if (!d.shape || d.shape === 'box') {
+        h += `<div class="ed-row"><span>Paint face</span></div>
+          <div class="ed-row ed-faces">
+            ${faceNames.map((n, i) =>
+              `<span class="ed-face ed-pf${paintFace === i - 1 ? ' sel' : ''}" data-pf="${i - 1}">${n}</span>`).join('')}
+          </div>`;
+      }
+      const curPt = paintFace >= 0 ? (d.ptexF || {})[paintFace] : d.ptex;
       h += `<div class="ed-row"><span>Texture</span></div>
         <div class="ed-row ed-swatches">
-          <span class="ed-swatch${!d.ptex ? ' sel' : ''}" data-pt="" title="none">✕</span>
+          <span class="ed-swatch${!curPt ? ' sel' : ''}" data-pt="" title="none">✕</span>
           ${Object.keys(SKY.U.PROC_TEX).map(t =>
-            `<span class="ed-swatch${d.ptex === t ? ' sel' : ''}" data-pt="${t}" title="${t}" style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
+            `<span class="ed-swatch${curPt === t ? ' sel' : ''}" data-pt="${t}" title="${t}" style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
         </div>`;
       h += numRow('Tiling', d.rep || 0, 'rep', 1);
       if (d.tex) h += `<div class="ed-row"><span>Image tex</span><button class="ed-mini" data-k="cleartex">remove</button></div>`;
@@ -804,6 +848,26 @@ SKY.Editor = (function () {
     markDirty();
     syncMeshFromData(o);
     refreshOutliner();
+  }
+
+  /* Blender-style extrude: a NEW block flush against the chosen face,
+     same cross-section and look — chain them to build L-shapes fast */
+  function extrudeFace(spec) {
+    const o = objects[sel];
+    if (!o || o.kind !== 'block') return;
+    const [axis, sign] = spec.split(',').map(Number);
+    const d = o.data;
+    push();
+    const nb = JSON.parse(JSON.stringify(d));
+    delete nb.mover;
+    nb.mover = null;
+    const depth = d.s[axis];               // extrude by the block's own depth
+    nb.p = d.p.slice();
+    nb.p[axis] += sign * depth;
+    def.blocks.push(nb);
+    rebuild();
+    select(objects.findIndex(q => q.data === nb));
+    status('extruded — drag the face chips or gizmo to shape it');
   }
 
   /* rebuild ONE prop mesh in place (fx settings changed) */
@@ -1082,14 +1146,28 @@ SKY.Editor = (function () {
     ui.ins.addEventListener('click', (e) => {
       if (e.target.dataset.k === 'cleartex') { onInspectorInput(e); return; }
       if (e.target.dataset.k === 'centermap') { centerMap(); return; }
+      const pf = e.target.closest('.ed-pf');
+      if (pf) { paintFace = parseInt(pf.dataset.pf, 10); syncInspector(); return; }
+      const ext = e.target.closest('.ed-ext');
+      if (ext) { extrudeFace(ext.dataset.e); return; }
       const sw = e.target.closest('.ed-swatch');
       if (sw) {
         const o = objects[sel];
         if (o && o.kind === 'block') {
           push();
-          o.data.ptex = sw.dataset.pt || null;
-          if (o.data.ptex) o.data.tex = null;   // a picked texture replaces a dropped image
+          const val = sw.dataset.pt || null;
+          if (paintFace >= 0 && (!o.data.shape || o.data.shape === 'box')) {
+            // paint just the selected face
+            o.data.ptexF = o.data.ptexF || {};
+            if (val) o.data.ptexF[paintFace] = val;
+            else delete o.data.ptexF[paintFace];
+            if (!Object.keys(o.data.ptexF).length) o.data.ptexF = null;
+          } else {
+            o.data.ptex = val;
+            if (o.data.ptex) o.data.tex = null;  // picked texture replaces a dropped image
+          }
           o.mesh.material = blockMaterial(o.data);
+          markDirty();
           syncInspector();
         }
       }

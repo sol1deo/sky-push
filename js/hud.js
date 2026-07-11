@@ -33,7 +33,7 @@ SKY.HUD = (function () {
         hitmark: $('hitmark'), crosshair: $('crosshair'),
         dmgFlash: $('dmg-flash'), dmgDir: $('dmg-dir'),
         loot: $('loot-ov'), lootCards: $('loot-cards'),
-        ammo: $('ammo'), ammoMax: $('ammo-max'), scope: $('scope'),
+        ammo: $('ammo'), ammoMax: $('ammo-max'), scope: $('scope'), ring: $('ring'),
         slot1: $('slot-1'), slot2: $('slot-2'),
         nades: $('nades'), sparks: $('sparks'), sparkNum: $('spark-num'),
         sparkFill: $('spark-fill'), lvTimer: $('lv-timer'),
@@ -316,10 +316,13 @@ SKY.HUD = (function () {
         }
       }
 
-      // grenade counter
+      // grenade chip: type-colored pip + label + count (G to throw)
       if (p.nades && p.nades.count > 0) {
         el.nades.classList.remove('hidden');
-        setText(el.nades, SKY.TUNING.grenades[p.nades.type].label.split(' ')[0] + ' · ' + p.nades.count);
+        const N = SKY.TUNING.grenades[p.nades.type];
+        setHTML(el.nades,
+          `<i class="nade-pip" style="background:${N.color};box-shadow:0 0 6px ${N.color}"></i>` +
+          `<b>${N.label.split(' ')[0]}</b> ×${p.nades.count} <small>G</small>`);
       } else el.nades.classList.add('hidden');
 
       // mode-specific readouts
@@ -387,10 +390,31 @@ SKY.HUD = (function () {
         lastWeapon = p.weapon;
         el.cd.pb.querySelector('.n').textContent = wDef.short || wDef.label;
       }
-      setText(el.ammo, p.reloadT > 0 ? '··' : String(p.ammo));
+      setText(el.ammo, String(p.ammo));
       setText(el.ammoMax, '/' + wDef.mag);
       const ac = p.reloadT > 0 ? '#ff9a3d' : (p.ammo === 0 ? '#ff5a4a' : '#fff');
       if (el.ammo._c !== ac) { el.ammo._c = ac; el.ammo.style.color = ac; }
+      // crosshair ring: reload progress, or the piston's charge meter
+      if (el.ring) {
+        const chT = p.chargeT || 0;
+        if (p.reloadT > 0) {
+          const frac = 1 - p.reloadT / (wDef.reloadTime * p.mods.cdMult);
+          el.ring.style.display = 'block';
+          el.ring.style.width = el.ring.style.height = '46px';
+          el.ring.style.background =
+            `conic-gradient(#ff9a3d ${Math.round(frac * 360)}deg, rgba(255,255,255,.13) 0)`;
+        } else if (chT > 0 && wDef.charge) {
+          const t01 = Math.min(1, chT / wDef.charge);
+          const col = t01 >= 1 ? '#ff5a4a' : '#ffd34d';
+          const s = Math.round(46 + t01 * 12 + (t01 >= 1 ? Math.sin(performance.now() * 0.02) * 3 : 0));
+          el.ring.style.display = 'block';
+          el.ring.style.width = el.ring.style.height = s + 'px';
+          el.ring.style.background =
+            `conic-gradient(${col} ${Math.round(t01 * 360)}deg, rgba(255,255,255,.13) 0)`;
+        } else if (el.ring.style.display !== 'none') {
+          el.ring.style.display = 'none';
+        }
+      }
       if (p.reloadT > 0) setCd(el.cd.pb, p.reloadT, wDef.reloadTime * p.mods.cdMult);
       else setCd(el.cd.pb, p.pbCd, wDef.cooldown * p.mods.cdMult);
       setCd(el.cd.ac, p.acCd, SKY.TUNING.cannon.cooldown * p.mods.cdMult);

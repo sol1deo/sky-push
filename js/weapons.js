@@ -52,6 +52,8 @@ SKY.Weapons = (function () {
     let force = W.baseKnockback + pawn.speed3() * W.speedMult;
     if (!pawn.grounded) force *= W.airborneBonus;
     if (pawn.sliding) force *= W.slideBonus;
+    // scoped-in sniper: standing still costs momentum, the glass pays it back
+    if (pawn.zoomed && W.scope) force *= 1.3;
     force *= pawn.mods.powerMult;
     force = Math.min(force, W.maxKnockback * pawn.mods.powerMult);
     const total = force * (W.pellets > 1 ? W.pellets * 0.75 : 1);
@@ -460,7 +462,11 @@ SKY.Weapons = (function () {
     if (pawn.vel.y > 1) pawn.grounded = false;
     SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone());
     SKY.SFX.airCannon();
-    if (pawn.isLocal) { SKY.Effects.shake(0.8); SKY.HUD.hitmark(1); }
+    if (pawn.isLocal) {
+      SKY.Effects.cannonPop();   // left arm whips the cannon up + fires
+      SKY.Effects.shake(1.25);
+      SKY.HUD.hitmark(1);
+    }
     return true;
   }
 

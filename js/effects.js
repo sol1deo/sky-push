@@ -92,7 +92,7 @@ SKY.Effects = (function () {
     if (SKY.GFX && SKY.GFX.hasWeapon(kind)) {
       const grp = SKY.GFX.weapon(kind);
       const tip = grp.getObjectByName('tip');
-      if (tip && kind !== 'hookgun') {
+      if (tip && kind !== 'hookgun' && kind !== 'cannon') {
         // glow strip under the barrel keeps the weapon-tier color readable
         const glow = new THREE.Mesh(
           new THREE.BoxGeometry(0.014, 0.014, Math.abs(tip.position.z) * 0.5),
@@ -331,8 +331,8 @@ SKY.Effects = (function () {
     } catch (e) { return null; }   // headless / no-GL fallback
   }
 
-  /* minimalist WIREFRAME side icon (CS:GO-style loadout HUD) — tinted by
-     the weapon's rarity so what you're holding reads at a glance */
+  /* bold OUTLINE side icon (CS:GO-style loadout HUD) — the weapon's clean
+     silhouette as a thick glowing contour in its rarity color */
   const wireCache = {};
   function weaponWireIcon(kind, colorHex) {
     const key = thumbKey(kind) + '|' + colorHex;
@@ -341,11 +341,8 @@ SKY.Effects = (function () {
       weaponThumb(kind);                      // ensures thumbRig exists
       if (!thumbRig) return null;
       const mesh = buildWeaponMesh(kind);
-      const wmat = new THREE.MeshBasicMaterial({
-        color: colorHex || '#dfe7f2', wireframe: true,
-        transparent: true, opacity: 0.9,
-      });
-      mesh.traverse((o) => { if (o.isMesh) o.material = wmat; });
+      const solid = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      mesh.traverse((o) => { if (o.isMesh) o.material = solid; });
       const box = new THREE.Box3().setFromObject(mesh);
       const c = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3()).length();
@@ -357,8 +354,36 @@ SKY.Effects = (function () {
       thumbRig.cam.position.set(0, 0.02, size * 1.15);
       thumbRig.cam.lookAt(0, 0, 0);
       thumbRig.r.render(thumbRig.sc, thumbRig.cam);
-      const url = thumbRig.r.domElement.toDataURL();
+      const src = thumbRig.r.domElement;
       thumbRig.sc.remove(grp);
+      // 2D compose: tinted silhouette -> thick offset outline + glow, then
+      // punch out the interior for a clean contour with a faint body fill
+      const W = src.width, H = src.height;
+      const tin = document.createElement('canvas');
+      tin.width = W; tin.height = H;
+      const tg = tin.getContext('2d');
+      tg.drawImage(src, 0, 0);
+      tg.globalCompositeOperation = 'source-in';
+      tg.fillStyle = colorHex || '#dfe7f2';
+      tg.fillRect(0, 0, W, H);
+      const out = document.createElement('canvas');
+      out.width = W; out.height = H;
+      const g = out.getContext('2d');
+      g.shadowColor = colorHex || '#dfe7f2';
+      g.shadowBlur = 9;
+      const o3 = 3;
+      for (const [dx, dy] of [[o3, 0], [-o3, 0], [0, o3], [0, -o3],
+                              [2.2, 2.2], [-2.2, 2.2], [2.2, -2.2], [-2.2, -2.2]]) {
+        g.drawImage(tin, dx, dy);
+      }
+      g.shadowBlur = 0;
+      g.globalCompositeOperation = 'destination-out';
+      g.drawImage(src, 0, 0);
+      g.globalCompositeOperation = 'source-over';
+      g.globalAlpha = 0.18;                   // whisper of body fill
+      g.drawImage(tin, 0, 0);
+      g.globalAlpha = 1;
+      const url = out.toDataURL();
       wireCache[key] = url;
       return url;
     } catch (e) { return null; }
@@ -401,6 +426,7 @@ SKY.Effects = (function () {
     swapPhase: null, swapNext: null, swapBlend: 1,   // holster/draw anim
     hook: null, hookTipWorld: new THREE.Vector3(),
     hookTarget: 0, hookBlend: 0,                     // left arm up/down
+    cannon: null, cannonT: 0,                        // air-cannon pop (Q)
     visible: true,
   };
 
@@ -434,6 +460,18 @@ SKY.Effects = (function () {
   function setHands(hooking) {
     vm.hookTarget = hooking ? 1 : 0;
     if (hooking) ensureHook();
+  }
+
+  /* air cannon (Q): the left hand whips the cannon up, blasts, stows it */
+  function cannonPop() {
+    if (!camera) return;
+    if (!vm.cannon) {
+      vm.cannon = buildWeaponMesh('cannon');
+      vm.cannon.scale.setScalar(0.85);
+      vm.cannon.visible = false;
+      camera.add(vm.cannon);
+    }
+    vm.cannonT = 0.0001;
   }
 
   function hookTip() {
@@ -685,10 +723,23 @@ SKY.Effects = (function () {
       const a = shakeAmp * 0.05;
       shakeOff.set(SKY.U.rand(-a, a), SKY.U.rand(-a, a), SKY.U.rand(-a, a));
       fovKick = Math.max(0, fovKick - fovKick * 9 * dt);
-      // viewmodel kick recover (sway/bob handled in viewmodelMotion)
+      // viewmodel kick recover (sway/bob handled in viewmodelMotion) —
+      // heavies slide back further AND rear up like the gun wants out
       if (vm.group) {
-        vm.kick = Math.max(0, vm.kick - vm.kick * 10 * dt);
-        vm.group.position.z = -0.5 + vm.kick * 0.16;   // punchy slide-back
+        vm.kick = Math.max(0, vm.kick - vm.kick * 8 * dt);
+        vm.group.position.z = -0.5 + vm.kick * 0.19;
+        vm.group.rotation.x = vm.kick * 0.09;
+      }
+      // air-cannon left-arm pop: raise fast, blast, stow
+      if (vm.cannonT > 0 && vm.cannon) {
+        vm.cannonT += dt;
+        const t = vm.cannonT;
+        const raise = SKY.U.clamp01(t / 0.1) - SKY.U.clamp01((t - 0.55) / 0.25);
+        const kickb = t > 0.16 ? Math.exp(-(t - 0.16) * 9) * 0.34 : 0;
+        vm.cannon.visible = raise > 0.02;
+        vm.cannon.position.set(-0.3, -0.95 + raise * 0.7, -0.52 + kickb);
+        vm.cannon.rotation.x = kickb * 1.1 - (1 - raise) * 0.6;
+        if (t > 0.85) { vm.cannonT = 0; vm.cannon.visible = false; }
       }
       // holster→draw swap: drop fast, raise snappy
       if (vm.swapPhase === 'down') {
@@ -792,16 +843,31 @@ SKY.Effects = (function () {
     },
 
     shake(amp) { shakeAmp = Math.min(shakeAmp + amp, 3); },
+    cannonPop,
     getFovKick() { return fovKick; },
     ring(pos, color, size, life) { ring(pos, color, size, life); },
     burst, blastBoom, registerAnimMat,
 
     /* ---------------- gameplay-facing effect recipes ---------------- */
+    /* muzzle profile scales with the weapon's kick weight: light guns get a
+       spark puff, HEAVY guns (lobber/boom/piston/quad) get a launcher-grade
+       flash + smoke ring + real screen punch — every class feels different */
     muzzle(pos, tierColor, isLocal, kick) {
-      burst(pos, { count: 8, speed: 3, size: 0.45, color: tierColor, gravity: 0, life: 0.2 });
+      const k = kick || 1;
+      if (k >= 1.4) {          // launcher class
+        burst(pos, { count: 14, speed: 5, size: 0.7, color: tierColor, gravity: 0, life: 0.28 });
+        burst(pos, { count: 8, speed: 2.5, size: 0.55, color: '#ffffff', gravity: 0, life: 0.14 });
+        burst(pos, { count: 6, speed: 1.6, size: 0.8, color: '#8a8f9a', gravity: -1.5, life: 0.7 });
+        ring(pos.clone(), tierColor, 2.4 + k, 0.3);
+      } else if (k >= 0.8) {   // rifle class
+        burst(pos, { count: 10, speed: 3.6, size: 0.5, color: tierColor, gravity: 0, life: 0.22 });
+      } else {                 // pistol / smg class
+        burst(pos, { count: 7, speed: 3, size: 0.4, color: tierColor, gravity: 0, life: 0.18 });
+      }
       if (isLocal) {
-        if (vm.group) vm.kick = Math.min((kick || 1) * 1.3, 2.6);
-        fovKick = 1.5 * Math.min((kick || 1), 1.6);
+        if (vm.group) vm.kick = Math.min(k * (k >= 1.4 ? 1.8 : 1.3), 4.2);
+        fovKick = (k >= 1.4 ? 2.6 : 1.5) * Math.min(k, 2.2);
+        if (k >= 1.4) shakeAmp = Math.min(shakeAmp + k * 0.35, 3);
       }
     },
     hitBurst(pos, tier, tierColor) {
@@ -826,12 +892,19 @@ SKY.Effects = (function () {
     tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon, weaponWireIcon,
     makeTracer, poseTracer, resetTracer,
     cannonBlast(pos, dir) {
-      for (let i = 0; i < 14; i++) {
-        const v = dir.clone().multiplyScalar(SKY.U.rand(4, 11));
-        v.x += SKY.U.rand(-3, 3); v.y += SKY.U.rand(-1, 3); v.z += SKY.U.rand(-3, 3);
-        spawn({ pos, vel: v, life: SKY.U.rand(0.2, 0.45), size: 0.9, color: '#bfe9ff', gravity: 2, drag: 3 });
+      // a proper pressure wave: dense forward cone + white core flash +
+      // double expanding rings that travel with the blast direction
+      for (let i = 0; i < 26; i++) {
+        const v = dir.clone().multiplyScalar(SKY.U.rand(5, 16));
+        v.x += SKY.U.rand(-3.5, 3.5); v.y += SKY.U.rand(-1.5, 3.5); v.z += SKY.U.rand(-3.5, 3.5);
+        spawn({ pos, vel: v, life: SKY.U.rand(0.25, 0.55), size: SKY.U.rand(0.7, 1.3), color: '#bfe9ff', gravity: 2, drag: 2.5 });
       }
-      ring(pos, '#bfe9ff', 4, 0.3);
+      spawn({ pos, life: 0.15, size: 2.2, sizeEnd: 4.5, color: '#ffffff' });
+      ring(pos, '#bfe9ff', 6.5, 0.38);
+      const p2 = pos.clone().addScaledVector(dir, 2.2);
+      ring(p2, '#e8f4ff', 4.5, 0.3);
+      const p3 = pos.clone().addScaledVector(dir, 4.5);
+      ring(p3, '#bfe9ff', 3, 0.26);
     },
     padRing(pos) { ring(pos, '#7dff9e', 3.2, 0.4); burst(pos, { count: 8, speed: 3, color: '#7dff9e', gravity: -2, life: 0.4 }); },
     trailPuff(pos, color) { spawn({ pos, life: 0.28, size: 0.34, sizeEnd: 0.05, color, opacity: 0.8 }); },
