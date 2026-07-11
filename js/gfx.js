@@ -59,6 +59,28 @@ SKY.GFX = (function () {
   const CITY_NAMES = ['building-a', 'building-c', 'building-e', 'building-g',
     'building-skyscraper-a', 'building-skyscraper-c', 'detail-awning-wide',
     'detail-parasol-a', 'detail-overhang'];
+  // Majadroid construction site (CC0, FBX->GLB w/ palette texture): cranes,
+  // material piles, containers, machines (folder: site/)
+  const SITE_NAMES = ['crane-tower', 'crane-ground',
+    'planks-a', 'planks-b', 'planks-c', 'planks-blue', 'planks-yellow',
+    'box-stack', 'box-black', 'box-white', 'barrel',
+    'container-red', 'container-blue', 'container-green', 'container-small',
+    'cargo-blue', 'cargo-white', 'office-green', 'office-red', 'office-stack',
+    'porta-potty', 'truck-concrete', 'truck-concrete-red', 'truck-dumper',
+    'truck-dumper-green', 'truck-small', 'truck-flatbed', 'site-fence', 'drive-ramp'];
+  // Kenney Furniture Kit — interiors (folder: furn/, self-contained GLBs)
+  const FURN_NAMES = ['table', 'tableRound', 'tableCoffee', 'chair', 'chairDesk',
+    'loungeSofa', 'loungeSofaCorner', 'loungeChair', 'bedDouble', 'bedSingle',
+    'bookcaseOpen', 'bookcaseClosedWide', 'desk', 'kitchenCabinet', 'kitchenFridge',
+    'kitchenStove', 'kitchenBar', 'televisionModern', 'cabinetTelevision',
+    'lampSquareFloor', 'lampRoundFloor', 'pottedPlant', 'rugRectangle', 'toilet',
+    'bathtub', 'trashcan', 'cardboardBoxClosed', 'ceilingFan', 'stoolBar', 'washer',
+    'stairs', 'wallDoorway', 'wallWindow', 'wall'];
+  // Kenney Modular Buildings — house/tower shells + pieces (folder: mod/)
+  const MOD_NAMES = ['building-sample-house-a', 'building-sample-house-b',
+    'building-sample-house-c', 'building-sample-tower-a', 'building-sample-tower-b',
+    'building-sample-tower-c', 'building-block', 'building-door', 'building-window',
+    'building-window-awnings', 'building-steps-wide', 'building-corner'];
 
   /* toy-style character cast (Quaternius UACP) — each GLB carries its own
      17 animation clips. tint = the "main outfit" material recolored to the
@@ -173,11 +195,29 @@ SKY.GFX = (function () {
     }
   }
 
+  // native-size fixes baked into the template (wrapped one level deep so the
+  // editor's per-prop scale still composes instead of overwriting it):
+  // the crane is a real 48m tower, Kenney modular buildings are dollhouse
+  // scale, furniture reads small next to the chunky toon characters
+  const PACK_SCALE = { 'crane-tower': 0.35, 'crane-ground': 0.35, 'site-fence': 0.15 };
+  for (const n of MOD_NAMES) PACK_SCALE[n] = 5;
+  for (const n of FURN_NAMES) PACK_SCALE[n] = 1.4;
+
   function loadProps() {
-    let pending = PROP_NAMES.length + KIT_NAMES.length + BUILD_NAMES.length + CITY_NAMES.length;
+    let pending = PROP_NAMES.length + KIT_NAMES.length + BUILD_NAMES.length +
+      CITY_NAMES.length + SITE_NAMES.length + FURN_NAMES.length + MOD_NAMES.length;
     const settle = () => { if (--pending === 0) groupDone(); };
     const store = (name) => (g) => {
-      const root = g.scene || g.scenes[0];
+      let root = g.scene || g.scenes[0];
+      const k = PACK_SCALE[name];
+      if (k && k !== 1) {
+        const inner = new THREE.Group();
+        inner.scale.setScalar(k);
+        inner.add(root);
+        const wrap = new THREE.Group();
+        wrap.add(inner);
+        root = wrap;
+      }
       root.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = true; o.receiveShadow = true;
@@ -203,6 +243,15 @@ SKY.GFX = (function () {
     }
     for (const name of CITY_NAMES) {
       gl().load('assets/models/city/' + name + '.glb', store(name), undefined, settle);
+    }
+    for (const name of SITE_NAMES) {
+      gl().load('assets/models/site/' + name + '.glb', store(name), undefined, settle);
+    }
+    for (const name of FURN_NAMES) {
+      gl().load('assets/models/furn/' + name + '.glb', store(name), undefined, settle);
+    }
+    for (const name of MOD_NAMES) {
+      gl().load('assets/models/mod/' + name + '.glb', store(name), undefined, settle);
     }
   }
 
@@ -298,7 +347,17 @@ SKY.GFX = (function () {
       const t = props[name];
       return t ? t.clone(true) : null;
     },
-    propNames() { return PROP_NAMES.concat(KIT_NAMES, BUILD_NAMES, CITY_NAMES); },
+    propNames() {
+      return PROP_NAMES.concat(KIT_NAMES, BUILD_NAMES, CITY_NAMES,
+        SITE_NAMES, FURN_NAMES, MOD_NAMES);
+    },
+    /* editor asset-panel folder for a pack prop */
+    propFolder(name) {
+      if (SITE_NAMES.indexOf(name) >= 0) return 'construction';
+      if (FURN_NAMES.indexOf(name) >= 0) return 'interior';
+      if (MOD_NAMES.indexOf(name) >= 0) return 'buildings';
+      return 'pack';
+    },
   };
   return api;
 })();

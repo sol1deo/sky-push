@@ -278,6 +278,19 @@ window.SKY = window.SKY || {};
       }
       this._crouchWas = cmd.crouch;
 
+      // ---- roof air vents: ride the updraft column (SKY.World.vents) ----
+      for (const v of SKY.World.vents) {
+        const vdx = this.pos.x - v.x, vdz = this.pos.z - v.z;
+        if (vdx * vdx + vdz * vdz > v.radius * v.radius) continue;
+        const vh = this.pos.y - v.y;
+        if (vh < -1 || vh > v.height) continue;
+        const vk = 1 - Math.max(0, vh) / v.height;    // strongest at the grate
+        this.vel.y += v.force * (0.35 + 0.65 * vk) * dt;
+        if (this.vel.y > 0.5) this.grounded = false;
+        const cap = v.force * 0.62;                   // terminal rise speed
+        if (this.vel.y > cap) this.vel.y = cap;
+      }
+
       // ---- bhop soft cap (gentle drag above the cap, no hard wall) ----
       const hs = this.speedH();
       if (hs > T.bhopSoftCap) {
@@ -510,7 +523,14 @@ window.SKY = window.SKY || {};
       if (m > 14) {  // comedy tumble on big launches
         this.tumbleVel.set(SKY.U.rand(-8, 8), SKY.U.rand(-4, 4), SKY.U.rand(-8, 8));
       }
-      if (byPawn) { this.lastHitBy = byPawn; this.lastHitT = SKY.Game ? SKY.Game.time : 0; }
+      if (byPawn) {
+        this.lastHitBy = byPawn; this.lastHitT = SKY.Game ? SKY.Game.time : 0;
+        if (byPawn !== this) {   // recent-hitters ring: deathmatch assists
+          this.recentHits = this.recentHits || [];
+          this.recentHits.push({ by: byPawn, t: this.lastHitT });
+          if (this.recentHits.length > 6) this.recentHits.shift();
+        }
+      }
     }
 
     teleport(pos, yaw) {

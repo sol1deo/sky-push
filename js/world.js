@@ -20,12 +20,13 @@ SKY.World = (function () {
     roamPoints: [],    // V3 targets bots wander between
     recoveryAnchors: [], // V3 points bots aim grapples at when falling
     itemPoints: [],    // custom-map pickup spawn spots (empty = use roamPoints)
+    vents: [],         // air-vent updraft columns { x,y,z, radius, height, force }
     killY: -22,
 
     reset() {
       api.solids.length = 0; api.movers.length = 0; api.pads.length = 0;
       api.spawnPoints.length = 0; api.roamPoints.length = 0; api.recoveryAnchors.length = 0;
-      api.itemPoints.length = 0;
+      api.itemPoints.length = 0; api.vents.length = 0;
       api.teamSpawns = { atk: [], def: [] };   // legacy (team maps)
       api.bombSites = [];                       // legacy (kept: map defs still set it)
     },

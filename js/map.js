@@ -1491,6 +1491,7 @@ SKY.Map = (function () {
       const v = new THREE.Vector3(it.p[0], it.p[1], it.p[2]);
       v.item = it.item || '';                                     // '' = random roll
       v.respawn = typeof it.respawn === 'number' ? it.respawn : 0; // 0 = default
+      v.mix = it.mix || null;             // weighted rarity pool ('mix' items)
       SKY.World.itemPoints.push(v);
     }
     // 3D asset props — embedded GLB payloads, or built-in pack props
@@ -1506,11 +1507,37 @@ SKY.Map = (function () {
       const nm = ((embed && embed.name) ? String(embed.name) : a).toLowerCase();
       const isDoor = pr.door !== undefined ? !!pr.door : /door-rotate/.test(nm);
       const doorIdx = isDoor ? doorSeq++ : -1;
+      // AIR VENT: register the updraft column (pawn.tick applies the lift —
+      // deterministic from the def, so every peer simulates it identically)
+      if (a === 'fx:airvent') {
+        const vf = pr.fx || {};
+        const vx = pr.p[0], vy = pr.p[1] + 1.2, vz = pr.p[2];
+        const vr = 1.35 * (pr.scale || 1);
+        SKY.World.vents.push({
+          x: vx, y: vy, z: vz, radius: vr,
+          height: vf.range !== undefined ? vf.range : 10,
+          force: vf.power !== undefined ? vf.power : 40,
+        });
+        // rising dust so the updraft reads at a glance
+        let acc = 0;
+        tickers.push((dt) => {
+          acc += dt;
+          if (acc < 0.13) return;
+          acc = 0;
+          const ang = Math.random() * Math.PI * 2, rr = Math.random() * vr * 0.8;
+          _v.set(vx + Math.cos(ang) * rr, vy + 0.1, vz + Math.sin(ang) * rr);
+          SKY.Effects.burst(_v, { count: 1, speed: 1.4, color: '#dfe9f4',
+            gravity: -26, life: 0.7, size: 0.5 });
+        });
+      }
       const g = group;
       SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
         if (!obj || group !== g) return;   // map changed while parsing
-        // light-entity gizmo markers are editor-only
-        obj.traverse((c) => { if (c.name === 'edmarker') c.visible = false; });
+        // light-entity gizmo markers are editor-only — REMOVE them so they
+        // don't inflate the collision bbox (the vent's column marker would)
+        const edm = [];
+        obj.traverse((c) => { if (c.name === 'edmarker') edm.push(c); });
+        for (const m of edm) m.parent.remove(m);
         const rot = pr.r || [0, 0, 0];
         obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
         obj.scale.setScalar(pr.scale || 1);

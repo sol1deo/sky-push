@@ -374,6 +374,35 @@
   #rb-stars.hidden { display:none; }
   #round-banner .rb-sub { margin-top:5px; font-size:10px; font-weight:600;
     letter-spacing:.18em; text-indent:.18em; text-transform:uppercase; color:var(--dim); }
+
+  /* DEATHMATCH: bonus-weapon topbar segment + the loadout picker (B) */
+  #dm-bonus.hidden { display:none; }
+  #dm-bonus img { width:44px; height:24px; object-fit:contain; }
+  #dm-bonus #dmb-name { font-size:12px; font-weight:800; letter-spacing:.08em; color:#ffd34d; }
+  #loadout-ov { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; background:rgba(8,10,14,.55); z-index:40; }
+  #loadout-ov.hidden { display:none; }
+  .loadout-panel { background:var(--bg2); border:1px solid var(--line);
+    border-radius:14px; padding:22px 26px; backdrop-filter:blur(14px);
+    box-shadow:0 8px 40px rgba(0,0,0,.5); text-align:center;
+    animation:rbIn .3s cubic-bezier(.34,1.56,.64,1); }
+  .loadout-panel h3 { font-size:16px; font-weight:800; letter-spacing:.18em;
+    text-indent:.18em; }
+  .loadout-sub { margin-top:4px; font-size:10px; font-weight:600; color:var(--dim);
+    letter-spacing:.14em; text-transform:uppercase; }
+  #loadout-grid { margin-top:16px; display:grid; grid-template-columns:repeat(4, 1fr);
+    gap:8px; }
+  .lo-card { display:flex; flex-direction:column; align-items:center; gap:4px;
+    padding:10px 8px 8px; border-radius:9px; border:1px solid var(--line2);
+    background:rgba(255,255,255,.03); cursor:pointer;
+    transition:border-color .12s, background .12s, transform .12s; }
+  .lo-card:hover { border-color:rgba(255,255,255,.4); transform:translateY(-2px); }
+  .lo-card.on { border-color:#ffd34d; background:rgba(255,211,77,.08); }
+  .lo-card img { width:86px; height:40px; object-fit:contain; }
+  .lo-card b { font-size:9.5px; font-weight:800; letter-spacing:.14em; }
+  .lo-card small { font-size:8.5px; color:var(--faint); letter-spacing:.2em;
+    text-transform:uppercase; }
+  .lo-card.bonus b { color:#ffd34d; }
   #sub-msg { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%);
     font-size:11.5px; font-weight:600; letter-spacing:.28em; text-indent:.28em;
     text-transform:uppercase; opacity:0; color:var(--txt); background:var(--bg2);
@@ -717,8 +746,21 @@
       <span id="alive-count"></span>
       <span id="crown-status" class="hidden"></span>
     </div>
+    <div class="top-seg hidden" id="dm-bonus">
+      <span class="k">BONUS</span>
+      <img id="dmb-icon" alt="">
+      <span id="dmb-name">—</span>
+      <span id="dmb-time" class="k">0:00</span>
+    </div>
   </div>
   <div id="killfeed"></div>
+  <div id="loadout-ov" class="hidden">
+    <div class="loadout-panel">
+      <h3>CHOOSE YOUR WEAPON</h3>
+      <div class="loadout-sub">your pick sticks through respawns · pistol stays in slot 2</div>
+      <div id="loadout-grid"></div>
+    </div>
+  </div>
   <div id="crosshair">
     <div class="l h" style="left:0"></div><div class="l h" style="right:0"></div>
     <div class="l v" style="top:0"></div><div class="l v" style="bottom:0"></div>
@@ -830,7 +872,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 38</div>
+    <div class="rail-foot">prototype · build 39</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -847,7 +889,8 @@
         <div class="sel-row" style="margin-top:16px"><span class="lbl">Bots</span>
           <button class="sel-btn bot-btn" data-n="1">1</button><button class="sel-btn bot-btn" data-n="2">2</button>
           <button class="sel-btn bot-btn sel" data-n="3">3</button><button class="sel-btn bot-btn" data-n="4">4</button>
-          <button class="sel-btn bot-btn" data-n="5">5</button>
+          <button class="sel-btn bot-btn" data-n="5">5</button><button class="sel-btn bot-btn" data-n="7">7</button>
+          <button class="sel-btn bot-btn" data-n="9">9</button>
         </div>
         <div class="sel-row" id="map-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
           <button class="sel-btn map-btn sel" data-m="sky">Sky</button>
@@ -860,8 +903,14 @@
         </div>
         <div class="sel-row"><span class="lbl">Mode</span>
           <button class="sel-btn mode-btn sel" data-m="spark">Spark Rush</button>
+          <button class="sel-btn mode-btn" data-m="dm">Deathmatch</button>
           <button class="sel-btn mode-btn" data-m="lbs">Last Standing</button>
           <button class="sel-btn mode-btn" data-m="crown">Crown Rush</button>
+        </div>
+        <div class="sel-row hidden" id="dm-row"><span class="lbl">Minutes</span>
+          <button class="sel-btn dmmin-btn" data-v="5">5</button>
+          <button class="sel-btn dmmin-btn sel" data-v="10">10</button>
+          <button class="sel-btn dmmin-btn" data-v="15">15</button>
         </div>
         <div class="sel-row" id="spark-row"><span class="lbl">Sparks</span>
           <button class="sel-btn spark-btn" data-v="25">25</button>
@@ -929,8 +978,14 @@
           </div>
           <div class="sel-row"><span class="lbl">Mode</span>
             <button class="sel-btn lmode-btn" data-m="spark">Spark Rush</button>
+            <button class="sel-btn lmode-btn" data-m="dm">Deathmatch</button>
             <button class="sel-btn lmode-btn" data-m="lbs">Last Standing</button>
             <button class="sel-btn lmode-btn" data-m="crown">Crown Rush</button>
+          </div>
+          <div class="sel-row"><span class="lbl">DM min</span>
+            <button class="sel-btn ldm-btn" data-v="5">5</button>
+            <button class="sel-btn ldm-btn" data-v="10">10</button>
+            <button class="sel-btn ldm-btn" data-v="15">15</button>
             <span class="lbl" style="width:auto;margin-left:10px">First to</span>
             <button class="sel-btn lrounds-btn" data-v="1">1</button>
             <button class="sel-btn lrounds-btn" data-v="2">2</button>
@@ -1068,36 +1123,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=38"></script>
-<script src="js/profile.js?v=38"></script>
-<script src="js/utils.js?v=38"></script>
-<script src="js/gfx.js?v=38"></script>
-<script src="js/mapdata.js?v=38"></script>
-<script src="js/audio.js?v=38"></script>
-<script src="js/settings.js?v=38"></script>
-<script src="js/input.js?v=38"></script>
-<script src="js/world.js?v=38"></script>
-<script src="js/effects.js?v=38"></script>
-<script src="js/map.js?v=38"></script>
-<script src="js/characters.js?v=38"></script>
-<script src="js/pawn.js?v=38"></script>
-<script src="js/weapons.js?v=38"></script>
-<script src="js/loot.js?v=38"></script>
-<script src="js/pickups.js?v=38"></script>
-<script src="js/sparks.js?v=38"></script>
-<script src="js/grenades.js?v=38"></script>
-<script src="js/grapple.js?v=38"></script>
-<script src="js/bots.js?v=38"></script>
-<script src="js/hud.js?v=38"></script>
-<script src="js/game.js?v=38"></script>
-<script src="js/attract.js?v=38"></script>
-<script src="js/net.js?v=38"></script>
-<script src="js/dof.js?v=38"></script>
-<script src="js/replay.js?v=38"></script>
-<script src="js/demos.js?v=38"></script>
-<script src="js/locker.js?v=38"></script>
-<script src="js/assets.js?v=38"></script>
-<script src="js/editor.js?v=38"></script>
-<script src="js/main.js?v=38"></script>
+<script src="js/config.js?v=39"></script>
+<script src="js/profile.js?v=39"></script>
+<script src="js/utils.js?v=39"></script>
+<script src="js/gfx.js?v=39"></script>
+<script src="js/mapdata.js?v=39"></script>
+<script src="js/audio.js?v=39"></script>
+<script src="js/settings.js?v=39"></script>
+<script src="js/input.js?v=39"></script>
+<script src="js/world.js?v=39"></script>
+<script src="js/effects.js?v=39"></script>
+<script src="js/map.js?v=39"></script>
+<script src="js/characters.js?v=39"></script>
+<script src="js/pawn.js?v=39"></script>
+<script src="js/weapons.js?v=39"></script>
+<script src="js/loot.js?v=39"></script>
+<script src="js/pickups.js?v=39"></script>
+<script src="js/sparks.js?v=39"></script>
+<script src="js/grenades.js?v=39"></script>
+<script src="js/grapple.js?v=39"></script>
+<script src="js/bots.js?v=39"></script>
+<script src="js/hud.js?v=39"></script>
+<script src="js/game.js?v=39"></script>
+<script src="js/attract.js?v=39"></script>
+<script src="js/net.js?v=39"></script>
+<script src="js/dof.js?v=39"></script>
+<script src="js/replay.js?v=39"></script>
+<script src="js/demos.js?v=39"></script>
+<script src="js/locker.js?v=39"></script>
+<script src="js/assets.js?v=39"></script>
+<script src="js/editor.js?v=39"></script>
+<script src="js/main.js?v=39"></script>
 </body>
 </html>

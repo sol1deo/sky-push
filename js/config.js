@@ -342,6 +342,23 @@ SKY.TUNING = {
   },
 
   /* ------------------------------------------------------------------
+   * DEATHMATCH — one timed round, most points wins. KOs score, assists
+   * score less, KOs with the ROTATING BONUS WEAPON score extra (CS:GO DM
+   * style), and every N-KO streak pays a bonus. Pick any weapon with the
+   * loadout menu (B) — it sticks through respawns. No loot cards.
+   * ------------------------------------------------------------------ */
+  dm: {
+    timeLimit:    600,    // seconds (menu pills: 5/10/15 min)
+    respawnDelay: 2.5,
+    koPts:        2,      // throwing someone off
+    assistPts:    1,      // most recent OTHER hitter inside the credit window
+    bonusPts:     2,      // extra when the KO used the bonus weapon
+    bonusEvery:   60,     // seconds each bonus weapon stays up
+    streakEvery:  3,      // every N KOs without dying...
+    streakPts:    1,      // ...pays this on top
+  },
+
+  /* ------------------------------------------------------------------
    * DEATH REWARDS — after each KO you pick 1 of 3 (keys 1/2/3).
    * Rarity odds shift with how many times you've died this round.
    * ------------------------------------------------------------------ */

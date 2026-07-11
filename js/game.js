@@ -16,8 +16,12 @@ SKY.Game = (function () {
 
   const BOT_ROSTER = [
     ['Bloop', '#ff5db1'], ['Zippy', '#40c8ff'], ['Wobble', '#7dff9e'],
-    ['Gustav', '#c39bff'], ['Peanut', '#ff9a3d'],
+    ['Gustav', '#c39bff'], ['Peanut', '#ff9a3d'], ['Noodle', '#ff6a6a'],
+    ['Biscuit', '#ffe066'], ['Squish', '#6affd8'], ['Turnip', '#b8ff6a'],
   ];
+  // deathmatch: pickable loadout weapons + the bonus-weapon rotation order
+  const DM_WEAPONS = ['blaster', 'scatter', 'smg', 'burst', 'longshot', 'magnum',
+    'bouncer', 'piston', 'mega', 'lobber', 'boomstick', 'quad'];
   const KO_LINES = [
     '<b>{k}</b> YEETED {v} off the sky',
     '<b>{k}</b> launched {v} into next week',
@@ -45,6 +49,9 @@ SKY.Game = (function () {
     countdownT: 0, restartT: 0, winner: null,
     overtime: false,
     lootChoices: null, lootOpen: false,
+    loadoutOpen: false,          // DEATHMATCH weapon menu (B)
+    dmLoadout: null,             // the weapon you spawn with in dm
+    dmBonusWeapon: null,         // rotating bonus weapon (extra points)
     crownHolder: null,
 
     crownPos() {
@@ -64,7 +71,7 @@ SKY.Game = (function () {
         SKY.SFX.music('game');
         api.startMatch(SKY.HUD.botCount, SKY.HUD.mapSel, SKY.HUD.modeSel, {
           rounds: SKY.HUD.roundsSel, lives: SKY.HUD.livesSel, crown: SKY.HUD.crownSel,
-          sparks: SKY.HUD.sparkSel,
+          sparks: SKY.HUD.sparkSel, dmMin: SKY.HUD.dmSel,
         });
         SKY.Input.requestLock();
       };
@@ -78,6 +85,7 @@ SKY.Game = (function () {
         if (api.state !== 'playing' && api.state !== 'countdown') return;
         if (!locked) {
           if (api.lootOpen) return;              // reward picker owns the cursor
+          if (api.loadoutOpen) return;           // DM loadout menu owns it too
           if (SKY.Net.online) {
             // ONLINE never pauses. ESC while ALIVE opens the in-match menu
             // (quit/settings — the game keeps running behind it); everything
@@ -100,10 +108,11 @@ SKY.Game = (function () {
     applyRules(rules, mode) {
       if (!rules) return;
       if (rules.rounds) SKY.TUNING.game.roundsToWin = rules.rounds;
-      if (mode === 'spark') SKY.TUNING.game.roundsToWin = 1;   // one long round
+      if (mode === 'spark' || mode === 'dm') SKY.TUNING.game.roundsToWin = 1; // one long round
       if (rules.lives) SKY.TUNING.game.lives = rules.lives;
       if (rules.crown) SKY.TUNING.crown.holdToWin = rules.crown;
       if (rules.sparks) SKY.TUNING.spark.target = rules.sparks;
+      if (rules.dmMin) SKY.TUNING.dm.timeLimit = rules.dmMin * 60;
     },
 
     /* ---------------- match / round setup ---------------- */
@@ -120,8 +129,8 @@ SKY.Game = (function () {
       api.player = new SKY.Pawn({ name: myName, color: '#ffd34d', isLocal: true });
       api.player.buildVisual(scene);
       api.pawns.push(api.player);
-      for (let i = 0; i < SKY.U.clamp(nBots, 1, 5); i++) {
-        const p = new SKY.Pawn({ name: BOT_ROSTER[i][0], color: BOT_ROSTER[i][1] });
+      for (let i = 0; i < SKY.U.clamp(nBots, 1, 9); i++) {
+        const p = new SKY.Pawn({ name: BOT_ROSTER[i % BOT_ROSTER.length][0], color: BOT_ROSTER[i % BOT_ROSTER.length][1] });
         p.isBot = true;
         p.buildVisual(scene);
         api.pawns.push(p);
@@ -184,6 +193,7 @@ SKY.Game = (function () {
         p.eliminated = false; p.alive = true; p.deadT = 0; p.koCount = 0;
         p.crownTime = 0;
         p.lastHitBy = null; p.lastHitT = -99;
+        p.recentHits = []; p.dmStreak = 0;
         SKY.Grapple.release(p); p.grappleCd = 0; p.pbCd = 0; p.acCd = 0; p.dashCd = 0;
         p.tauntT = 0; p.zoomed = false;
         p.weapon = 'pistol'; p.deaths = 0;
@@ -214,7 +224,19 @@ SKY.Game = (function () {
       SKY.HUD.showRespawn(null);
       SKY.HUD.subMsg(api.mode === 'spark'
         ? 'First to ' + SKY.TUNING.spark.target + ' sparks — KOs drop the goods'
+        : api.mode === 'dm'
+        ? 'DEATHMATCH — most points in ' + Math.round(SKY.TUNING.dm.timeLimit / 60) +
+          ' min wins · ' + SKY.Settings.bindName(SKY.Settings.data.binds.loadout) + ' — pick your weapon'
         : 'Round ' + api.roundNum + ' — first to ' + SKY.TUNING.game.roundsToWin + ' wins', 2.5);
+      // DEATHMATCH loadouts: your pick sticks; bots grab something random
+      api.dmBonusWeapon = null;
+      if (api.mode === 'dm') {
+        for (const p of api.pawns) {
+          if (p.isRemote) continue;
+          if (p.isLocal) { if (api.dmLoadout) p.giveWeapon(api.dmLoadout); }
+          else p.giveWeapon(SKY.U.pick(DM_WEAPONS));
+        }
+      }
       // returning from an unlocked state (e.g. reward picker was open):
       // offline re-pauses; online NEVER pops a menu — just a click-to-play hint
       if (!fromMenu && !SKY.Input.locked) {
@@ -300,7 +322,9 @@ SKY.Game = (function () {
       api.state = 'menu';
       api.paused = false;
       api.lootChoices = null; api.lootOpen = false;
+      api.loadoutOpen = false;
       SKY.HUD.hideLoot();
+      SKY.HUD.hideLoadout();
       SKY.HUD.roundBanner(null);
       SKY.HUD.setPause(false);
       SKY.HUD.showMenu();
@@ -381,6 +405,7 @@ SKY.Game = (function () {
       /* ================= state: playing (and live roundend) ================= */
       if (api.state === 'playing') api.roundTime += dt;   // clock freezes at round end
       if (api.mode === 'spark' && api.state === 'playing') this.tickSpark(dt);
+      if (api.mode === 'dm' && api.state === 'playing') this.tickDm(dt);
 
       // OVERTIME: arena starts working against you (host decides; not in spark)
       if (SKY.Net.authority && api.state === 'playing' &&
@@ -484,6 +509,57 @@ SKY.Game = (function () {
       }
     },
 
+    /* ---------------- DEATHMATCH ----------------
+     * One timed round. KOs = points, assists = fewer points, KOs with the
+     * ROTATING bonus weapon = extra (deterministic rotation from the shared
+     * round clock — no net messages needed). Leader wears the crown.
+     * -------------------------------------------- */
+    tickDm(dt) {
+      const C = SKY.TUNING.dm;
+      // rotating bonus weapon (fixed order, driven by the synced clock)
+      const w = DM_WEAPONS[Math.floor(api.roundTime / C.bonusEvery) % DM_WEAPONS.length];
+      if (w !== api.dmBonusWeapon) {
+        const announce = api.dmBonusWeapon !== null;
+        api.dmBonusWeapon = w;
+        if (announce) {
+          SKY.HUD.subMsg('Bonus weapon: ' + w.toUpperCase() + ' (+' + C.bonusPts + ' per KO)', 2.5);
+          SKY.SFX.crown();
+        }
+      }
+      // the crown marks the point leader
+      let leader = null;
+      for (const p of api.pawns) {
+        if ((p.sparks || 0) > (leader ? leader.sparks : 0)) leader = p;
+      }
+      api.crownHolder = leader && leader.sparks > 0 ? leader : null;
+      // buzzer: most points wins the match
+      if (SKY.Net.authority && api.roundTime >= C.timeLimit) {
+        const rich = api.pawns.slice().sort((x, y) => (y.sparks || 0) - (x.sparks || 0))[0];
+        this.endRound(rich && (rich.sparks || 0) > 0 ? rich : null);
+      }
+    },
+
+    /* loadout menu (B in deathmatch): pick any weapon, keep it every spawn */
+    pickLoadout(kind) {
+      api.dmLoadout = kind;
+      api.loadoutOpen = false;
+      SKY.HUD.hideLoadout();
+      if (api.player && api.player.alive) api.player.giveWeapon(kind);
+      SKY.Input.requestLock();
+    },
+    toggleLoadout() {
+      if (api.mode !== 'dm' || !api.player) return;
+      if (api.loadoutOpen) {
+        api.loadoutOpen = false;
+        SKY.HUD.hideLoadout();
+        SKY.Input.requestLock();
+      } else {
+        api.loadoutOpen = true;
+        SKY.HUD.showLoadout(DM_WEAPONS, api.dmLoadout, (k) => api.pickLoadout(k));
+        if (document.pointerLockElement) document.exitPointerLock();
+      }
+    },
+
     buildPlayerCmd() {
       const p = api.player;
       if (!p) return;
@@ -524,6 +600,7 @@ SKY.Game = (function () {
         if (!SKY.Map.tryInteract(p)) SKY.Grapple.tryFire(p);
       }
       if (In.actionPressed('grenade')) SKY.Grenades.throwNade(p);
+      if (In.actionPressed('loadout')) this.toggleLoadout();
       if (In.actionPressed('dash')) p.tryDash();
       if (In.actionPressed('taunt') && p.tryTaunt()) SKY.Net.sendTaunt();
       if (In.actionPressed('reload')) SKY.Weapons.tryReload(p);
@@ -558,7 +635,7 @@ SKY.Game = (function () {
     handleKO(pawn) {
       if (!pawn.alive) return;   // can't die twice without a respawn between
       pawn.deaths++;
-      if (api.mode !== 'crown' && api.mode !== 'spark') pawn.lives--;
+      if (api.mode !== 'crown' && api.mode !== 'spark' && api.mode !== 'dm') pawn.lives--;
       pawn.alive = false;
       SKY.Grapple.release(pawn);
       SKY.Effects.koBurst(_v.set(pawn.pos.x, SKY.World.killY + 3, pawn.pos.z).clone(), pawn.color);
@@ -579,6 +656,38 @@ SKY.Game = (function () {
         killer.tryTaunt();
       }
 
+      if (api.mode === 'dm') {
+        const C = SKY.TUNING.dm;
+        if (killer) {
+          let pts = C.koPts;
+          if (killer.weapon === api.dmBonusWeapon) {
+            pts += C.bonusPts;
+            SKY.HUD.killFeed('<b>' + killer.name + '</b> bonus weapon +' + C.bonusPts);
+          }
+          killer.dmStreak = (killer.dmStreak || 0) + 1;
+          if (killer.dmStreak % C.streakEvery === 0) {
+            pts += C.streakPts;
+            SKY.HUD.killFeed('<b>' + killer.name + '</b> is on a ' + killer.dmStreak + '-streak +' + C.streakPts);
+          }
+          killer.sparks = (killer.sparks || 0) + pts;
+          // assist: the most recent OTHER hitter inside the credit window
+          const rh = pawn.recentHits || [];
+          for (let i = rh.length - 1; i >= 0; i--) {
+            const h = rh[i];
+            if (h.by === killer || h.by.eliminated) continue;
+            if (api.time - h.t > G.koCreditWindow) break;
+            h.by.sparks = (h.by.sparks || 0) + C.assistPts;
+            SKY.HUD.killFeed('<b>' + h.by.name + '</b> assist +' + C.assistPts);
+            break;
+          }
+        }
+        pawn.dmStreak = 0;
+        if (pawn.recentHits) pawn.recentHits.length = 0;
+        pawn.deadT = C.respawnDelay;
+        if (pawn.isLocal) SKY.HUD.showRespawn('Respawning…');
+        if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer);
+        return;
+      }
       if (api.mode === 'spark') {
         // the piñata moment: part of the bank + a KO bonus scatters where
         // the victim last stood — chase the gold, mind the ledge
@@ -675,7 +784,9 @@ SKY.Game = (function () {
       SKY.Effects.celebrate(CENTER);
       SKY.HUD.showRespawn(null);
       api.lootChoices = null; api.lootOpen = false;
+      api.loadoutOpen = false;
       SKY.HUD.hideLoot();
+      SKY.HUD.hideLoadout();
     },
 
     /* ---------------- per-render-frame: camera, HUD, audio ---------------- */
@@ -688,7 +799,7 @@ SKY.Game = (function () {
       SKY.Attract.tick(rdt);    // slow-mo menu show (self-gates on state)
 
       // crown prop (crown rush: the objective; spark rush: marks the leader)
-      if (crownMesh && (api.mode === 'crown' || api.mode === 'spark')) {
+      if (crownMesh && (api.mode === 'crown' || api.mode === 'spark' || api.mode === 'dm')) {
         crownSpin += rdt * 2;
         const cp = api.crownPos();
         crownMesh.position.set(cp.x, cp.y + Math.sin(crownSpin * 1.4) * 0.12, cp.z);

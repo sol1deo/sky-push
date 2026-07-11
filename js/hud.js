@@ -18,7 +18,7 @@ SKY.HUD = (function () {
     botCount: 3,
     mapSel: 'sky',
     modeSel: 'spark',
-    roundsSel: 2, livesSel: 3, crownSel: 25, sparkSel: 40,
+    roundsSel: 2, livesSel: 3, crownSel: 25, sparkSel: 40, dmSel: 10,
     onPlay: null, onResume: null, onQuit: null,
 
     init() {
@@ -39,6 +39,8 @@ SKY.HUD = (function () {
         sparkFill: $('spark-fill'), lvTimer: $('lv-timer'),
         rb: $('round-banner'), rbName: $('rb-name'), rbStars: $('rb-stars'),
         rbTime: $('rb-time'), rbExtra: $('rb-extra'),
+        dmBonus: $('dm-bonus'), dmbIcon: $('dmb-icon'), dmbName: $('dmb-name'),
+        dmbTime: $('dmb-time'), loadout: $('loadout-ov'), loadoutGrid: $('loadout-grid'),
         cd: { pb: $('cd-pb'), ac: $('cd-ac'), gr: $('cd-gr'), ab: $('cd-ab') },
       };
       el.chLines = el.crosshair.querySelectorAll('.l');
@@ -66,8 +68,10 @@ SKY.HUD = (function () {
         api.modeSel = v;
         $('crown-row').classList.toggle('hidden', v !== 'crown');
         $('spark-row').classList.toggle('hidden', v !== 'spark');
-        $('rl-row').classList.toggle('hidden', v === 'spark');
+        $('dm-row').classList.toggle('hidden', v !== 'dm');
+        $('rl-row').classList.toggle('hidden', v === 'spark' || v === 'dm');
       });
+      bindSel('dmmin-btn', 'v', v => { api.dmSel = +v; });
       // PLAY hub sub-tabs: vs bots ↔ online
       document.querySelectorAll('.play-sub').forEach(b => {
         b.addEventListener('click', () => api.playSub(b.dataset.v));
@@ -274,6 +278,27 @@ SKY.HUD = (function () {
 
     scoreboard(show) { el.sb.classList.toggle('hidden', !show); },
 
+    /* -------- DEATHMATCH loadout picker (B) -------- */
+    showLoadout(weapons, current, onPick) {
+      const G = SKY.Game;
+      el.loadoutGrid.innerHTML = '';
+      for (const k of weapons) {
+        const W = SKY.TUNING.weapons[k] || {};
+        const card = document.createElement('div');
+        const isBonus = G.dmBonusWeapon === k;
+        card.className = 'lo-card' + (current === k ? ' on' : '') + (isBonus ? ' bonus' : '');
+        const rar = RARITY_GLOW[W.rarity] || '#c6cdd9';
+        const src = SKY.Effects.weaponWireIcon(k, rar);
+        card.innerHTML = (src ? `<img src="${src}" alt="">` : '') +
+          `<b>${(W.short || W.label || k).toUpperCase()}</b>` +
+          `<small>${isBonus ? 'BONUS +' + SKY.TUNING.dm.bonusPts + ' PTS' : (W.rarity || '')}</small>`;
+        card.onclick = () => onPick(k);
+        el.loadoutGrid.appendChild(card);
+      }
+      el.loadout.classList.remove('hidden');
+    },
+    hideLoadout() { if (el && el.loadout) el.loadout.classList.add('hidden'); },
+
     /* -------- SPARK RUSH level-up: same cards, but LIVE --------
      * No pause, no cursor: the row docks low, keys 1/2/3 pick, a thin bar
      * counts down to an auto-pick. Clicking is pointless (pointer stays
@@ -393,7 +418,7 @@ SKY.HUD = (function () {
         setText(el.crownStatus, G.crownHolder
           ? 'Crown · ' + G.crownHolder.name + ' ' + Math.floor(G.crownHolder.crownTime) + '/' + C.holdToWin
           : 'Crown · free');
-      } else if (G.mode !== 'spark') {
+      } else if (G.mode !== 'spark' && G.mode !== 'dm') {
         el.crownStatus.classList.add('hidden');
         el.lives.classList.remove('hidden');
         el.alive.classList.remove('hidden');
@@ -405,7 +430,36 @@ SKY.HUD = (function () {
         setText(el.alive, G.pawns.filter(q => !q.eliminated).length + ' left');
       }
 
-      if (G.mode !== 'spark') {
+      // DEATHMATCH: points + leader + buzzer countdown + the bonus weapon
+      if (G.mode === 'dm') {
+        const C = SKY.TUNING.dm;
+        el.lives.classList.add('hidden');
+        el.crownStatus.classList.add('hidden');
+        el.alive.classList.remove('hidden');
+        const lead = G.crownHolder;
+        setText(el.alive, lead ? (lead.isLocal ? 'You lead' : lead.name + ' leads · ' + lead.sparks) : 'No leader yet');
+        el.sparks.classList.remove('hidden');
+        setHTML(el.sparkNum, '★ ' + (p.sparks || 0) + ' <small>PTS</small>');
+        setW(el.sparkFill, 0);
+        const left = Math.max(0, C.timeLimit - G.roundTime);
+        setText(el.timer, Math.floor(left / 60) + ':' + String(Math.floor(left % 60)).padStart(2, '0'));
+        const tc = left <= 60 ? 'var(--danger)' : '';
+        if (el.timer._c !== tc) { el.timer._c = tc; el.timer.style.color = tc; }
+        el.dmBonus.classList.remove('hidden');
+        const bw = G.dmBonusWeapon;
+        if (bw && el.dmBonus._w !== bw) {
+          el.dmBonus._w = bw;
+          setText(el.dmbName, bw.toUpperCase());
+          const src = SKY.Effects.weaponWireIcon(bw, '#ffd34d');
+          if (src) el.dmbIcon.src = src;
+        }
+        const bleft = Math.max(0, SKY.TUNING.dm.bonusEvery - (G.roundTime % SKY.TUNING.dm.bonusEvery));
+        setText(el.dmbTime, '0:' + String(Math.floor(bleft)).padStart(2, '0'));
+      } else {
+        el.dmBonus.classList.add('hidden');
+      }
+
+      if (G.mode !== 'spark' && G.mode !== 'dm') {
         const t = Math.max(0, G.roundTime);
         setText(el.timer, Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'));
       }
@@ -459,12 +513,14 @@ SKY.HUD = (function () {
       const G = SKY.Game;
       const online = SKY.Net.online;
       const rows = [...G.pawns].sort((a, b) =>
-        G.mode === 'spark' ? ((b.sparks || 0) - (a.sparks || 0)) || (b.koCount - a.koCount)
-        : (b.roundWins - a.roundWins) || (b.lives - a.lives) || (b.koCount - a.koCount));
+        (G.mode === 'spark' || G.mode === 'dm')
+          ? ((b.sparks || 0) - (a.sparks || 0)) || (b.koCount - a.koCount)
+          : (b.roundWins - a.roundWins) || (b.lives - a.lives) || (b.koCount - a.koCount));
       el.sbBody.innerHTML = rows.map(p => {
         const cls = (p.isLocal ? 'me' : '') + (p.eliminated ? ' out' : '');
         const status = p.eliminated ? 'Out' : (p.alive ? 'Alive' : 'Respawning');
         const lives = G.mode === 'spark' ? '✦' + (p.sparks || 0)
+          : G.mode === 'dm' ? '★' + (p.sparks || 0)
           : G.mode === 'crown' ? Math.floor(p.crownTime) + 's'
           : '♥'.repeat(Math.max(0, p.lives));
         const ping = p.isBot ? 'bot'

@@ -32,14 +32,44 @@ SKY.Pickups = (function () {
     spawners = SKY.World.itemPoints.map((pt, i) => ({
       pt,
       item: pt.item || '',                 // '' = re-roll a random item each time
+      mix: pt.mix || null,                 // weighted rarity pool (item 'mix')
       respawn: (typeof pt.respawn === 'number' && pt.respawn > 0) ? pt.respawn : 20,
       t: CFG.firstDelay + i * 1.2,         // stagger the opening wave
       live: null,                          // active pickup id while spawned
     }));
   }
 
+  /* what should this spawner produce?
+     '' = any random · 'r:<rarity>' = random within a rarity ·
+     'mix' = weighted rarity roll (sp.mix percentages) · else a specific id */
+  function pickRarity(mix) {
+    const order = ['common', 'rare', 'epic'];
+    let total = 0;
+    for (const r of order) total += Math.max(0, mix[r] || 0);
+    if (total <= 0) return null;
+    let roll = Math.random() * total;
+    for (const r of order) {
+      roll -= Math.max(0, mix[r] || 0);
+      if (roll <= 0) return r;
+    }
+    return 'common';
+  }
+  function rollRarity(r) {
+    const pool = SKY.Loot.ITEMS.filter(i => i.rarity === r);
+    return pool.length ? SKY.U.pick(pool) : null;
+  }
+  function resolveSpawn(sp) {
+    if (sp.item === 'mix') {
+      const r = sp.mix && pickRarity(sp.mix);
+      return r ? rollRarity(r) : rollItem();
+    }
+    if (sp.item && sp.item.startsWith('r:')) return rollRarity(sp.item.slice(2)) || rollItem();
+    if (sp.item) return SKY.Loot.ITEMS.find(i => i.id === sp.item);
+    return rollItem();
+  }
+
   function spawnFixed(sp) {
-    const item = sp.item ? SKY.Loot.ITEMS.find(i => i.id === sp.item) : rollItem();
+    const item = resolveSpawn(sp);
     if (!item) { sp.t = 30; return; }      // stale id in an old map — retry, don't spin
     const id = idSeq++;
     sp.live = id;

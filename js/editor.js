@@ -32,7 +32,6 @@ SKY.Editor = (function () {
   let dirty = false;              // unsaved changes since last save/autosave
   let autosaveTimer = null;
   let clipboard = null;           // { kind, json } — Ctrl+C/X/V
-  let pasteCount = 0;
   let lastNudgeT = 0;
   let env = null;                 // sky dome / sun / shafts preview group
   let camYaw = 0.6, camPitch = -0.45;
@@ -295,7 +294,17 @@ SKY.Editor = (function () {
     if (o.kind === 'block') return 'Block · ' + o.data.s.map(v => +v.toFixed(1)).join('×');
     if (o.kind === 'pad') return 'Jump pad';
     if (o.kind === 'spawn') return 'Spawn';
-    if (o.kind === 'item') return 'Item · ' + (o.data.item || 'random');
+    if (o.kind === 'item') {
+      const it = o.data.item;
+      if (it === 'mix' && o.data.mix) {
+        const parts = ['common', 'rare', 'epic']
+          .filter(r => (o.data.mix[r] || 0) > 0)
+          .map(r => (o.data.mix[r] || 0) + '% ' + r);
+        return 'Item · ' + (parts.join(' / ') || 'mix');
+      }
+      if (it && it.startsWith('r:')) return 'Item · random ' + it.slice(2);
+      return 'Item · ' + (it || 'random');
+    }
     const a = def.assets[o.data.asset] || SKY.Assets.get(o.data.asset);
     return 'Prop · ' + (a ? a.name : '?');
   }
@@ -479,14 +488,12 @@ SKY.Editor = (function () {
     const o = objects[sel];
     if (!o) return;
     clipboard = { kind: o.kind, json: JSON.stringify(o.data) };
-    pasteCount = 0;
     if (cut) { deleteSel(); status('cut'); } else status('copied ' + o.kind);
   }
   function paste() {
     if (!clipboard) { status('clipboard empty'); return; }
+    // paste IN PLACE — an offset broke axis alignment; move it with G after
     const item = JSON.parse(clipboard.json);
-    pasteCount++;
-    item.p = [item.p[0] + 2 * pasteCount, item.p[1], item.p[2] + 2 * pasteCount];
     const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props }[clipboard.kind];
     push();
     arr.push(item);
@@ -782,13 +789,24 @@ SKY.Editor = (function () {
     } else if (o.kind === 'item') {
       const loot = (SKY.Loot && SKY.Loot.ITEMS) || [];
       h += `<div class="ed-row"><span>Item</span><select data-k="itemid">
-        <option value=""${!d.item ? ' selected' : ''}>random</option>
+        <option value=""${!d.item ? ' selected' : ''}>random (any)</option>
+        <option value="r:common"${d.item === 'r:common' ? ' selected' : ''}>RANDOM COMMON</option>
+        <option value="r:rare"${d.item === 'r:rare' ? ' selected' : ''}>RANDOM RARE</option>
+        <option value="r:epic"${d.item === 'r:epic' ? ' selected' : ''}>RANDOM EPIC</option>
+        <option value="mix"${d.item === 'mix' ? ' selected' : ''}>CUSTOM MIX %…</option>
         ${loot.map(it => `<option value="${it.id}"${d.item === it.id ? ' selected' : ''}>
           ${(it.name || it.id).toUpperCase()} · ${it.rarity}</option>`).join('')}
       </select></div>`;
+      if (d.item === 'mix') {
+        const mx = d.mix || {};
+        h += numRow('Common %', mx.common || 0, 'mixc', 5)
+          + numRow('Rare %', mx.rare || 0, 'mixr', 5)
+          + numRow('Epic %', mx.epic || 0, 'mixe', 5);
+      }
       h += numRow('Respawn s', d.respawn !== undefined && d.respawn > 0 ? d.respawn : 20, 'respawn', 5);
       h += `<div class="ed-hint">Spawns here at round start and returns RESPAWN seconds
-        after someone grabs it. RANDOM rolls a new item each time.</div>`;
+        after someone grabs it. RANDOM rolls a new item each time; CUSTOM MIX
+        rolls the rarity by your percentages (e.g. 80 rare / 20 epic).</div>`;
     } else if (o.kind === 'prop') {
       h += numRow('Rot Y°', (d.r ? d.r[1] : 0) * 180 / Math.PI, 'pr1', 5);
       h += numRow('Scale', d.scale || 1, 'pscale', 0.1);
@@ -909,7 +927,14 @@ SKY.Editor = (function () {
       rebuildMarker(o);
     }
     else if (k === 'yaw') { d.yaw = num * Math.PI / 180; rebuildMarker(o); }
-    else if (k === 'itemid') { d.item = e.target.value; refreshOutliner(); }
+    else if (k === 'itemid') {
+      d.item = e.target.value;
+      if (d.item === 'mix' && !d.mix) d.mix = { common: 50, rare: 35, epic: 15 };
+      refreshOutliner(); syncInspector();   // mix rows appear/disappear
+    }
+    else if (k === 'mixc') { d.mix = d.mix || {}; d.mix.common = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
+    else if (k === 'mixr') { d.mix = d.mix || {}; d.mix.rare = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
+    else if (k === 'mixe') { d.mix = d.mix || {}; d.mix.epic = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
     else if (k === 'respawn') d.respawn = SKY.U.clamp(num || 20, 3, 300);
     else if (k === 'pr1') { d.r = d.r || [0, 0, 0]; d.r[1] = num * Math.PI / 180; }
     else if (k === 'pr0') { d.r = d.r || [0, 0, 0]; d.r[0] = num * Math.PI / 180; }
@@ -1036,11 +1061,14 @@ SKY.Editor = (function () {
       status('textured with ' + a.name);
       return;
     }
-    // model → a prop (light/atmosphere decor defaults to non-solid)
+    // model → a prop. Light/atmosphere decor defaults to non-solid, and so
+    // do the lattice-y construction pieces (their bbox would be a giant
+    // invisible wall — creators can still tick Solid on)
     push();
     SKY.Assets.embed(def, assetId);
+    const airy = /crane|site-fence/.test(assetId);
     const pr = { asset: assetId, p: [+_v.x.toFixed(2), +_v.y.toFixed(2), +_v.z.toFixed(2)],
-      r: [0, 0, 0], scale: 1, solid: !assetId.startsWith('fx:') };
+      r: [0, 0, 0], scale: 1, solid: !assetId.startsWith('fx:') && !airy };
     def.props.push(pr);
     rebuild();
     select(objects.findIndex(o => o.data === pr));
@@ -1475,25 +1503,36 @@ SKY.Editor = (function () {
       if (e.code === 'ArrowDown') nudge(0, 0, nstep);
       if (e.code === 'PageUp') nudge(0, nstep, 0);
       if (e.code === 'PageDown') nudge(0, -nstep, 0);
-      if (e.code === 'ControlLeft' || e.code === 'ControlRight') {
-        if (gizmo) {
-          gizmo.setTranslationSnap(0.5);
-          gizmo.setRotationSnap(Math.PI / 12);
-          gizmo.setScaleSnap(0.25);
-        }
-      }
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight' ||
+          e.code === 'ShiftLeft' || e.code === 'ShiftRight') updateSnaps(e);
     });
     window.addEventListener('keyup', (e) => {
       if (e.code === 'KeyE' && faceScrub) {
         syncInspector(); refreshOutliner(); faceScrub = null;
         status('face extended');
       }
-      if ((e.code === 'ControlLeft' || e.code === 'ControlRight') && gizmo) {
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight' ||
+          e.code === 'ShiftLeft' || e.code === 'ShiftRight') updateSnaps(e);
+    });
+
+    /* gizmo snapping: Ctrl = fine grid (0.5 / 15°), Shift = big rotation
+       STOPS (45° -> 0/45/90/...); Shift wins when both are held */
+    function updateSnaps(e) {
+      if (!gizmo) return;
+      if (e.shiftKey) {
+        gizmo.setTranslationSnap(1);
+        gizmo.setRotationSnap(Math.PI / 4);
+        gizmo.setScaleSnap(0.5);
+      } else if (e.ctrlKey) {
+        gizmo.setTranslationSnap(0.5);
+        gizmo.setRotationSnap(Math.PI / 12);
+        gizmo.setScaleSnap(0.25);
+      } else {
         gizmo.setTranslationSnap(null);
         gizmo.setRotationSnap(null);
         gizmo.setScaleSnap(null);
       }
-    });
+    }
 
     /* dropping things on the viewport: library assets, raw files */
     window.addEventListener('dragover', (e) => { if (api.active) e.preventDefault(); });

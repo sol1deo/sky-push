@@ -17,7 +17,7 @@ SKY.Net = (function () {
   const PREFIX = 'skypush';
   const PUB_SLOTS = 6;
   const COLORS = ['#ffd34d', '#ff5db1', '#40c8ff', '#7dff9e', '#c39bff', '#ff9a3d'];
-  const MAX_PLAYERS = 6;
+  const MAX_PLAYERS = 10;
 
   const api = {
     online: false,
@@ -26,7 +26,7 @@ SKY.Net = (function () {
     code: null,
     isPublic: false,
     roster: [],            // [{id, name, color, bot}]
-    settings: { map: 'sky', mode: 'spark', fillBots: true, rounds: 2, lives: 3, crown: 25, sparks: 40 },
+    settings: { map: 'sky', mode: 'spark', fillBots: true, rounds: 2, lives: 3, crown: 25, sparks: 40, dmMin: 10 },
     inGame: false,
   };
 
@@ -763,6 +763,7 @@ SKY.Net = (function () {
         SKY.SFX.ko(pawn.isLocal);
         if (pawn.isLocal) {
           if (m.elim) SKY.HUD.showRespawn('☠ ELIMINATED — spectating the chaos');
+          else if (G.mode === 'spark' || G.mode === 'dm') SKY.HUD.showRespawn('Respawning…');
           else SKY.HUD.showRespawn('💀 YEETED! Pick a reward…');
         }
         break;
@@ -896,7 +897,7 @@ SKY.Net = (function () {
     api.roster = roster;
     api.inGame = true;
     const rules = { rounds: api.settings.rounds, lives: api.settings.lives,
-      crown: api.settings.crown, sparks: api.settings.sparks };
+      crown: api.settings.crown, sparks: api.settings.sparks, dmMin: api.settings.dmMin };
     // custom (editor) maps ride along in the start message — clients don't
     // need the map deployed anywhere, the def IS the map
     const mapDef = SKY.MapData.get(api.settings.map) || null;
@@ -1068,7 +1069,8 @@ SKY.Net = (function () {
       </div>`).join('');
     const isHost = api.role === 'host';
     document.querySelectorAll('#mp-lobby .lmap-btn, #mp-lobby .lmode-btn, #mp-lobby .lrounds-btn, ' +
-      '#mp-lobby .llives-btn, #mp-lobby .lcrown-btn, #mp-lobby .lsparks-btn, #lobby-bots, #lobby-start')
+      '#mp-lobby .llives-btn, #mp-lobby .lcrown-btn, #mp-lobby .lsparks-btn, #mp-lobby .ldm-btn, ' +
+      '#lobby-bots, #lobby-start')
       .forEach(el => { el.disabled = !isHost; el.classList.toggle('locked', !isHost); });
     document.querySelectorAll('#mp-lobby .lmap-btn').forEach(b =>
       b.classList.toggle('sel', b.dataset.m === api.settings.map));
@@ -1082,6 +1084,8 @@ SKY.Net = (function () {
       b.classList.toggle('sel', +b.dataset.v === (api.settings.crown || 25)));
     document.querySelectorAll('#mp-lobby .lsparks-btn').forEach(b =>
       b.classList.toggle('sel', +b.dataset.v === (api.settings.sparks || 40)));
+    document.querySelectorAll('#mp-lobby .ldm-btn').forEach(b =>
+      b.classList.toggle('sel', +b.dataset.v === (api.settings.dmMin || 10)));
     $('lobby-bots').checked = api.settings.fillBots;
     $('lobby-start').textContent = isHost ? 'START GAME' : 'waiting for host…';
   }
@@ -1186,6 +1190,9 @@ SKY.Net = (function () {
     });
     document.querySelectorAll('#mp-lobby .llives-btn').forEach(b => {
       b.onclick = () => { if (api.role === 'host') hostSetSettings({ lives: +b.dataset.v }); };
+    });
+    document.querySelectorAll('#mp-lobby .ldm-btn').forEach(b => {
+      b.onclick = () => { if (api.role === 'host') hostSetSettings({ dmMin: +b.dataset.v }); };
     });
     document.querySelectorAll('#mp-lobby .lcrown-btn').forEach(b => {
       b.onclick = () => { if (api.role === 'host') hostSetSettings({ crown: +b.dataset.v }); };
@@ -1303,7 +1310,7 @@ SKY.Net = (function () {
         t: 'ko', id: pawn.netId, lives: pawn.lives, elim: pawn.eliminated, line,
         killer: killer ? killer.netId : null, killerKos: killer ? killer.koCount : 0,
       });
-      if (SKY.Game.mode !== 'spark' && pawn.isRemote && !pawn.eliminated) {
+      if (SKY.Game.mode !== 'spark' && SKY.Game.mode !== 'dm' && pawn.isRemote && !pawn.eliminated) {
         const choices = SKY.Loot.roll(pawn).map(it => it.id);
         lootSeq++;
         pendingLoot.set(pawn.netId, { choices, seq: lootSeq, at: performance.now() });

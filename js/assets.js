@@ -116,6 +116,7 @@ SKY.Assets = (function () {
     { id: 'fx:shaft',      name: 'light shaft' },
     { id: 'fx:groundfog',  name: 'ground fog' },
     { id: 'fx:haze',       name: 'haze' },
+    { id: 'fx:airvent',    name: 'air vent', folder: 'gadgets' },
   ];
   /* per-type option defaults (merged with the prop's fx settings) */
   const FX_OPTS = {
@@ -127,6 +128,8 @@ SKY.Assets = (function () {
     shaft:      { color: '#fff2cc', alpha: 0.09, width: 3, height: 16 },
     groundfog:  { color: '#cfd8e6', alpha: 0.16, size: 10 },
     haze:       { color: '#dde6f2', alpha: 0.1, size: 9 },
+    // roof updraft: power = lift force, range = column height (m)
+    airvent:    { color: '#9fd8ff', power: 40, range: 10 },
   };
 
   function buildFx(name, fx) {
@@ -249,6 +252,41 @@ SKY.Assets = (function () {
         }
         g.add(plane);
       }
+    } else if (name === 'airvent') {
+      // big roof vent: pawns crossing the column get dragged UP (map.js
+      // registers the updraft zone; power = force, range = column height)
+      const metal = lam(0x6a7382);
+      const dark = lam(0x2c3140);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(2.7, 0.9, 2.7), metal);
+      base.position.y = 0.45;
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.2, 0.5, 16), dark);
+      ring.position.y = 1.05;
+      g.add(base, ring);
+      const fan = new THREE.Group();
+      fan.position.y = 1.12;
+      for (let i = 0; i < 4; i++) {
+        const holder = new THREE.Group();
+        holder.rotation.y = i * Math.PI / 2;
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.05, 0.34), lam(0x9aa4b2));
+        blade.position.x = 0.52;
+        blade.rotation.x = 0.55;              // blade pitch
+        holder.add(blade);
+        fan.add(holder);
+      }
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.24, 10), dark);
+      hub.onBeforeRender = () => { fan.rotation.y += 0.32; };   // self-spinning
+      fan.add(hub);
+      g.add(fan);
+      // grate bars over the fan
+      for (let i = -1; i <= 1; i++) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.05, 0.09), metal);
+        bar.position.set(0, 1.34, i * 0.7);
+        g.add(bar);
+      }
+      // editor-only gizmo: the updraft column
+      const mk = marker(new THREE.CylinderGeometry(1.35, 1.35, o.range, 12, 1, true), col);
+      mk.position.y = o.range / 2 + 1.3;
+      g.add(mk);
     }
     return g;
   }
@@ -263,9 +301,12 @@ SKY.Assets = (function () {
     for (const n of SKY.GFX.propNames()) {
       if (!SKY.GFX.hasProp(n)) continue;
       let it = packCache[n];
+      if (it && SKY.GFX.propFolder) it.folder = SKY.GFX.propFolder(n);
       if (!it) {
         it = {
-          id: 'gfx:' + n, folder: 'pack', type: 'model', builtin: true, thumb: null,
+          id: 'gfx:' + n,
+          folder: SKY.GFX.propFolder ? SKY.GFX.propFolder(n) : 'pack',
+          type: 'model', builtin: true, thumb: null,
           name: n.replace(/^Prop_/, '').replace(/_/g, ' ').replace(/-/g, ' ').toLowerCase(),
         };
         packCache[n] = it;
@@ -276,11 +317,12 @@ SKY.Assets = (function () {
       }
       out.push(it);
     }
-    // light & atmosphere decor lives in its own folder
+    // light & atmosphere decor lives in its own folder ('gadgets' for
+    // gameplay entities like the air vent)
     for (const def of FX_DEFS) {
       let it = packCache[def.id];
       if (!it) {
-        it = { id: def.id, folder: 'lights', type: 'model', builtin: true,
+        it = { id: def.id, folder: def.folder || 'lights', type: 'model', builtin: true,
                thumb: null, name: def.name };
         packCache[def.id] = it;
       }
@@ -302,7 +344,7 @@ SKY.Assets = (function () {
     folders() {
       const f = new Set(items.map(a => a.folder || 'assets'));
       f.add('assets');
-      if (packItems().length) { f.add('pack'); f.add('lights'); }
+      for (const it of packItems()) f.add(it.folder || 'pack');
       return [...f].sort();
     },
 
