@@ -385,6 +385,10 @@
     window.__netTestSkip = true;
     function step() {
       if (done) return;
+      // hold the test clock until beginTest actually starts the match —
+      // on slow asset downloads `t` used to hit `duration` while still in
+      // the menu and finalize() crashed on a null player
+      if (SKY.Game.state === 'menu') { setTimeout(step, 50); return; }
       try {
       drive();
       for (let i = 0; i < 12; i++) SKY.Game.tick(STEP);   // 0.1s of physics
