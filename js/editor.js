@@ -273,8 +273,10 @@ SKY.Editor = (function () {
     ctx.fillStyle = gr; ctx.fillRect(0, 0, 32, 256);
     const tex = new THREE.CanvasTexture(c);
     tex.encoding = THREE.sRGBEncoding;
+    // depthWrite off — same reason as the game dome: writing dome depth
+    // slices the sun/moon sprites near the screen edges
     g.add(new THREE.Mesh(new THREE.SphereGeometry(380, 24, 14),
-      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: !!fogged })));
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: !!fogged, depthWrite: false })));
     if (stars) {
       const sc = document.createElement('canvas');
       sc.width = sc.height = 512;
@@ -284,7 +286,7 @@ SKY.Editor = (function () {
         sg.fillRect(Math.random() * 512, Math.random() * 320, SKY.U.rand(1, 2.4), SKY.U.rand(1, 2.4));
       }
       g.add(new THREE.Mesh(new THREE.SphereGeometry(370, 24, 14),
-        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), side: THREE.BackSide, transparent: true, fog: !!fogged })));
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(sc), side: THREE.BackSide, transparent: true, fog: !!fogged, depthWrite: false })));
     }
     return g;
   }
@@ -1333,8 +1335,11 @@ SKY.Editor = (function () {
     }
 
     ui.ins.addEventListener('mousedown', (e) => {
+      // only the "Extend faces" chips carry data-f; the Paint-face (data-pf)
+      // and Extrude (data-e) chips share the .ed-face class and are handled
+      // by the click handler above — touching dataset.f there was a crash
       const face = e.target.closest('.ed-face');
-      if (face) {
+      if (face && face.dataset.f !== undefined) {
         const o = objects[sel];
         if (o && o.kind === 'block') {
           const [axis, sign] = face.dataset.f.split(',').map(Number);
@@ -1424,7 +1429,7 @@ SKY.Editor = (function () {
       if (e.button === 2) looking = false;
       if (e.button === 0 && !gizmoDrag && (!gizmo || !gizmo.axis) &&
           Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4 &&
-          !e.target.closest('#editor-ov')) {
+          !(e.target.closest && e.target.closest('#editor-ov'))) {
         const hit = pick(e.clientX, e.clientY);
         if (e.shiftKey && hit >= 0) toggleSel(hit);
         else select(hit);

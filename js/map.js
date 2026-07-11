@@ -250,9 +250,12 @@ SKY.Map = (function () {
     g.fillStyle = gr; g.fillRect(0, 0, 32, 256);
     const tex = new THREE.CanvasTexture(c);
     tex.encoding = THREE.sRGBEncoding;
+    // depthWrite OFF: the dome is the farthest backdrop, but its depth at
+    // R=380 (centered on the ORIGIN) can dip below the sun sprite's fixed
+    // quad depth near the screen edges — writing it cut slices off the sun
     const dome = new THREE.Mesh(
       new THREE.SphereGeometry(380, 24, 14),
-      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: !!fogged })
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: !!fogged, depthWrite: false })
     );
     group.add(dome);
     if (stars) {
@@ -283,10 +286,10 @@ SKY.Map = (function () {
       };
       const base = new THREE.Mesh(
         new THREE.SphereGeometry(370, 32, 18),
-        new THREE.MeshBasicMaterial({ map: paint(320, false), side: THREE.BackSide, transparent: true, fog: !!fogged }));
+        new THREE.MeshBasicMaterial({ map: paint(320, false), side: THREE.BackSide, transparent: true, fog: !!fogged, depthWrite: false }));
       const bright = new THREE.Mesh(
         new THREE.SphereGeometry(368, 32, 18),
-        new THREE.MeshBasicMaterial({ map: paint(50, true), side: THREE.BackSide, transparent: true, fog: !!fogged }));
+        new THREE.MeshBasicMaterial({ map: paint(50, true), side: THREE.BackSide, transparent: true, fog: !!fogged, depthWrite: false }));
       base.frustumCulled = bright.frustumCulled = false;
       group.add(base, bright);
       starLayer = bright;      // twinkles + enables shooting stars in tick()
@@ -1318,16 +1321,87 @@ SKY.Map = (function () {
     });
   }
 
+  /* collision for walls with a walk-through opening (doorways / arches /
+     door frames): raycast a grid of columns through the wall and rebuild
+     the solid as jambs + a lintel so the opening is actually passable.
+     Runs on the UNROTATED prop; returns pre-rotation boxes {c, s}, or null
+     when the piece turns out solid all the way across (plain walls,
+     barricaded doorways). `excludeRoot` skips a subtree (the door panel). */
+  function carveOpenings(obj, box, excludeRoot) {
+    const size = box.getSize(new THREE.Vector3());
+    if (size.y < 1.6) return null;                      // too low to walk through
+    const wAxis = size.x >= size.z ? 'x' : 'z';         // width across the wall
+    const tAxis = wAxis === 'x' ? 'z' : 'x';            // thickness through it
+    if (size[wAxis] < 1 || size[tAxis] > size[wAxis]) return null;
+    const meshes = [];
+    obj.traverse((o) => {
+      if (!o.isMesh) return;
+      for (let q = o; q; q = q.parent) if (q === excludeRoot) return;
+      meshes.push(o);
+    });
+    if (!meshes.length) return null;
+    const rc = new THREE.Raycaster();
+    rc.far = size[tAxis] + 2;
+    const org = new THREE.Vector3(), dir = new THREE.Vector3();
+    dir[tAxis] = 1;
+    const nx = 20, ny = 12;
+    const openH = [];       // per column: clear height up from the floor
+    for (let i = 0; i < nx; i++) {
+      const w = box.min[wAxis] + ((i + 0.5) / nx) * size[wAxis];
+      let clear = 0;
+      for (let j = 0; j < ny; j++) {
+        org[wAxis] = w;
+        org.y = box.min.y + ((j + 0.5) / ny) * size.y;
+        org[tAxis] = box.min[tAxis] - 1;
+        rc.set(org, dir);
+        if (rc.intersectObjects(meshes, false).length) break;
+        clear = ((j + 1) / ny) * size.y;
+      }
+      openH.push(clear);
+    }
+    const walk = 1.6;       // min clearance a pawn can run through
+    if (!openH.some(h => h >= walk)) return null;       // no opening — keep the box
+    // merge consecutive same-type columns into boxes
+    const boxes = [];
+    const colW = size[wAxis] / nx;
+    let i = 0;
+    while (i < nx) {
+      const open = openH[i] >= walk;
+      let j = i, low = Infinity;
+      while (j < nx && (openH[j] >= walk) === open) { low = Math.min(low, openH[j]); j++; }
+      const bc = new THREE.Vector3(), bs = new THREE.Vector3();
+      bc[wAxis] = box.min[wAxis] + ((i + j) / 2) * colW;
+      bc[tAxis] = (box.min[tAxis] + box.max[tAxis]) / 2;
+      bs[wAxis] = (j - i) * colW;
+      bs[tAxis] = size[tAxis];
+      if (open) {
+        // lintel above the opening (skipped when it reaches the very top)
+        const top = box.min.y + low;
+        if (box.max.y - top > 0.08) {
+          bc.y = (top + box.max.y) / 2;
+          bs.y = box.max.y - top;
+          boxes.push({ c: bc, s: bs });
+        }
+      } else {
+        bc.y = (box.min.y + box.max.y) / 2;
+        bs.y = size.y;
+        boxes.push({ c: bc, s: bs });
+      }
+      i = j;
+    }
+    return boxes;
+  }
+
   /* -------- interactable doors -------- */
   function setDoor(i, open) {
     const d = doors[i];
     if (!d || d.open === open) return;
     d.open = open;
-    if (open) {
-      if (d.solid) { SKY.World.removeSolid(d.solid); d.solid = null; }
-    } else if (d.wantSolid && !d.solid) {
-      d.solid = SKY.World.addSolid(d.solidOpts);
-    }
+    // swap the panel slab between its closed and open pose (the frame's
+    // jambs/lintel are separate static solids and never move)
+    if (d.solid) { SKY.World.removeSolid(d.solid); d.solid = null; }
+    const opts = open ? d.openOpts : d.closedOpts;
+    if (d.wantSolid && opts) d.solid = SKY.World.addSolid(opts);
     if (SKY.SFX && SKY.SFX.door) {
       const me = SKY.Game && SKY.Game.player;
       SKY.SFX.door(me ? d.pos.distanceTo(me.pos) : 10);
@@ -1429,7 +1503,8 @@ SKY.Map = (function () {
       if ((!embed && !isPack) || !SKY.Assets) continue;
       // door index is decided in def.props order so every peer agrees on
       // it even though the instantiate callbacks land asynchronously
-      const isDoor = pr.door !== undefined ? !!pr.door : /door-rotate/.test(a);
+      const nm = ((embed && embed.name) ? String(embed.name) : a).toLowerCase();
+      const isDoor = pr.door !== undefined ? !!pr.door : /door-rotate/.test(nm);
       const doorIdx = isDoor ? doorSeq++ : -1;
       const g = group;
       SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
@@ -1447,30 +1522,62 @@ SKY.Map = (function () {
         const box = new THREE.Box3().setFromObject(obj);
         const c = box.getCenter(new THREE.Vector3());
         const s = box.getSize(new THREE.Vector3());
-        obj.rotation.set(rot[0], rot[1], rot[2]);
-        obj.updateMatrixWorld(true);
         const okBox = isFinite(s.x) && s.x > 0.2 && s.y > 0.05 && s.z > 0.2;
         const wantSolid = pr.solid !== false;
-        let solidOpts = null;
-        if (okBox) {
-          const lc = c.clone().sub(obj.position);    // local center offset
-          lc.applyQuaternion(obj.quaternion).add(obj.position);
-          solidOpts = {
-            x: lc.x, y: lc.y, z: lc.z, sx: s.x, sy: s.y, sz: s.z,
-            rotX: rot[0], rotY: rot[1], rotZ: rot[2],
-          };
+        // everything that needs the UNROTATED pose happens here: find the
+        // swinging panel, measure its slab + hinge, carve wall openings
+        const panel = doorIdx >= 0 ? obj.getObjectByName('door') : null;
+        let panelBox = null, hinge = null;
+        if (panel) {
+          panelBox = new THREE.Box3().setFromObject(panel);
+          if (panelBox.isEmpty()) panelBox = null;
+          else hinge = panel.getWorldPosition(new THREE.Vector3());
         }
+        let carved = null;
+        if (okBox && wantSolid) {
+          if (doorIdx >= 0) { if (panel) carved = carveOpenings(obj, box, panel); }
+          else if (/door|arch|gate/.test(nm)) carved = carveOpenings(obj, box, null);
+        }
+        obj.rotation.set(rot[0], rot[1], rot[2]);
+        obj.updateMatrixWorld(true);
+        // pre-rotation box -> rotated OBB opts (offset spun by the prop's quat)
+        const toSolid = (bc, bs) => {
+          const lc = bc.clone().sub(obj.position);
+          lc.applyQuaternion(obj.quaternion).add(obj.position);
+          return { x: lc.x, y: lc.y, z: lc.z, sx: bs.x, sy: bs.y, sz: bs.z,
+                   rotX: rot[0], rotY: rot[1], rotZ: rot[2] };
+        };
+        const solidOpts = okBox ? toSolid(c, s) : null;
         if (doorIdx >= 0 && okBox) {
-          // interactable door: the grapple key toggles it (net-synced)
-          const panel = obj.getObjectByName('door') || obj;
+          // interactable door: static frame (carved jambs/lintel) + a slab
+          // for the swinging panel that follows its open/closed pose
+          if (carved) for (const b of carved) SKY.World.addSolid(toSolid(b.c, b.s));
+          let closedOpts = solidOpts, openOpts = null;
+          if (panelBox) {
+            const pc = panelBox.getCenter(new THREE.Vector3());
+            const ps = panelBox.getSize(new THREE.Vector3()).max(new THREE.Vector3(0.12, 0.12, 0.12));
+            closedOpts = toSolid(pc, ps);
+            // open pose: swing the slab around the panel's hinge. Only for
+            // upright props — yaw composes cleanly, arbitrary tilts don't.
+            if (Math.abs(rot[0]) < 0.01 && Math.abs(rot[2]) < 0.01) {
+              const swing = 1.85;   // matches the visual in Map.tick
+              const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, swing, 0));
+              const oc = pc.clone().sub(hinge).applyQuaternion(q).add(hinge);
+              const lo = oc.clone().sub(obj.position);
+              lo.applyQuaternion(obj.quaternion).add(obj.position);
+              openOpts = { x: lo.x, y: lo.y, z: lo.z, sx: ps.x, sy: ps.y, sz: ps.z,
+                           rotX: 0, rotY: rot[1] + swing, rotZ: 0 };
+            }
+          }
           doors[doorIdx] = {
-            panel, baseY: panel.rotation.y, open: false, anim: 0,
+            panel: panel || obj, baseY: (panel || obj).rotation.y, open: false, anim: 0,
             pos: new THREE.Vector3(pr.p[0], pr.p[1] + 1, pr.p[2]),
-            solidOpts, wantSolid,
-            solid: wantSolid ? SKY.World.addSolid(solidOpts) : null,
+            closedOpts, openOpts, wantSolid,
+            solid: wantSolid && closedOpts ? SKY.World.addSolid(closedOpts) : null,
           };
         } else if (wantSolid && okBox) {
-          if (/stairs/.test(a)) addStairRamp(obj, c, s);
+          if (/stairs/.test(nm)) addStairRamp(obj, c, s);
+          else if (carved) for (const b of carved) SKY.World.addSolid(toSolid(b.c, b.s));
           else SKY.World.addSolid(solidOpts);
         }
       }, pr.fx);

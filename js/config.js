@@ -58,7 +58,7 @@ SKY.TUNING = {
     bhopSoftCap:     20.0,  // above this horizontal speed, extra drag kicks in
     bhopSoftCapDrag: 2.4,   // strength of that drag (prevents infinite snowballing)
 
-    // --- slide (bound to C, Shift also works) ---
+    // --- slide (default bind: Shift, rebindable in settings) ---
     slideMinSpeed:   6.8,   // must be at least this fast (and grounded) to start a slide
     slideBoost:      3.4,   // one-time speed boost when the slide starts
     slideDuration:   0.90,  // slide auto-ends after this long

@@ -334,56 +334,94 @@ SKY.Effects = (function () {
   /* bold OUTLINE side icon (CS:GO-style loadout HUD) — the weapon's clean
      silhouette as a thick glowing contour in its rarity color */
   const wireCache = {};
+  /* white-silhouette render of any mesh through the thumb rig — shared by
+     the weapon and grenade outline icons */
+  function wireRender(mesh, rotY) {
+    weaponThumb('pistol');                    // ensures thumbRig exists
+    if (!thumbRig) return null;
+    const solid = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    mesh.traverse((o) => { if (o.isMesh) o.material = solid; });
+    const box = new THREE.Box3().setFromObject(mesh);
+    const c = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    mesh.position.sub(c);
+    const grp = new THREE.Group();
+    grp.add(mesh);
+    grp.rotation.y = rotY;
+    thumbRig.sc.add(grp);
+    thumbRig.cam.position.set(0, 0.02, size * 1.15);
+    thumbRig.cam.lookAt(0, 0, 0);
+    thumbRig.r.render(thumbRig.sc, thumbRig.cam);
+    const src = thumbRig.r.domElement;
+    thumbRig.sc.remove(grp);
+    return src;
+  }
+  /* 2D compose: tinted silhouette -> thick offset outline + glow, then
+     punch out the interior for a clean contour with a faint body fill */
+  function composeWire(src, colorHex) {
+    const W = src.width, H = src.height;
+    const tin = document.createElement('canvas');
+    tin.width = W; tin.height = H;
+    const tg = tin.getContext('2d');
+    tg.drawImage(src, 0, 0);
+    tg.globalCompositeOperation = 'source-in';
+    tg.fillStyle = colorHex || '#dfe7f2';
+    tg.fillRect(0, 0, W, H);
+    const out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    const g = out.getContext('2d');
+    g.shadowColor = colorHex || '#dfe7f2';
+    g.shadowBlur = 9;
+    const o3 = 3;
+    for (const [dx, dy] of [[o3, 0], [-o3, 0], [0, o3], [0, -o3],
+                            [2.2, 2.2], [-2.2, 2.2], [2.2, -2.2], [-2.2, -2.2]]) {
+      g.drawImage(tin, dx, dy);
+    }
+    g.shadowBlur = 0;
+    g.globalCompositeOperation = 'destination-out';
+    g.drawImage(src, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    g.globalAlpha = 0.18;                   // whisper of body fill
+    g.drawImage(tin, 0, 0);
+    g.globalAlpha = 1;
+    return out.toDataURL();
+  }
   function weaponWireIcon(kind, colorHex) {
     const key = thumbKey(kind) + '|' + colorHex;
     if (wireCache[key]) return wireCache[key];
     try {
-      weaponThumb(kind);                      // ensures thumbRig exists
-      if (!thumbRig) return null;
       const mesh = buildWeaponMesh(kind);
-      const solid = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      mesh.traverse((o) => { if (o.isMesh) o.material = solid; });
-      const box = new THREE.Box3().setFromObject(mesh);
-      const c = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3()).length();
-      mesh.position.sub(c);
-      const grp = new THREE.Group();
-      grp.add(mesh);
-      grp.rotation.y = -Math.PI / 2;          // pure side view, barrel right
-      thumbRig.sc.add(grp);
-      thumbRig.cam.position.set(0, 0.02, size * 1.15);
-      thumbRig.cam.lookAt(0, 0, 0);
-      thumbRig.r.render(thumbRig.sc, thumbRig.cam);
-      const src = thumbRig.r.domElement;
-      thumbRig.sc.remove(grp);
-      // 2D compose: tinted silhouette -> thick offset outline + glow, then
-      // punch out the interior for a clean contour with a faint body fill
-      const W = src.width, H = src.height;
-      const tin = document.createElement('canvas');
-      tin.width = W; tin.height = H;
-      const tg = tin.getContext('2d');
-      tg.drawImage(src, 0, 0);
-      tg.globalCompositeOperation = 'source-in';
-      tg.fillStyle = colorHex || '#dfe7f2';
-      tg.fillRect(0, 0, W, H);
-      const out = document.createElement('canvas');
-      out.width = W; out.height = H;
-      const g = out.getContext('2d');
-      g.shadowColor = colorHex || '#dfe7f2';
-      g.shadowBlur = 9;
-      const o3 = 3;
-      for (const [dx, dy] of [[o3, 0], [-o3, 0], [0, o3], [0, -o3],
-                              [2.2, 2.2], [-2.2, 2.2], [2.2, -2.2], [-2.2, -2.2]]) {
-        g.drawImage(tin, dx, dy);
+      const src = wireRender(mesh, -Math.PI / 2);   // pure side view, barrel right
+      if (!src) return null;
+      const url = composeWire(src, colorHex);
+      wireCache[key] = url;
+      return url;
+    } catch (e) { return null; }
+  }
+
+  /* grenade outline icon for the HUD chip — real GLB when the pack is
+     loaded, procedural silhouette otherwise; tinted by grenade type color */
+  function nadeWireIcon(type, colorHex) {
+    const key = 'nade:' + type + '|' + colorHex +
+      (SKY.GFX && SKY.GFX.hasWeapon && SKY.GFX.hasWeapon('grenade1') ? '+glb' : '');
+    if (wireCache[key]) return wireCache[key];
+    try {
+      const g = new THREE.Group();
+      const glb = SKY.GFX && SKY.GFX.weapon && SKY.GFX.weapon('grenade1');
+      if (glb) g.add(glb);
+      else {
+        const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), m);
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 8), m);
+        neck.position.y = 0.14;
+        const lever = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.03), m);
+        lever.position.set(0.055, 0.12, 0);
+        lever.rotation.z = -0.5;
+        g.add(body, neck, lever);
       }
-      g.shadowBlur = 0;
-      g.globalCompositeOperation = 'destination-out';
-      g.drawImage(src, 0, 0);
-      g.globalCompositeOperation = 'source-over';
-      g.globalAlpha = 0.18;                   // whisper of body fill
-      g.drawImage(tin, 0, 0);
-      g.globalAlpha = 1;
-      const url = out.toDataURL();
+      const src = wireRender(g, -Math.PI / 2 + 0.35);   // slight 3/4 turn
+      if (!src) return null;
+      const url = composeWire(src, colorHex);
       wireCache[key] = url;
       return url;
     } catch (e) { return null; }
@@ -889,7 +927,7 @@ SKY.Effects = (function () {
         spawn({ pos, vel: v, life: SKY.U.rand(0.15, 0.3), size: 0.22, color: '#ffd9a0', gravity: 10, drag: 2 });
       }
     },
-    tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon, weaponWireIcon,
+    tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon, weaponWireIcon, nadeWireIcon,
     makeTracer, poseTracer, resetTracer,
     cannonBlast(pos, dir) {
       // a proper pressure wave: dense forward cone + white core flash +

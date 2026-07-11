@@ -22,7 +22,7 @@ SKY.Settings = (function () {
     musicVol: 0.5,      // background music volume
     binds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
-      jump: 'Space', crouch: 'KeyC',
+      jump: 'Space', crouch: 'ShiftLeft',
       fire: 'Mouse0', aim: 'Mouse2', reload: 'KeyR',
       grapple: 'KeyE', cannon: 'KeyQ', grenade: 'KeyG', dash: 'KeyF',
       interact: 'KeyX',
@@ -51,6 +51,12 @@ SKY.Settings = (function () {
       const d = JSON.parse(raw);
       const merged = { ...JSON.parse(JSON.stringify(DEFAULTS)), ...d };
       merged.binds = { ...DEFAULTS.binds, ...(d.binds || {}) };
+      // one-time migration: slide moved from C to Shift. Only touch saves
+      // still on the old default (a deliberate rebind stays untouched).
+      if (!merged._shiftSlide) {
+        if (merged.binds.crouch === 'KeyC') merged.binds.crouch = 'ShiftLeft';
+        merged._shiftSlide = true;
+      }
       return merged;
     } catch (e) { return JSON.parse(JSON.stringify(DEFAULTS)); }
   }
@@ -74,6 +80,8 @@ SKY.Settings = (function () {
     if (code === 'Mouse0') return 'LMB';
     if (code === 'Mouse2') return 'RMB';
     if (code === 'Mouse1') return 'MMB';
+    const mod = code.match(/^(Shift|Control|Alt)(Left|Right)$/);
+    if (mod) return (mod[2] === 'Right' ? 'R-' : '') + (mod[1] === 'Control' ? 'Ctrl' : mod[1]);
     return code.replace(/^Key|^Digit/, '').replace('Left', 'L-').replace('Right', 'R-');
   }
 

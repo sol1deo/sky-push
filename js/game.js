@@ -201,6 +201,7 @@ SKY.Game = (function () {
       });
       api.lootChoices = null; api.lootOpen = false;
       SKY.HUD.hideLoot();
+      SKY.HUD.roundBanner(null);
       SKY.Effects.ensureWeapon('pistol');
       api.crownHolder = null;
       api._crownFree.copy(SKY.World.crownHome || CENTER);
@@ -300,6 +301,7 @@ SKY.Game = (function () {
       api.paused = false;
       api.lootChoices = null; api.lootOpen = false;
       SKY.HUD.hideLoot();
+      SKY.HUD.roundBanner(null);
       SKY.HUD.setPause(false);
       SKY.HUD.showMenu();
       SKY.SFX.music('menu');
@@ -353,28 +355,36 @@ SKY.Game = (function () {
 
       if (api.state === 'roundend' || api.state === 'matchend') {
         api.restartT -= dt;
-        SKY.Weapons.tick(dt, api.pawns);
-        for (const p of api.pawns) p.visualTick(dt);
         const skip = SKY.Input.consumePressed('Enter');
-        if (!SKY.Net.authority) return;             // clients wait for the host
         if (api.state === 'matchend') {
+          // match over: frozen arena + orbit cam, then back to the menu
+          SKY.Weapons.tick(dt, api.pawns);
+          for (const p of api.pawns) p.visualTick(dt);
+          if (!SKY.Net.authority) return;           // clients wait for the host
           if (api.restartT <= 0 || skip) {
             if (SKY.Net.online) { api.toMenu(); SKY.Net.hostToLobby(); }
             else api.toMenu();
           }
-        } else if (api.restartT <= 0 || skip) {
+          return;
+        }
+        // ROUND end is CS:GO style: a banner counts down up top while the
+        // arena stays fully live below — survivors keep running around.
+        SKY.HUD.roundBannerTime(api.restartT);
+        if (SKY.Net.authority && (api.restartT <= 0 || skip)) {
           if (SKY.Net.online) SKY.Net.hostNewRound();
           api.startRound();
+          return;
         }
-        return;
+        // no return: fall through into the live simulation below
       }
 
-      /* ================= state: playing ================= */
-      api.roundTime += dt;
-      if (api.mode === 'spark') this.tickSpark(dt);
+      /* ================= state: playing (and live roundend) ================= */
+      if (api.state === 'playing') api.roundTime += dt;   // clock freezes at round end
+      if (api.mode === 'spark' && api.state === 'playing') this.tickSpark(dt);
 
       // OVERTIME: arena starts working against you (host decides; not in spark)
-      if (SKY.Net.authority && api.mode !== 'spark' && !api.overtime &&
+      if (SKY.Net.authority && api.state === 'playing' &&
+          api.mode !== 'spark' && !api.overtime &&
           api.roundTime > SKY.TUNING.game.overtimeStart) {
         api.overtime = true;
         SKY.Map.startOvertime();
@@ -419,7 +429,12 @@ SKY.Game = (function () {
       // kill plane + respawns (host authoritative online)
       if (SKY.Net.authority) {
         for (const p of api.pawns) {
-          if (p.alive && p.pos.y < SKY.World.killY) this.handleKO(p);
+          // during the round-end banner falls don't score — just respawn
+          if (p.alive && p.pos.y < SKY.World.killY) {
+            if (api.state === 'playing') this.handleKO(p);
+            else this.respawn(p);
+            continue;
+          }
           if (!p.alive && !p.eliminated) {
             p.deadT -= dt;
             // spark mode never blocks respawns on card picks (they're live)
@@ -438,7 +453,7 @@ SKY.Game = (function () {
 
       for (const p of api.pawns) p.visualTick(dt);
       SKY.Replay.record(dt);
-      if (api.mode === 'lbs' && SKY.Net.authority) this.checkWin();
+      if (api.mode === 'lbs' && SKY.Net.authority && api.state === 'playing') this.checkWin();
     },
 
     /* ---------------- Crown Rush ---------------- */
@@ -638,6 +653,7 @@ SKY.Game = (function () {
       const rp = SKY.Net.online ? ''
         : ' · ' + SKY.Settings.bindName(SKY.Settings.data.binds.replay) + ' — replay';
       if (champion) {
+        SKY.HUD.roundBanner(null);
         // LOCKER coins: participation + KOs + win bonus (local, cosmetic-only)
         let payline = '';
         if (api.player && SKY.Profile) {
@@ -647,9 +663,13 @@ SKY.Game = (function () {
         SKY.HUD.centerMsg(name + ' wins the match', 8, 40);
         SKY.HUD.subMsg('Enter — back to menu' + rp + payline, 8);
       } else {
-        const stars = winner ? ' · ' + '★'.repeat(winner.roundWins) + '☆'.repeat(SKY.TUNING.game.roundsToWin - winner.roundWins) : '';
-        SKY.HUD.centerMsg(name + ' wins the round' + stars, 4.5, 36);
-        SKY.HUD.subMsg('Next round in ' + SKY.TUNING.game.roundRestartDelay + 's — Enter to skip' + rp, 4.5);
+        // CS:GO-style banner up top; the arena stays live underneath
+        const stars = winner
+          ? '★'.repeat(winner.roundWins) + '☆'.repeat(Math.max(0, SKY.TUNING.game.roundsToWin - winner.roundWins))
+          : '';
+        const extra = (SKY.Net.authority ? ' · Enter to skip' : '') + rp;
+        SKY.HUD.roundBanner(name, winner ? winner.color : '', stars,
+          SKY.TUNING.game.roundRestartDelay, extra);
       }
       SKY.SFX.win();
       SKY.Effects.celebrate(CENTER);
@@ -678,7 +698,8 @@ SKY.Game = (function () {
       }
 
       const p = api.player;
-      const spectating = !p || api.state === 'menu' || api.state === 'roundend' ||
+      // roundend is NOT spectating anymore: the banner plays over live gameplay
+      const spectating = !p || api.state === 'menu' ||
                          api.state === 'matchend' || (p && p.eliminated);
 
       if (spectating) {
@@ -727,7 +748,7 @@ SKY.Game = (function () {
       SKY.HUD.combat(combat);
       if (!combat) { SKY.Input.sensMult = 1; SKY.HUD.scope(false); }
 
-      if (p && p.alive && api.state === 'playing' && !api.paused) {
+      if (p && p.alive && (api.state === 'playing' || api.state === 'roundend') && !api.paused) {
         SKY.SFX.setWind(SKY.U.clamp01((p.speed3() - 8) / 16));
         SKY.SFX.setSlide(p.sliding);
       } else {

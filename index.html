@@ -288,14 +288,16 @@
   #lv-timer { margin:10px auto 0; height:3px; width:300px;
     background:rgba(255,255,255,.14); border-radius:2px; overflow:hidden; }
   #lv-timer div { height:100%; width:100%; background:#ffd34d; }
-  #nades { position:absolute; right:26px; bottom:118px; font-size:11px; font-weight:600;
-    letter-spacing:.14em; text-transform:uppercase; color:var(--dim);
-    display:flex; align-items:center; gap:7px;
-    background:var(--bg2); border:1px solid var(--line2); border-radius:999px;
-    padding:5px 12px 5px 8px; backdrop-filter:blur(8px); }
+  /* grenade chip — small slot-style box docked left of the weapon slots */
+  #nades { position:relative; display:flex; align-items:center; justify-content:center;
+    width:54px; height:40px; border-radius:8px; opacity:.85;
+    background:var(--bg2); border:1px solid var(--line2); backdrop-filter:blur(8px); }
   #nades.hidden { display:none; }
-  #nades b { color:var(--txt); font-weight:700; }
-  #nades small { color:var(--faint); font-size:9px; letter-spacing:.2em; }
+  #nades b { position:absolute; top:2px; left:6px; font-size:8.5px; font-weight:800;
+    color:var(--faint); }
+  #nades .nc { position:absolute; bottom:1px; right:5px; font-size:9px; font-weight:700;
+    color:var(--txt); font-variant-numeric:tabular-nums; }
+  #nades .ni { width:42px; height:30px; object-fit:contain; }
   .nade-pip { width:10px; height:10px; border-radius:50%; display:inline-block; }
   #ring { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     width:46px; height:46px; border-radius:50%; pointer-events:none; display:none;
@@ -355,6 +357,22 @@
     text-transform:uppercase; opacity:0; white-space:nowrap; }
   #center-msg.punch { animation:punch .4s ease-out; }
   @keyframes punch { from { opacity:0; transform:translate(-50%,-50%) scale(1.08); } }
+
+  /* round-won banner (CS:GO style): sits under the topbar over live play */
+  #round-banner { position:absolute; top:72px; left:50%; transform:translateX(-50%);
+    text-align:center; padding:11px 28px 10px; border-radius:12px;
+    background:var(--bg2); border:1px solid var(--line); backdrop-filter:blur(14px);
+    box-shadow:0 4px 24px rgba(0,0,0,.35); pointer-events:none; white-space:nowrap; }
+  #round-banner.hidden { display:none; }
+  #round-banner.punch { animation:rbIn .45s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes rbIn { from { opacity:0; transform:translateX(-50%) translateY(-12px) scale(.94); } }
+  #round-banner .rb-title { font-size:19px; font-weight:800; letter-spacing:.1em;
+    text-indent:.1em; text-transform:uppercase; }
+  #rb-stars { margin-top:3px; font-size:12px; letter-spacing:.3em; text-indent:.3em;
+    color:#ffd34d; }
+  #rb-stars.hidden { display:none; }
+  #round-banner .rb-sub { margin-top:5px; font-size:10px; font-weight:600;
+    letter-spacing:.18em; text-indent:.18em; text-transform:uppercase; color:var(--dim); }
   #sub-msg { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%);
     font-size:11.5px; font-weight:600; letter-spacing:.28em; text-indent:.28em;
     text-transform:uppercase; opacity:0; color:var(--txt); background:var(--bg2);
@@ -717,13 +735,13 @@
     <div id="spark-num">✦ 0</div>
     <div class="bar"><div id="spark-fill"></div></div>
   </div>
-  <div id="nades" class="hidden"></div>
   <div id="ring"></div>
   <div id="speedo">
     <div id="speed-num">0.0 <small>M/S</small></div>
     <div id="speed-bar"><div id="speed-bar-fill"></div></div>
   </div>
   <div id="slots">
+    <div id="nades" class="hidden"></div>
     <span class="slot empty" id="slot-1"><b>1</b><img class="si hidden" alt=""><span class="sn">—</span></span>
     <span class="slot on" id="slot-2"><b>2</b><img class="si hidden" alt=""><span class="sn">PISTOL</span></span>
   </div>
@@ -745,6 +763,11 @@
   </div>
   <div id="center-msg"></div>
   <div id="sub-msg"></div>
+  <div id="round-banner" class="hidden">
+    <div class="rb-title"><span id="rb-name"></span><span> wins the round</span></div>
+    <div id="rb-stars"></div>
+    <div class="rb-sub"><span id="rb-time"></span><span id="rb-extra"></span></div>
+  </div>
   <div id="respawn-ov" class="hidden"></div>
   <div id="scoreboard" class="hidden">
     <h3>Scoreboard</h3>
@@ -806,7 +829,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 35</div>
+    <div class="rail-foot">prototype · build 36</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -1044,36 +1067,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=35"></script>
-<script src="js/profile.js?v=35"></script>
-<script src="js/utils.js?v=35"></script>
-<script src="js/gfx.js?v=35"></script>
-<script src="js/mapdata.js?v=35"></script>
-<script src="js/audio.js?v=35"></script>
-<script src="js/settings.js?v=35"></script>
-<script src="js/input.js?v=35"></script>
-<script src="js/world.js?v=35"></script>
-<script src="js/effects.js?v=35"></script>
-<script src="js/map.js?v=35"></script>
-<script src="js/characters.js?v=35"></script>
-<script src="js/pawn.js?v=35"></script>
-<script src="js/weapons.js?v=35"></script>
-<script src="js/loot.js?v=35"></script>
-<script src="js/pickups.js?v=35"></script>
-<script src="js/sparks.js?v=35"></script>
-<script src="js/grenades.js?v=35"></script>
-<script src="js/grapple.js?v=35"></script>
-<script src="js/bots.js?v=35"></script>
-<script src="js/hud.js?v=35"></script>
-<script src="js/game.js?v=35"></script>
-<script src="js/attract.js?v=35"></script>
-<script src="js/net.js?v=35"></script>
-<script src="js/dof.js?v=35"></script>
-<script src="js/replay.js?v=35"></script>
-<script src="js/demos.js?v=35"></script>
-<script src="js/locker.js?v=35"></script>
-<script src="js/assets.js?v=35"></script>
-<script src="js/editor.js?v=35"></script>
-<script src="js/main.js?v=35"></script>
+<script src="js/config.js?v=36"></script>
+<script src="js/profile.js?v=36"></script>
+<script src="js/utils.js?v=36"></script>
+<script src="js/gfx.js?v=36"></script>
+<script src="js/mapdata.js?v=36"></script>
+<script src="js/audio.js?v=36"></script>
+<script src="js/settings.js?v=36"></script>
+<script src="js/input.js?v=36"></script>
+<script src="js/world.js?v=36"></script>
+<script src="js/effects.js?v=36"></script>
+<script src="js/map.js?v=36"></script>
+<script src="js/characters.js?v=36"></script>
+<script src="js/pawn.js?v=36"></script>
+<script src="js/weapons.js?v=36"></script>
+<script src="js/loot.js?v=36"></script>
+<script src="js/pickups.js?v=36"></script>
+<script src="js/sparks.js?v=36"></script>
+<script src="js/grenades.js?v=36"></script>
+<script src="js/grapple.js?v=36"></script>
+<script src="js/bots.js?v=36"></script>
+<script src="js/hud.js?v=36"></script>
+<script src="js/game.js?v=36"></script>
+<script src="js/attract.js?v=36"></script>
+<script src="js/net.js?v=36"></script>
+<script src="js/dof.js?v=36"></script>
+<script src="js/replay.js?v=36"></script>
+<script src="js/demos.js?v=36"></script>
+<script src="js/locker.js?v=36"></script>
+<script src="js/assets.js?v=36"></script>
+<script src="js/editor.js?v=36"></script>
+<script src="js/main.js?v=36"></script>
 </body>
 </html>

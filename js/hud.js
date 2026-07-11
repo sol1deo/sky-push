@@ -37,6 +37,8 @@ SKY.HUD = (function () {
         slot1: $('slot-1'), slot2: $('slot-2'),
         nades: $('nades'), sparks: $('sparks'), sparkNum: $('spark-num'),
         sparkFill: $('spark-fill'), lvTimer: $('lv-timer'),
+        rb: $('round-banner'), rbName: $('rb-name'), rbStars: $('rb-stars'),
+        rbTime: $('rb-time'), rbExtra: $('rb-extra'),
         cd: { pb: $('cd-pb'), ac: $('cd-ac'), gr: $('cd-gr'), ab: $('cd-ab') },
       };
       el.chLines = el.crosshair.querySelectorAll('.l');
@@ -167,6 +169,27 @@ SKY.HUD = (function () {
       el.feed.appendChild(d);
       while (el.feed.children.length > 6) el.feed.removeChild(el.feed.firstChild);
       setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 4500);
+    },
+
+    /* CS:GO-style round-won banner: winner + stars up top while the arena
+       stays live; countdown is refreshed each tick via roundBannerTime.
+       roundBanner(null) hides it. */
+    roundBanner(name, color, stars, secs, extra) {
+      if (name === null || name === undefined) { el.rb.classList.add('hidden'); return; }
+      el.rbName.textContent = name;
+      el.rbName.style.color = color || '';
+      el.rbStars.textContent = stars || '';
+      el.rbStars.classList.toggle('hidden', !stars);
+      el.rbExtra.textContent = extra || '';
+      el.rb.classList.remove('hidden');
+      // retrigger the pop-in
+      el.rb.classList.remove('punch'); void el.rb.offsetWidth;
+      el.rb.classList.add('punch');
+      api.roundBannerTime(secs);
+    },
+    roundBannerTime(secs) {
+      if (!el.rb || el.rb.classList.contains('hidden')) return;
+      setText(el.rbTime, 'next round in ' + Math.max(0, secs || 0).toFixed(1) + 's');
     },
 
     hitmark(tier, head) {
@@ -316,13 +339,16 @@ SKY.HUD = (function () {
         }
       }
 
-      // grenade chip: type-colored pip + label + count (G to throw)
+      // grenade chip: outline icon in a small box beside the weapon slots
       if (p.nades && p.nades.count > 0) {
         el.nades.classList.remove('hidden');
         const N = SKY.TUNING.grenades[p.nades.type];
+        const nsrc = SKY.Effects.nadeWireIcon(p.nades.type, N.color);
         setHTML(el.nades,
-          `<i class="nade-pip" style="background:${N.color};box-shadow:0 0 6px ${N.color}"></i>` +
-          `<b>${N.label.split(' ')[0]}</b> ×${p.nades.count} <small>G</small>`);
+          `<b>G</b>` +
+          (nsrc ? `<img class="ni" src="${nsrc}" alt="">`
+                : `<i class="nade-pip" style="background:${N.color};box-shadow:0 0 6px ${N.color}"></i>`) +
+          `<span class="nc">×${p.nades.count}</span>`);
       } else el.nades.classList.add('hidden');
 
       // mode-specific readouts

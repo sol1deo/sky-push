@@ -79,6 +79,7 @@ SKY.Grenades = (function () {
 
   /* knock everyone in a sphere (thrower-authoritative) */
   function blastKnock(center, radius, force, up, owner, auth) {
+    let victims = 0;
     for (const p of SKY.Game.pawns) {
       if (!p.alive) continue;
       p.midPos(_v);
@@ -90,6 +91,7 @@ SKY.Grenades = (function () {
       _imp.normalize().multiplyScalar(force * k);
       _imp.y += up * k;
       if (!auth) continue;
+      if (p !== owner) victims++;
       if (p.isRemote) {
         SKY.Net.sendHit(p.netId, [+_imp.x.toFixed(2), +_imp.y.toFixed(2), +_imp.z.toFixed(2)], false);
       } else {
@@ -99,6 +101,12 @@ SKY.Grenades = (function () {
           p.enterRagdoll('air', _imp);
         }
       }
+    }
+    // the thrower gets a real hit confirm (same as blast weapons)
+    if (victims > 0 && owner && owner.isLocal) {
+      SKY.HUD.hitmark(2);
+      SKY.Effects.shake(SKY.TUNING.camera.shakeHitDealt * 1.4);
+      SKY.SFX.hit(0.8);
     }
   }
 
@@ -189,6 +197,8 @@ SKY.Grenades = (function () {
           if (!pl.auth) continue;
           if (p.isRemote) SKY.Net.sendHit(p.netId, [+_imp.x.toFixed(2), +_imp.y.toFixed(2), +_imp.z.toFixed(2)], false);
           else p.applyKnockback(_imp, pl.owner);
+          // fire-tick confirm for the thrower (light — this repeats at 3Hz)
+          if (p !== pl.owner && pl.owner && pl.owner.isLocal) SKY.HUD.hitmark(1);
           // flame column under whoever just got juggled
           _imp.set(p.pos.x, p.pos.y + 0.3, p.pos.z);
           SKY.Effects.burst(_imp, { count: 9, speed: 5, color: '#ff8a3a', gravity: -4, life: 0.5, size: 0.75 });
