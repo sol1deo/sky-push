@@ -113,6 +113,7 @@ SKY.Assets = (function () {
     { id: 'fx:lamp',       name: 'street lamp' },
     { id: 'fx:neonbar',    name: 'neon bar' },
     { id: 'fx:godray',     name: 'godray' },
+    { id: 'fx:shaft',      name: 'light shaft' },
     { id: 'fx:groundfog',  name: 'ground fog' },
     { id: 'fx:haze',       name: 'haze' },
   ];
@@ -123,6 +124,7 @@ SKY.Assets = (function () {
     lamp:       { color: '#ffe0b0', power: 1.15, range: 13 },
     neonbar:    { color: '#40c8ff', power: 0.9, range: 10 },
     godray:     { color: '#fff2cc', alpha: 0.16, width: 3.5, height: 12 },
+    shaft:      { color: '#fff2cc', alpha: 0.09, width: 3, height: 16 },
     groundfog:  { color: '#cfd8e6', alpha: 0.16, size: 10 },
     haze:       { color: '#dde6f2', alpha: 0.1, size: 9 },
   };
@@ -203,6 +205,20 @@ SKY.Assets = (function () {
       pool.rotation.x = -Math.PI / 2;
       pool.position.y = 0.06;
       g.add(pool);
+    } else if (name === 'shaft') {
+      // the ORIGINAL thin cinematic rays — crossed narrow streak planes
+      const w = o.width, h = o.height;
+      for (let i = 0; i < 2; i++) {
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+          new THREE.MeshBasicMaterial({
+            map: SKY.U.shaftTexture(), color: col, transparent: true,
+            opacity: o.alpha, blending: THREE.AdditiveBlending,
+            depthWrite: false, side: THREE.DoubleSide, fog: false,
+          }));
+        plane.position.y = h / 2;
+        plane.rotation.y = i * Math.PI / 2;
+        g.add(plane);
+      }
     } else if (name === 'groundfog' || name === 'haze') {
       // HORIZONTAL soft planes (billboards clipped through floors = ugly
       // hard lines); ground fog drifts on its own via onBeforeRender

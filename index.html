@@ -580,9 +580,11 @@
     cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ed-obj:hover { background:rgba(255,255,255,.06); color:var(--txt); }
   .ed-obj.sel { background:rgba(255,211,77,.16); color:#ffd34d; }
-  #ed-assets { display:grid; grid-template-columns:repeat(2, 1fr); gap:7px; margin-top:4px; }
+  #ed-assets { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:7px;
+    margin-top:4px; }
   .ed-asset { position:relative; border:1px solid var(--line2); border-radius:7px;
-    background:rgba(255,255,255,.04); padding:6px; text-align:center; cursor:grab; }
+    background:rgba(255,255,255,.04); padding:6px; text-align:center; cursor:grab;
+    min-width:0; overflow:hidden; }
   .ed-asset:hover { border-color:rgba(255,255,255,.35); }
   .ed-asset img { width:100%; height:62px; object-fit:contain; border-radius:4px;
     pointer-events:none; }
@@ -623,12 +625,23 @@
   .custom-map:hover .map-edit { opacity:1; }
   .map-edit:hover { color:#ffd34d; }
   #editor-ov select, #editor-ov option { background:#14181f; color:var(--txt); }
-  #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px; overflow-y:auto;
+  #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px;
+    display:flex; flex-direction:column;
     background:linear-gradient(270deg, rgba(10,12,16,.92), rgba(10,12,16,.6));
-    backdrop-filter:blur(10px); border-left:1px solid var(--line2); padding:16px 16px 30px;
+    backdrop-filter:blur(10px); border-left:1px solid var(--line2);
     pointer-events:auto; }
-  #ed-side::-webkit-scrollbar { width:5px; }
-  #ed-side::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); }
+  #ed-side-ins { flex:1 1 auto; min-height:80px; overflow-y:auto; padding:16px 16px 10px; }
+  #ed-split { flex:0 0 9px; cursor:ns-resize; position:relative;
+    border-top:1px solid var(--line2); border-bottom:1px solid var(--line2);
+    background:rgba(255,255,255,.03); }
+  #ed-split::after { content:''; position:absolute; left:50%; top:3px; width:36px; height:3px;
+    margin-left:-18px; border-radius:2px; background:rgba(255,255,255,.22); }
+  #ed-split:hover::after { background:rgba(255,255,255,.45); }
+  #ed-side-assets { flex:0 0 42%; min-height:90px; overflow-y:auto; padding:12px 16px 24px; }
+  #ed-side-ins::-webkit-scrollbar, #ed-side-assets::-webkit-scrollbar { width:5px; }
+  #ed-side-ins::-webkit-scrollbar-thumb, #ed-side-assets::-webkit-scrollbar-thumb {
+    background:rgba(255,255,255,.18); }
+  .ed-obj.msel { background:rgba(111,195,255,.14); color:#9adcff; }
   .ed-row { display:flex; align-items:center; gap:8px; padding:3px 0; font-size:11px;
     color:var(--dim); }
   .ed-row span { flex:1; }
@@ -793,7 +806,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 34</div>
+    <div class="rail-foot">prototype · build 35</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -966,23 +979,28 @@
   <div id="ed-left">
     <div class="panel-title">Scene</div>
     <div id="ed-outliner"></div>
-    <div class="panel-title" style="margin-top:16px">Assets</div>
-    <div class="ed-row" style="padding:2px 0 6px">
-      <select id="ed-folder" style="flex:1;width:auto"></select>
-      <button class="ed-mini" id="ed-newfolder">+ folder</button>
-    </div>
-    <label class="ed-btn" for="ed-addasset" style="display:block;text-align:center;margin-bottom:8px">Add files (.glb / images)</label>
-    <input type="file" id="ed-addasset" multiple accept=".glb,image/*" class="hidden">
-    <div id="ed-assets"></div>
   </div>
   <div id="ed-side">
-    <div class="panel-title" id="ed-ins-title">MAP</div>
-    <div id="ed-inspector"></div>
+    <div id="ed-side-ins">
+      <div class="panel-title" id="ed-ins-title">MAP</div>
+      <div id="ed-inspector"></div>
+    </div>
+    <div id="ed-split" title="drag to resize"></div>
+    <div id="ed-side-assets">
+      <div class="panel-title">Assets</div>
+      <div class="ed-row" style="padding:2px 0 6px">
+        <select id="ed-folder" style="flex:1;width:auto"></select>
+        <button class="ed-mini" id="ed-newfolder">+ folder</button>
+      </div>
+      <label class="ed-btn" for="ed-addasset" style="display:block;text-align:center;margin-bottom:8px">Add files (.glb / images)</label>
+      <input type="file" id="ed-addasset" multiple accept=".glb,image/*" class="hidden">
+      <div id="ed-assets"></div>
+    </div>
   </div>
   <div id="ed-status"></div>
-  <div id="ed-hint">rmb — look+fly (wasd e/q) · click — select · g/r/s — gizmo modes (ctrl snap) ·
-    extend faces — drag ±x/±y/±z in the inspector · f — drop on floor · ctrl+c/x/v — copy/cut/paste ·
-    ctrl+d — duplicate · ctrl+z / ctrl+y — undo/redo · arrows/pgup/pgdn — nudge · del — delete</div>
+  <div id="ed-hint">rmb — look+fly (wasd e/q) · click — select · shift+click — multi-select ·
+    hold e — extend face under cursor · g/r/s — gizmo modes (ctrl snap) · f — drop on floor ·
+    ctrl+c/x/v — copy/cut/paste · ctrl+d — duplicate · ctrl+z/y — undo/redo · del — delete</div>
 </div>
 
 <!-- ============ nickname modal ============ -->
@@ -1026,36 +1044,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=34"></script>
-<script src="js/profile.js?v=34"></script>
-<script src="js/utils.js?v=34"></script>
-<script src="js/gfx.js?v=34"></script>
-<script src="js/mapdata.js?v=34"></script>
-<script src="js/audio.js?v=34"></script>
-<script src="js/settings.js?v=34"></script>
-<script src="js/input.js?v=34"></script>
-<script src="js/world.js?v=34"></script>
-<script src="js/effects.js?v=34"></script>
-<script src="js/map.js?v=34"></script>
-<script src="js/characters.js?v=34"></script>
-<script src="js/pawn.js?v=34"></script>
-<script src="js/weapons.js?v=34"></script>
-<script src="js/loot.js?v=34"></script>
-<script src="js/pickups.js?v=34"></script>
-<script src="js/sparks.js?v=34"></script>
-<script src="js/grenades.js?v=34"></script>
-<script src="js/grapple.js?v=34"></script>
-<script src="js/bots.js?v=34"></script>
-<script src="js/hud.js?v=34"></script>
-<script src="js/game.js?v=34"></script>
-<script src="js/attract.js?v=34"></script>
-<script src="js/net.js?v=34"></script>
-<script src="js/dof.js?v=34"></script>
-<script src="js/replay.js?v=34"></script>
-<script src="js/demos.js?v=34"></script>
-<script src="js/locker.js?v=34"></script>
-<script src="js/assets.js?v=34"></script>
-<script src="js/editor.js?v=34"></script>
-<script src="js/main.js?v=34"></script>
+<script src="js/config.js?v=35"></script>
+<script src="js/profile.js?v=35"></script>
+<script src="js/utils.js?v=35"></script>
+<script src="js/gfx.js?v=35"></script>
+<script src="js/mapdata.js?v=35"></script>
+<script src="js/audio.js?v=35"></script>
+<script src="js/settings.js?v=35"></script>
+<script src="js/input.js?v=35"></script>
+<script src="js/world.js?v=35"></script>
+<script src="js/effects.js?v=35"></script>
+<script src="js/map.js?v=35"></script>
+<script src="js/characters.js?v=35"></script>
+<script src="js/pawn.js?v=35"></script>
+<script src="js/weapons.js?v=35"></script>
+<script src="js/loot.js?v=35"></script>
+<script src="js/pickups.js?v=35"></script>
+<script src="js/sparks.js?v=35"></script>
+<script src="js/grenades.js?v=35"></script>
+<script src="js/grapple.js?v=35"></script>
+<script src="js/bots.js?v=35"></script>
+<script src="js/hud.js?v=35"></script>
+<script src="js/game.js?v=35"></script>
+<script src="js/attract.js?v=35"></script>
+<script src="js/net.js?v=35"></script>
+<script src="js/dof.js?v=35"></script>
+<script src="js/replay.js?v=35"></script>
+<script src="js/demos.js?v=35"></script>
+<script src="js/locker.js?v=35"></script>
+<script src="js/assets.js?v=35"></script>
+<script src="js/editor.js?v=35"></script>
+<script src="js/main.js?v=35"></script>
 </body>
 </html>

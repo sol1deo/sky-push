@@ -504,7 +504,10 @@ SKY.Game = (function () {
         SKY.Weapons.tryFirePrimary(p);
       }
       if (In.actionPressed('cannon')) SKY.Weapons.tryFireAirCannon(p, api.pawns);
-      if (In.actionPressed('grapple')) SKY.Grapple.tryFire(p);
+      if (In.actionPressed('grapple')) {
+        // next to a door and facing it, the key is USE; otherwise grapple
+        if (!SKY.Map.tryInteract(p)) SKY.Grapple.tryFire(p);
+      }
       if (In.actionPressed('grenade')) SKY.Grenades.throwNade(p);
       if (In.actionPressed('dash')) p.tryDash();
       if (In.actionPressed('taunt') && p.tryTaunt()) SKY.Net.sendTaunt();

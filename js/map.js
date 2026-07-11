@@ -27,6 +27,7 @@ SKY.Map = (function () {
   let overtime = false;
   let eventT = 0, eventCfg = null;
   let starLayer = null, meteor = null, meteorT = 6;   // night-sky animation
+  const doors = [];               // interactable doors (E toggles, net-synced)
   const _v = new THREE.Vector3();
 
   const MAPS = {
@@ -237,8 +238,10 @@ SKY.Map = (function () {
     }
   }
 
-  /* gradient sky dome (+ optional stars) */
-  function skyDome(top, mid, horizon, stars) {
+  /* gradient sky dome (+ optional stars). `fogged` = the map has a fog
+     override: let scene fog eat the dome too, otherwise a crisp backdrop
+     makes even max-density fog read as "barely any fog" */
+  function skyDome(top, mid, horizon, stars, fogged) {
     const c = document.createElement('canvas');
     c.width = 32; c.height = 256;
     const g = c.getContext('2d');
@@ -249,7 +252,7 @@ SKY.Map = (function () {
     tex.encoding = THREE.sRGBEncoding;
     const dome = new THREE.Mesh(
       new THREE.SphereGeometry(380, 24, 14),
-      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: false })
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: !!fogged })
     );
     group.add(dome);
     if (stars) {
@@ -280,27 +283,28 @@ SKY.Map = (function () {
       };
       const base = new THREE.Mesh(
         new THREE.SphereGeometry(370, 32, 18),
-        new THREE.MeshBasicMaterial({ map: paint(320, false), side: THREE.BackSide, transparent: true, fog: false }));
+        new THREE.MeshBasicMaterial({ map: paint(320, false), side: THREE.BackSide, transparent: true, fog: !!fogged }));
       const bright = new THREE.Mesh(
         new THREE.SphereGeometry(368, 32, 18),
-        new THREE.MeshBasicMaterial({ map: paint(50, true), side: THREE.BackSide, transparent: true, fog: false }));
+        new THREE.MeshBasicMaterial({ map: paint(50, true), side: THREE.BackSide, transparent: true, fog: !!fogged }));
       base.frustumCulled = bright.frustumCulled = false;
       group.add(base, bright);
       starLayer = bright;      // twinkles + enables shooting stars in tick()
     }
   }
 
-  function cloudField(y0, y1, color, opacity) {
-    const cloudTex = SKY.U.blobTexture();
-    for (let i = 0; i < 10; i++) {
+  function cloudField(y0, y1, color, opacity, count) {
+    // puffy cumulus sprites (3 painted variants), not the old fuzzy blobs
+    const n = count === undefined ? 10 : count;
+    for (let i = 0; i < n; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: cloudTex, color: color || 0xffffff, transparent: true,
-        opacity: opacity || 0.4, depthWrite: false,
+        map: SKY.U.cloudTexture(i), color: color || 0xffffff, transparent: true,
+        opacity: (opacity || 0.4) * SKY.U.rand(0.85, 1.15), depthWrite: false,
       }));
-      const r = SKY.U.rand(45, 90), a = Math.random() * Math.PI * 2;
+      const r = SKY.U.rand(45, 95), a = Math.random() * Math.PI * 2;
       s.position.set(Math.cos(a) * r, SKY.U.rand(y0, y1), Math.sin(a) * r);
-      const sc = SKY.U.rand(14, 30);
-      s.scale.set(sc, sc * 0.45, 1);
+      const sc = SKY.U.rand(16, 34);
+      s.scale.set(sc, sc * 0.5, 1);
       group.add(s);
       clouds.push({ mesh: s, speed: SKY.U.rand(0.2, 0.7), a, r });
     }
@@ -1284,6 +1288,73 @@ SKY.Map = (function () {
     };
   }
 
+  /* stairs get a walkable RAMP solid instead of one giant box (which made
+     them impossible to climb). c/s = the prop's local-frame bbox center/size,
+     obj already carries its final rotation. */
+  function addStairRamp(obj, c, s) {
+    // ascent direction: compare average vertex height in each local z-half
+    let sumP = 0, nP = 0, sumN = 0, nN = 0;
+    obj.traverse((ch) => {
+      if (!ch.isMesh || !ch.geometry || !ch.geometry.attributes.position) return;
+      const pos = ch.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i), z = pos.getZ(i);
+        if (z > 0.01) { sumP += y; nP++; }
+        else if (z < -0.01) { sumN += y; nN++; }
+      }
+    });
+    const ascend = (!nP || !nN || sumP / nP >= sumN / nN) ? 1 : -1;
+    const h = s.y, run = s.z, L = Math.sqrt(h * h + run * run), t = 0.5;
+    const q = obj.quaternion.clone().multiply(new THREE.Quaternion()
+      .setFromEuler(new THREE.Euler(-ascend * Math.atan2(h, run), 0, 0)));
+    const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+    // box center sits half a thickness below the slope's midpoint
+    const n = new THREE.Vector3(0, run, -ascend * h).normalize();
+    const lc = c.clone().sub(obj.position).addScaledVector(n, -t / 2);
+    lc.applyQuaternion(obj.quaternion).add(obj.position);
+    SKY.World.addSolid({
+      x: lc.x, y: lc.y, z: lc.z, sx: s.x, sy: t, sz: L + 0.15,
+      rotX: e.x, rotY: e.y, rotZ: e.z,
+    });
+  }
+
+  /* -------- interactable doors -------- */
+  function setDoor(i, open) {
+    const d = doors[i];
+    if (!d || d.open === open) return;
+    d.open = open;
+    if (open) {
+      if (d.solid) { SKY.World.removeSolid(d.solid); d.solid = null; }
+    } else if (d.wantSolid && !d.solid) {
+      d.solid = SKY.World.addSolid(d.solidOpts);
+    }
+    if (SKY.SFX && SKY.SFX.door) {
+      const me = SKY.Game && SKY.Game.player;
+      SKY.SFX.door(me ? d.pos.distanceTo(me.pos) : 10);
+    }
+  }
+
+  /* the grapple key doubles as USE: toggle a door the player is next to and
+     roughly facing — returns true when the press was consumed */
+  function tryInteract(pawn) {
+    let best = -1, bestD = 2.6;
+    for (let i = 0; i < doors.length; i++) {
+      const d = doors[i];
+      if (!d) continue;
+      const dist = d.pos.distanceTo(pawn.pos);
+      if (dist > bestD) continue;
+      // facing check keeps the grapple usable while running past doors
+      _v.set(d.pos.x - pawn.pos.x, 0, d.pos.z - pawn.pos.z).normalize();
+      if (dist > 0.9 &&
+          (_v.x * -Math.sin(pawn.yaw) + _v.z * -Math.cos(pawn.yaw)) < 0.35) continue;
+      best = i; bestD = dist;
+    }
+    if (best < 0) return false;
+    setDoor(best, !doors[best].open);
+    if (SKY.Net.online) SKY.Net.sendDoor(best, doors[best].open);
+    return true;
+  }
+
   function buildCustomMap(def) {
     const D = SKY.MapData;
     SKY.World.killY = def.killY;
@@ -1295,25 +1366,30 @@ SKY.Map = (function () {
       hemiSky: M.hemi[0], hemiGround: M.hemi[1], hemiInt: M.hemi[2] * LM,
       fillColor: M.fill[0], fillInt: (M.fill[1] || 0.3) * LM,
       fillPos: M.fill[2] ? new THREE.Vector3(...M.fill[2]) : undefined,
-      shafts: !!M.shafts, disc: M.disc || null,
+      // def.shafts: undefined/null = mood default, false = creator turned
+      // the global sky godrays off, true = force them on
+      shafts: (def.shafts === undefined || def.shafts === null) ? !!M.shafts : !!def.shafts,
+      disc: M.disc || null,
       discSize: M.discSize, discColor: M.discColor,
     });
     // fully custom sky (colors/stars/clouds) beats the preset when present
+    const fogged = !!def.fog;
     if (def.skyc) {
-      skyDome(def.skyc.top, def.skyc.mid, def.skyc.hor, !!def.skyc.stars);
+      skyDome(def.skyc.top, def.skyc.mid, def.skyc.hor, !!def.skyc.stars, fogged);
       if (def.skyc.clouds) {
-        cloudField(-10, 18, new THREE.Color(def.skyc.cloudCol || '#ffffff').getHex(), 0.45);
+        cloudField(-10, 18, new THREE.Color(def.skyc.cloudCol || '#ffffff').getHex(), 0.45,
+          def.skyc.cloudN !== undefined ? def.skyc.cloudN : 10);
       }
     } else {
       const S = D.SKIES[def.sky];
-      skyDome(S[0], S[1], S[2], S[3]);
+      skyDome(S[0], S[1], S[2], S[3], fogged);
       if (M.clouds) cloudField(-10, 18, new THREE.Color(M.clouds).getHex(), 0.45);
     }
     if (def.fog) {
-      // creator's global fog override (color + density dial)
-      const fd = def.fog.density || 0.3;
+      // creator's global fog override (color + explicit near/far range)
       scene.fog = new THREE.Fog(new THREE.Color(def.fog.color).getHex(),
-        SKY.U.lerp(100, 8, fd), SKY.U.lerp(340, 55, fd));
+        def.fog.near !== undefined ? def.fog.near : 30,
+        def.fog.far !== undefined ? def.fog.far : 150);
     } else {
       scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
     }
@@ -1336,15 +1412,25 @@ SKY.Map = (function () {
       SKY.World.spawnPoints.push({ pos: new THREE.Vector3(s.p[0], s.p[1], s.p[2]), yaw: s.yaw || 0 });
     }
     for (const it of def.items) {
-      SKY.World.itemPoints.push(new THREE.Vector3(it.p[0], it.p[1], it.p[2]));
+      // spawner config rides on the vector itself — sparks.js and older
+      // consumers keep treating these as plain positions
+      const v = new THREE.Vector3(it.p[0], it.p[1], it.p[2]);
+      v.item = it.item || '';                                     // '' = random roll
+      v.respawn = typeof it.respawn === 'number' ? it.respawn : 0; // 0 = default
+      SKY.World.itemPoints.push(v);
     }
     // 3D asset props — embedded GLB payloads, or built-in pack props
     // referenced as 'gfx:<name>' (shipped with the game, nothing embedded)
+    let doorSeq = 0;
     for (const pr of def.props || []) {
       const a = pr.asset || '';
       const isPack = a.startsWith('gfx:') || a.startsWith('fx:');
       const embed = (def.assets || {})[pr.asset];
       if ((!embed && !isPack) || !SKY.Assets) continue;
+      // door index is decided in def.props order so every peer agrees on
+      // it even though the instantiate callbacks land asynchronously
+      const isDoor = pr.door !== undefined ? !!pr.door : /door-rotate/.test(a);
+      const doorIdx = isDoor ? doorSeq++ : -1;
       const g = group;
       SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
         if (!obj || group !== g) return;   // map changed while parsing
@@ -1354,26 +1440,38 @@ SKY.Map = (function () {
         obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
         obj.scale.setScalar(pr.scale || 1);
         group.add(obj);
-        if (pr.solid !== false) {
-          // collision as a ROTATED OBB: measure the box in the prop's local
-          // frame (pre-rotation), then rotate the offset + pass the euler
-          obj.rotation.set(0, 0, 0);
-          obj.updateMatrixWorld(true);
-          const box = new THREE.Box3().setFromObject(obj);
-          const c = box.getCenter(new THREE.Vector3());
-          const s = box.getSize(new THREE.Vector3());
-          obj.rotation.set(rot[0], rot[1], rot[2]);
-          if (isFinite(s.x) && s.x > 0.2 && s.y > 0.05 && s.z > 0.2) {
-            const lc = c.sub(obj.position);          // local center offset
-            obj.updateMatrixWorld(true);
-            lc.applyQuaternion(obj.quaternion).add(obj.position);
-            SKY.World.addSolid({
-              x: lc.x, y: lc.y, z: lc.z, sx: s.x, sy: s.y, sz: s.z,
-              rotX: rot[0], rotY: rot[1], rotZ: rot[2],
-            });
-          }
-        } else {
-          obj.rotation.set(rot[0], rot[1], rot[2]);
+        // collision as a ROTATED OBB: measure the box in the prop's local
+        // frame (pre-rotation), then rotate the offset + pass the euler
+        obj.rotation.set(0, 0, 0);
+        obj.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(obj);
+        const c = box.getCenter(new THREE.Vector3());
+        const s = box.getSize(new THREE.Vector3());
+        obj.rotation.set(rot[0], rot[1], rot[2]);
+        obj.updateMatrixWorld(true);
+        const okBox = isFinite(s.x) && s.x > 0.2 && s.y > 0.05 && s.z > 0.2;
+        const wantSolid = pr.solid !== false;
+        let solidOpts = null;
+        if (okBox) {
+          const lc = c.clone().sub(obj.position);    // local center offset
+          lc.applyQuaternion(obj.quaternion).add(obj.position);
+          solidOpts = {
+            x: lc.x, y: lc.y, z: lc.z, sx: s.x, sy: s.y, sz: s.z,
+            rotX: rot[0], rotY: rot[1], rotZ: rot[2],
+          };
+        }
+        if (doorIdx >= 0 && okBox) {
+          // interactable door: the grapple key toggles it (net-synced)
+          const panel = obj.getObjectByName('door') || obj;
+          doors[doorIdx] = {
+            panel, baseY: panel.rotation.y, open: false, anim: 0,
+            pos: new THREE.Vector3(pr.p[0], pr.p[1] + 1, pr.p[2]),
+            solidOpts, wantSolid,
+            solid: wantSolid ? SKY.World.addSolid(solidOpts) : null,
+          };
+        } else if (wantSolid && okBox) {
+          if (/stairs/.test(a)) addStairRamp(obj, c, s);
+          else SKY.World.addSolid(solidOpts);
         }
       }, pr.fx);
     }
@@ -1399,6 +1497,7 @@ SKY.Map = (function () {
     tickers.length = 0; fallingMeshes.length = 0; shaking = null;
     overtime = false; dirty = false;
     starLayer = null; meteor = null; meteorT = 6;
+    doors.length = 0;
     eventCfg = null; eventT = SKY.U.rand(8, 14);
     SKY.World.reset();
     SKY.World.rideSolids = [];
@@ -1450,6 +1549,15 @@ SKY.Map = (function () {
       c.a += c.speed * dt * 0.02;
       c.mesh.position.x = Math.cos(c.a) * c.r;
       c.mesh.position.z = Math.sin(c.a) * c.r;
+    }
+    // door panels swing smoothly toward their open/closed pose
+    for (const d of doors) {
+      if (!d) continue;
+      const target = d.open ? 1.85 : 0;
+      if (Math.abs(target - d.anim) > 0.002) {
+        d.anim += (target - d.anim) * Math.min(1, dt * 7);
+        d.panel.rotation.y = d.baseY + d.anim;
+      }
     }
     // night sky life: the bright-star layer twinkles, meteors streak by
     if (starLayer) {
@@ -1546,6 +1654,7 @@ SKY.Map = (function () {
   }
 
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
+           setDoor, tryInteract,
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; } };
 })();

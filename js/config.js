@@ -281,7 +281,7 @@ SKY.TUNING = {
     pullAccel:    26.0,   // assist acceleration toward the point (×0.35 applied)
     maxDuration:  6.0,    // rope auto-releases after this long
     breakDist:    1.4,    // rope releases when you get this close to the point
-    cooldown:     0.8,    // near-instant re-grapple — chain swings like Spider-Man
+    cooldown:     1.2,    // brief regen — half the air-cannon's cooldown
     minCdFrac:    0.3,    // ...a quick tap only costs this fraction of it
     missCooldown: 0.12,   // short cooldown if you fire and hit nothing
     assistDeg:    6.0,    // aim assist: cone-search this many degrees around the

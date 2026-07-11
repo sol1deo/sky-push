@@ -436,6 +436,46 @@ SKY.U = {
     return SKY.U._blob;
   },
 
+  /* --- puffy cumulus cloud (3 cached variants, pick by any int) --- */
+  cloudTexture(v) {
+    SKY.U._cloudTex = SKY.U._cloudTex || {};
+    const k = ((v || 0) % 3 + 3) % 3;
+    if (SKY.U._cloudTex[k]) return SKY.U._cloudTex[k];
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 128;
+    const g = c.getContext('2d');
+    const base = 88;                        // the flat-ish cloud underside
+    const puffs = 9 + k * 2;
+    for (let i = 0; i < puffs; i++) {
+      const t = puffs > 1 ? i / (puffs - 1) : 0.5;
+      const x = 34 + t * 188 + (Math.random() - 0.5) * 14;
+      // dome silhouette: tall tufts in the middle, low ones at the edges
+      const r = (16 + Math.random() * 15) * (0.5 + 0.5 * Math.sin(Math.PI * t));
+      const y = base - r * (0.5 + Math.random() * 0.4);
+      const gr = g.createRadialGradient(x, y - r * 0.15, r * 0.1, x, y, r);
+      gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+      gr.addColorStop(0.6, 'rgba(255,255,255,0.6)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    // wide squashed tufts hugging the base line = soft flat bottom
+    for (let i = 0; i < 5; i++) {
+      const x = 56 + (i / 4) * 144 + (Math.random() - 0.5) * 10;
+      g.save();
+      g.translate(x, base - 4); g.scale(1.7, 0.5); g.translate(-x, -(base - 4));
+      const gr = g.createRadialGradient(x, base - 4, 3, x, base - 4, 30);
+      gr.addColorStop(0, 'rgba(244,246,250,0.6)');
+      gr.addColorStop(1, 'rgba(244,246,250,0)');
+      g.fillStyle = gr;
+      g.beginPath(); g.arc(x, base - 4, 30, 0, Math.PI * 2); g.fill();
+      g.restore();
+    }
+    const tex = new THREE.CanvasTexture(c);
+    SKY.U._cloudTex[k] = tex;
+    return tex;
+  },
+
   /* --- the moon: soft-edged disc with faint maria blotches --- */
   moonTexture() {
     if (SKY.U._moon) return SKY.U._moon;

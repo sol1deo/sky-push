@@ -110,6 +110,7 @@ SKY.MapData = (function () {
       assets: {},
       light: 1,        // global lighting dial (0.05 dark .. 2 blown out)
       skyc: null,      // custom sky {top, mid, hor, stars, clouds, cloudCol}
+      shafts: null,    // global sky godrays: null = mood default, true/false = forced
     };
   }
 
@@ -125,6 +126,14 @@ SKY.MapData = (function () {
     if (typeof def.light !== 'number') def.light = 1;
     if (def.skyc && typeof def.skyc !== 'object') def.skyc = null;
     if (def.fog && typeof def.fog !== 'object') def.fog = null;
+    if (def.fog && def.fog.near === undefined) {
+      // legacy density dial -> explicit near/far range
+      const d = typeof def.fog.density === 'number' ? def.fog.density : 0.3;
+      def.fog.near = Math.round(100 - 92 * d);
+      def.fog.far = Math.round(340 - 285 * d);
+      delete def.fog.density;
+    }
+    if (def.shafts !== true && def.shafts !== false) def.shafts = null;
     if (typeof def.killY !== 'number') def.killY = -22;
     if (!def.crown) def.crown = [0, 1, 0];
     if (!def.name) def.name = 'CUSTOM MAP';

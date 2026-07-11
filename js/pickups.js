@@ -22,7 +22,33 @@ SKY.Pickups = (function () {
   let nextT = CFG.firstDelay;
   let idSeq = 1;
   let spawnedTotal = 0;
+  let spawners = null;  // dedicated per-point spawners on custom maps (host only)
   const _v = new THREE.Vector3();
+
+  /* custom maps: every placed item point is a SPAWNER — a specific item (or
+     a random roll) appears there and comes back `respawn` seconds after
+     someone grabs it. Built lazily so the map is fully loaded first. */
+  function buildSpawners() {
+    spawners = SKY.World.itemPoints.map((pt, i) => ({
+      pt,
+      item: pt.item || '',                 // '' = re-roll a random item each time
+      respawn: (typeof pt.respawn === 'number' && pt.respawn > 0) ? pt.respawn : 20,
+      t: CFG.firstDelay + i * 1.2,         // stagger the opening wave
+      live: null,                          // active pickup id while spawned
+    }));
+  }
+
+  function spawnFixed(sp) {
+    const item = sp.item ? SKY.Loot.ITEMS.find(i => i.id === sp.item) : rollItem();
+    if (!item) { sp.t = 30; return; }      // stale id in an old map — retry, don't spin
+    const id = idSeq++;
+    sp.live = id;
+    spawnAt(id, item.id, sp.pt);
+    if (SKY.Net.online) SKY.Net.sendPickupSpawn({
+      id, item: item.id,
+      pos: [+sp.pt.x.toFixed(1), +sp.pt.y.toFixed(1), +sp.pt.z.toFixed(1)],
+    });
+  }
 
   function rollItem() {
     const weapons = SKY.Loot.ITEMS.filter(i => i.kind === 'weapon');
@@ -30,10 +56,13 @@ SKY.Pickups = (function () {
     return Math.random() < CFG.weaponChance ? SKY.U.pick(weapons) : SKY.U.pick(others);
   }
 
+  /* deep saturated beacon colors — the shared rarity hues wash out to white
+     under additive glow, so pickups use their own punchier set */
+  const BEACON = { starter: '#8a9cb8', common: '#8a9cb8', rare: '#1f7dff', epic: '#d92cff' };
+
   function buildVisual(item) {
     const grp = new THREE.Group();
-    // presentation is RARITY-driven: gray-blue common, cyan rare, pink epic
-    const rcolor = (SKY.Loot.RARITY[item.rarity] || {}).color || '#9fb2c8';
+    const rcolor = BEACON[item.rarity] || '#8a9cb8';
     const strong = item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.3;
     if (item.kind === 'weapon') {
       const m = SKY.Effects.buildWeaponMesh(item.id);
@@ -49,10 +78,10 @@ SKY.Pickups = (function () {
       crystal.position.y = 1.05;
       grp.add(crystal);
     }
+    // NORMAL blending keeps the hue saturated (additive washed it to white)
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: SKY.U.blobTexture(), color: rcolor, transparent: true,
-      opacity: 0.2 + 0.18 * strong,
-      blending: THREE.AdditiveBlending, depthWrite: false,
+      map: SKY.U.blobTexture(), color: new THREE.Color(rcolor).convertSRGBToLinear(),
+      transparent: true, opacity: 0.4 + 0.25 * strong, depthWrite: false,
     }));
     const gs = 1.9 + 1.0 * strong;
     glow.scale.set(gs, gs, 1);
@@ -63,8 +92,9 @@ SKY.Pickups = (function () {
       const beam = new THREE.Mesh(
         new THREE.CylinderGeometry(0.12, 0.17, 5, 8, 1, true),
         new THREE.MeshBasicMaterial({
-          color: rcolor, transparent: true, opacity: 0.07 + 0.08 * strong,
-          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+          color: new THREE.Color(rcolor).convertSRGBToLinear(),
+          transparent: true, opacity: 0.16 + 0.14 * strong,
+          depthWrite: false, side: THREE.DoubleSide,
         }));
       beam.position.y = 2.9;
       grp.add(beam);
@@ -85,22 +115,20 @@ SKY.Pickups = (function () {
     });
     spawnedTotal++;
     SKY.Effects.respawnBeam(new THREE.Vector3(pos.x, pos.y, pos.z),
-      (SKY.Loot.RARITY[item.rarity] || {}).color || '#ffd34d');
+      BEACON[item.rarity] || '#ffd34d');
   }
 
   function hostSpawn() {
-    // custom maps can place explicit item spots (used as-is); otherwise use
-    // roam points but NEVER ones sitting on player spawns — a weapon crate
-    // on a spawn pad reads as "the spawn points are swapped"
-    const explicit = SKY.World.itemPoints.length > 0;
-    const pts = explicit ? SKY.World.itemPoints
-      : SKY.World.roamPoints.filter(rp =>
-          !SKY.World.spawnPoints.some(s => s.pos.distanceTo(rp) < 4));
+    // maps without explicit item points: roam points, but NEVER ones sitting
+    // on player spawns — a weapon crate on a spawn pad reads as "the spawn
+    // points are swapped"
+    const pts = SKY.World.roamPoints.filter(rp =>
+      !SKY.World.spawnPoints.some(s => s.pos.distanceTo(rp) < 4));
     if (!pts.length) return;
     let pos = null;
     for (let tries = 0; tries < 8 && !pos; tries++) {
       const c = SKY.U.pick(pts);
-      const nearPlayer = !explicit && SKY.Game.pawns.some(p => p.alive && p.pos.distanceTo(c) < 7);
+      const nearPlayer = SKY.Game.pawns.some(p => p.alive && p.pos.distanceTo(c) < 7);
       const nearPickup = active.some(pk => pk.pos.distanceTo(c) < 5);
       if (!nearPlayer && !nearPickup) pos = c;
     }
@@ -129,6 +157,11 @@ SKY.Pickups = (function () {
     active.splice(i, 1);
     removeVisual(pk);
     grabFx(pk);
+    // arm the point's respawn timer (host runs these; clients just render)
+    if (spawners) {
+      const sp = spawners.find(s => s.live === pk.id);
+      if (sp) { sp.live = null; sp.t = sp.respawn; }
+    }
     if (pawn.isRemote) {
       // host arbitrates but the item is applied on the owner's client too
       SKY.Loot.apply(pawn, pk.item);
@@ -164,10 +197,20 @@ SKY.Pickups = (function () {
     /* fixed tick — only the authority spawns and arbitrates grabs */
     tick(dt) {
       if (!SKY.Net.authority) return;
-      nextT -= dt;
-      if (nextT <= 0) {
-        nextT = CFG.interval;
-        if (active.length < CFG.maxActive) hostSpawn();
+      if (spawners === null) buildSpawners();
+      if (spawners.length) {
+        // dedicated spawners: each point runs its own respawn clock
+        for (const sp of spawners) {
+          if (sp.live !== null) continue;
+          sp.t -= dt;
+          if (sp.t <= 0) spawnFixed(sp);
+        }
+      } else {
+        nextT -= dt;
+        if (nextT <= 0) {
+          nextT = CFG.interval;
+          if (active.length < CFG.maxActive) hostSpawn();
+        }
       }
       for (let i = active.length - 1; i >= 0; i--) {
         const pk = active[i];
@@ -193,6 +236,7 @@ SKY.Pickups = (function () {
       for (const pk of active) removeVisual(pk);
       active.length = 0;
       nextT = CFG.firstDelay;
+      spawners = null;   // rebuilt from the (new) map's item points next tick
     },
   };
 })();

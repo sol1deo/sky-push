@@ -391,6 +391,7 @@ SKY.Net = (function () {
       case 'fire': broadcast(m, conn.__id); onFire(m); break;
       case 'nade': broadcast(m, conn.__id); onNade(m); break;
       case 'taunt': broadcast(m, conn.__id); onTaunt(m); break;
+      case 'door': broadcast(m, conn.__id); SKY.Map.setDoor(m.i, !!m.o); break;
       case 'query':   // server-browser probe
         conn.send({
           t: 'info',
@@ -731,6 +732,7 @@ SKY.Net = (function () {
       case 'fire': onFire(m); break;
       case 'nade': onNade(m); break;
       case 'taunt': onTaunt(m); break;
+      case 'door': SKY.Map.setDoor(m.i, !!m.o); break;
       case 'skspawn': SKY.Sparks.spawnRemote(m.id, m.n, m.pos); break;
       case 'sktake': SKY.Sparks.takeRemote(m.ids, m.by); break;
       case 'hitApply': {
@@ -1292,6 +1294,7 @@ SKY.Net = (function () {
       else send(m);
     },
     sendTaunt() { if (api.online) send({ t: 'taunt', id: api.myId }); },
+    sendDoor(i, o) { if (api.online) send({ t: 'door', i, o }); },
     sendPickupSpawn(d) { if (api.role === 'host') broadcast({ t: 'pkspawn', ...d }); },
     sendPickupTake(id, by) { if (api.role === 'host') broadcast({ t: 'pktake', id, by }); },
     sendMapEvent(params) { if (api.role === 'host') broadcast({ t: 'mapevent', params }); },

@@ -280,6 +280,11 @@ SKY.SFX = (function () {
                 noise(0.22, 900, 0.25, 'bandpass'); },
     pick()    { if (sample('pick', 0.4, SKY.U.rand(0.95, 1.05))) return;
                 tone(620, 930, 0.12, 'triangle', 0.22); tone(930, 1240, 0.14, 'triangle', 0.18, 0.09); },
+    /* door swing: soft mechanical clunk */
+    door(dist) { const a = att(dist);
+                if (a < 0.06) return;
+                if (sample('reload', 0.5 * a, 0.7)) return;
+                tone(200, 130, 0.09, 'square', 0.12 * a); },
     /* ricochet "boing" */
     bounce(dist) { const a = att(dist);
                 if (a < 0.06) return;
