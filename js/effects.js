@@ -488,6 +488,30 @@ SKY.Effects = (function () {
     tr.spark.visible = true;
   }
 
+  /* proper launcher explosion: core flash, fireball, shockwave rings,
+     debris, smoke — reads as a BLAST, not a puff */
+  function blastBoom(pos, radius) {
+    const r = Math.max(2, radius);
+    // white core flash that swells, then an orange fireball
+    spawn({ pos, life: 0.16, size: r * 1.4, sizeEnd: r * 2.6, color: '#ffffff' });
+    spawn({ pos, life: 0.3, size: r * 0.9, sizeEnd: r * 1.9, color: '#ffb85a', opacity: 0.9 });
+    burst(pos.clone(), { count: 10, speed: r * 1.6, color: '#ffcf7a', life: 0.35, size: r * 0.5 });
+    burst(pos.clone(), { count: 14, speed: r * 2.6, color: '#ff8a3a', life: 0.5, size: r * 0.35 });
+    // debris streaks + lingering smoke puffs
+    burst(pos.clone(), { count: 16, speed: r * 4.2, color: '#ffe2b0', life: 0.65, size: 0.24, gravity: 16 });
+    for (let i = 0; i < 6; i++) {
+      spawn({
+        pos, life: SKY.U.rand(0.7, 1.2), size: r * 0.45, sizeEnd: r * 1.1,
+        color: '#788089', opacity: 0.35,
+        vel: new THREE.Vector3(SKY.U.rand(-2, 2), SKY.U.rand(1.5, 4), SKY.U.rand(-2, 2)),
+      });
+    }
+    // double shockwave
+    ring(pos.clone(), '#ffd9a0', r * 2.8, 0.42);
+    ring(pos.clone(), '#ffffff', r * 1.7, 0.24);
+    muzzleLight(pos);
+  }
+
   function muzzleLight(pos) {
     if (!muzzleLightObj) {
       muzzleLightObj = new THREE.PointLight(0xffd9a0, 0, 9, 2);
@@ -710,7 +734,7 @@ SKY.Effects = (function () {
     shake(amp) { shakeAmp = Math.min(shakeAmp + amp, 3); },
     getFovKick() { return fovKick; },
     ring(pos, color, size, life) { ring(pos, color, size, life); },
-    burst,
+    burst, blastBoom,
 
     /* ---------------- gameplay-facing effect recipes ---------------- */
     muzzle(pos, tierColor, isLocal, kick) {

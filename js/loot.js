@@ -42,10 +42,15 @@ SKY.Loot = (function () {
     { id: 'blaster',  kind: 'weapon', rarity: 'common' },
     { id: 'scatter',  kind: 'weapon', rarity: 'common' },
     { id: 'smg',      kind: 'weapon', rarity: 'common' },
+    { id: 'burst',    kind: 'weapon', rarity: 'common' },
     { id: 'longshot', kind: 'weapon', rarity: 'rare'   },
     { id: 'magnum',   kind: 'weapon', rarity: 'rare'   },
+    { id: 'bouncer',  kind: 'weapon', rarity: 'rare'   },
+    { id: 'piston',   kind: 'weapon', rarity: 'rare'   },
     { id: 'mega',     kind: 'weapon', rarity: 'epic'   },
     { id: 'lobber',   kind: 'weapon', rarity: 'epic'   },
+    { id: 'boomstick', kind: 'weapon', rarity: 'epic'  },
+    { id: 'quad',     kind: 'weapon', rarity: 'epic'   },
 
     // --- grenade packs (set your G-slot) ---
     { id: 'nades_he', kind: 'nade', rarity: 'common', nade: 'he', count: 3 },

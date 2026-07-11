@@ -18,6 +18,8 @@ SKY.Settings = (function () {
     shafts: true,       // cinematic sun rays (applies on next map load)
     showFps: false,
     rawInput: true,     // unadjusted mouse + spike filter; OFF = classic feel
+    sfxVol: 0.8,        // sound effects volume
+    musicVol: 0.5,      // background music volume
     binds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
       jump: 'Space', crouch: 'KeyC',
@@ -63,6 +65,7 @@ SKY.Settings = (function () {
     const fps = document.getElementById('fps');
     if (fps) fps.classList.toggle('hidden', !data.showFps);
     if (SKY.applyGraphics) SKY.applyGraphics();
+    if (SKY.SFX && SKY.SFX.setVolumes) SKY.SFX.setVolumes();
     save();
   }
 
@@ -102,6 +105,9 @@ SKY.Settings = (function () {
       ${check('Vignette', 'vignette')}
       ${check('Light shafts', 'shafts', 'cinematic sun rays — applies next map load')}
       ${check('Show FPS', 'showFps')}
+      <h4>AUDIO</h4>
+      ${slider('Sound effects', 'sfxVol', 0, 1, 0.05, v => Math.round(v * 100) + '%')}
+      ${slider('Music', 'musicVol', 0, 1, 0.05, v => Math.round(v * 100) + '%')}
       <h4>CONTROLS <small>click a key, then press the new one (Esc cancels)</small></h4>
       <div class="bind-grid">${Object.keys(DEFAULTS.binds).map(a => `
         <div class="bind-row" data-a="${a}"><span>${BIND_LABELS[a]}</span>
@@ -119,7 +125,9 @@ SKY.Settings = (function () {
       if (v) {
         if (k === 'sens') v.textContent = data[k].toFixed(2) + 'x';
         else if (k === 'fov') v.textContent = data[k] + '°';
-        else if (k === 'renderScale') v.textContent = Math.round(data[k] * 100) + '%';
+        else if (k === 'renderScale' || k === 'sfxVol' || k === 'musicVol') {
+          v.textContent = Math.round(data[k] * 100) + '%';
+        }
       }
       apply();
     });

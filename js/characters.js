@@ -200,69 +200,82 @@ SKY.Characters = (function () {
 
       const model = new THREE.Group();
       model.add(inst.root);
-      // UE-style rig faces +Z after the glTF export; game forward is -Z
+      // UACP characters face +Z natively; game forward is -Z
       model.rotation.y = Math.PI;
-      const k = 1.78 / inst.height;
+      const k = 1.72 / inst.height;
       model.scale.setScalar(k);
       root.add(model);
       this.model = model;
 
-      // player-color identity: tint the suit, leave hair/eyes natural
+      // player-color identity: recolor the outfit's main material
       const col = new THREE.Color(this.pawn.color);
       inst.root.traverse((o) => {
         if (!o.isMesh || !o.material) return;
-        const n = (o.material.name || '').toLowerCase();
-        if (n.includes('superhero') || n.includes('main') || n.includes('suit')) {
-          o.material.color.lerp(col, 0.92);
-          o.material.emissive = col.clone().multiplyScalar(0.18);
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if ((m.name || '') === inst.tint) {
+            m.color.copy(col).multiplyScalar(0.92);
+            m.emissive = col.clone().multiplyScalar(0.1);
+          }
         }
       });
 
-      const bone = (name) => inst.root.getObjectByName(name);
-      this.bSpine = bone('spine_02');
-      this.bChest = bone('spine_03');
+      // GLTFLoader sanitizes node names ('Fist.R' -> 'FistR') — try both
+      const bone = (name) => inst.root.getObjectByName(name) ||
+        inst.root.getObjectByName(name.replace(/\./g, ''));
+      this.bTorso = bone('Torso');
       this.bHead = bone('Head');
-      this.bPelvis = bone('pelvis');
-      this.bHandR = bone('hand_r');
+      this.bHandR = bone('Fist.R');
 
-      // third-person gun in the right hand
+      // third-person gun in the right fist (orientation measured on the rig)
       this.gunHolder = new THREE.Group();
-      // measured on the UE-style rig: barrel (-Z) along hand +Y, gun-up along
-      // hand +Z — a plain +90° X rotation
       this.gunHolder.rotation.set(Math.PI / 2, 0, 0);
-      this.gunHolder.position.set(0, 0.05, 0.03);
+      this.gunHolder.position.set(0, 0.05, 0.02);
       this.gunHolder.scale.setScalar(1 / k);   // undo model scale so guns keep world size
       if (this.bHandR) this.bHandR.add(this.gunHolder);
 
       // ragdoll seed markers = actual bones
       this.markers = {
-        head: this.bHead || root, chest: this.bChest || root, pelvis: this.bPelvis || root,
-        elbL: bone('lowerarm_l') || root, handL: bone('hand_l') || root,
-        elbR: bone('lowerarm_r') || root, handR: this.bHandR || root,
-        kneL: bone('calf_l') || root, footL: bone('foot_l') || root,
-        kneR: bone('calf_r') || root, footR: bone('foot_r') || root,
+        head: this.bHead || root, chest: this.bTorso || root, pelvis: bone('Hips') || root,
+        elbL: bone('LowerArm.L') || root, handL: bone('Fist.L') || root,
+        elbR: bone('LowerArm.R') || root, handR: this.bHandR || root,
+        kneL: bone('LowerLeg.L') || root, footL: bone('Foot.L') || root,
+        kneR: bone('LowerLeg.R') || root, footR: bone('Foot.R') || root,
       };
 
-      // animation set — clips come from the Universal Animation Library
+      // animation set — every UACP character carries its own clips
       this.mixer = new THREE.AnimationMixer(inst.root);
-      const act = (clipName, once) => {
-        const clip = SKY.GFX.clip(clipName);
+      const clipOf = (name) => {
+        for (const c of inst.clips) if (c.name === name) return c;
+        return null;
+      };
+      const act = (clipName) => {
+        const clip = clipOf(clipName);
         if (!clip) return null;
         const a = this.mixer.clipAction(clip);
-        if (once) { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = false; }
-        else { a.play(); a.setEffectiveWeight(0); }
+        a.play();
+        a.setEffectiveWeight(0);
         return a;
       };
       this.acts = {
-        idle: act('Idle_Loop'),
-        jog: act('Jog_Fwd_Loop'),
-        sprint: act('Sprint_Loop'),
-        air: act('Jump_Loop'),
-        slide: act('Crouch_Idle_Loop'),
-        dance: act('Dance_Loop'),
+        idle: act('Idle'),
+        run: act('Run'),
+        air: act('Jump'),
+        slide: act('Roll'),
+        dance: act('Victory'),
       };
       if (this.acts.idle) this.acts.idle.setEffectiveWeight(1);
-      this.actLand = act('Jump_Land', true);
+      // air = Jump held near its apex; slide = Roll frozen in the tuck
+      if (this.acts.air) {
+        this.airApex = this.acts.air.getClip().duration * 0.45;
+        this.acts.air.setLoop(THREE.LoopOnce);
+        this.acts.air.clampWhenFinished = true;
+      }
+      if (this.acts.slide) {
+        this.slideTuck = this.acts.slide.getClip().duration * 0.3;
+        this.acts.slide.setLoop(THREE.LoopOnce);
+        this.acts.slide.clampWhenFinished = true;
+      }
       this.wasGrounded = true;
     }
 
@@ -271,10 +284,7 @@ SKY.Characters = (function () {
       const spd = p.speedH();
       const A = this.acts;
 
-      // one-shot landing accent
-      if (p.grounded && !this.wasGrounded && this.actLand) {
-        this.actLand.reset().setEffectiveWeight(0.9).play();
-      }
+      if (!p.grounded && this.wasGrounded && A.air) A.air.reset().play();
       this.wasGrounded = p.grounded;
 
       // pick the dominant locomotion state
@@ -282,8 +292,7 @@ SKY.Characters = (function () {
       if (this.emoteT > 0) { this.emoteT -= dt; want = 'dance'; }
       else if (p.sliding) want = 'slide';
       else if (!p.grounded) want = 'air';
-      else if (spd > 8.5) want = 'sprint';
-      else if (spd > 0.6) want = 'jog';
+      else if (spd > 0.6) want = 'run';
 
       for (const key in A) {
         const a = A[key];
@@ -293,15 +302,17 @@ SKY.Characters = (function () {
         a.setEffectiveWeight(w + (target - w) * Math.min(1, 10 * dt));
       }
       // stride speed follows actual velocity
-      if (A.jog) A.jog.timeScale = SKY.U.clamp(spd / 4.2, 0.7, 1.7);
-      if (A.sprint) A.sprint.timeScale = SKY.U.clamp(spd / 9.5, 0.8, 1.5);
+      if (A.run) A.run.timeScale = SKY.U.clamp(spd / 5.5, 0.7, 2.1);
+      // hold poses: Jump pauses at its apex, Roll freezes in the tuck
+      if (A.air && A.air.time > this.airApex && !p.grounded) A.air.time = this.airApex;
+      if (A.slide && A.slide.time > this.slideTuck) A.slide.time = this.slideTuck;
 
       this.mixer.update(dt);
 
       // aim pitch layered on top of whatever the mixer posed
       const pitch = SKY.U.clamp(p.pitch, -1.2, 1.2);
-      if (this.bSpine) this.bSpine.rotation.x += pitch * 0.35;
-      if (this.bHead) this.bHead.rotation.x += pitch * 0.4;
+      if (this.bTorso) this.bTorso.rotation.x += pitch * 0.4;
+      if (this.bHead) this.bHead.rotation.x += pitch * 0.35;
     }
 
     setWeapon(kind) {

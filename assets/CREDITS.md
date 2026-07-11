@@ -8,11 +8,9 @@ because these creators are great:
 
 - **Weapons + grenades** (`models/weapons/`) — "Blaster Kit" 2.1 by **Kenney**
   (https://kenney.nl/assets/blaster-kit), CC0.
-- **Characters** (`models/chars/hero_m.gltf`, `hero_f.gltf`) — "Universal Base Characters"
-  by **Quaternius** (https://quaternius.com), CC0. Normal/roughness maps stripped and
-  base-color textures downscaled for web delivery.
-- **Character animations** (`models/chars/anims.glb`) — "Universal Animation Library" by
-  **Quaternius** (https://quaternius.com), CC0. Repacked to the 21 clips the game uses.
+- **Characters** (`models/chars/cast/`) — "Ultimate Animated Character Pack" by
+  **Quaternius** (https://quaternius.com), CC0. Each character ships with its own
+  baked animation set; repacked from glTF-embedded to binary GLB.
 - **Environment props** (`models/props/`) — "Sci-Fi Essentials Kit" (free/Standard tier)
   by **Quaternius** (https://quaternius.com), CC0.
 
@@ -22,7 +20,14 @@ because these creators are great:
   "Interface Sounds" and "Music Jingles" packs (https://kenney.nl/assets?q=audio), CC0.
   Files renamed to game event names (`fire_*`, `hit_*`, `cash_*`, …).
 
-## Textures & music
+## Music
 
-- **Map textures** (`tex/`) and **music** (`audio/music/`) — generated for this project
-  (AI-assisted, Higgsfield), owned by the project.
+- **"Up in the Sky"** (`audio/music/menu_sky.ogg`) — **Memoraphile / You're Perfect
+  Studio** (https://opengameart.org/content/up-in-the-sky), CC0.
+- **"Calm Ambient 1 (Synthwave 4k)"** (`audio/music/game_calm.mp3`) — **The Cynic
+  Project** / cynicmusic.com (https://opengameart.org/content/calm-ambient-1-synthwave-4k), CC0.
+
+## Textures
+
+- **Map textures** (`tex/`) — generated for this project (AI-assisted, Higgsfield),
+  owned by the project.

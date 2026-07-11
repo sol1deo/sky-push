@@ -146,12 +146,12 @@ SKY.Grenades = (function () {
       if (n.fuse <= 0) {
         if (n.type === 'he') {
           blastKnock(n.pos, N.radius, N.force, N.up, n.owner, n.auth);
-          SKY.Effects.burst(n.pos, { count: 30, speed: 11, color: '#ffb06a', life: 0.7, size: 0.85 });
-          SKY.Effects.burst(n.pos, { count: 6, speed: 3, color: '#ffffff', life: 0.18, size: 1.4, gravity: 0 });
-          SKY.Effects.ring(n.pos.clone(), '#ffb06a', N.radius * 1.5, 0.45);
-          SKY.Effects.muzzleLight(n.pos);
-          SKY.SFX.boom();
-          if (SKY.Game.player && SKY.Game.player.pos.distanceTo(n.pos) < N.radius + 4) SKY.Effects.shake(1.4);
+          SKY.Effects.blastBoom(n.pos.clone(), N.radius * 0.8);
+          const me = SKY.Game.player;
+          const dMe = me && me.alive ? me.pos.distanceTo(n.pos) : 60;
+          SKY.SFX.boom(Math.min(dMe, 40));
+          if (dMe < N.radius + 4) SKY.Effects.shake(1.4);
+          if (dMe < N.radius + 1) SKY.SFX.earRing(1 - dMe / (N.radius + 2));
         } else if (n.type === 'vortex') {
           vortices.push({ pos: n.pos.clone(), t: N.duration, owner: n.owner, auth: n.auth });
           SKY.Effects.ring(n.pos.clone(), '#a48aff', 4, 0.5);

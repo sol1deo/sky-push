@@ -7,12 +7,19 @@
 window.SKY = window.SKY || {};
 
 SKY.SFX = (function () {
-  let ctx = null, master = null;
+  let ctx = null, master = null;        // master = the SFX bus
+  let outFilter = null, musicBus = null;
   let windGain = null, windFilter = null;
   let slideGain = null;
   let noiseBuf = null;
   let watchdog = null, stuckTicks = 0, wired = false;
   let windLevel = 0, slideOn = false;   // last requested values, survive a rebuild
+
+  function sfxVol() { return SKY.Settings ? (SKY.Settings.data.sfxVol ?? 0.8) : 0.8; }
+  function musVol() { return SKY.Settings ? (SKY.Settings.data.musicVol ?? 0.5) : 0.5; }
+  /* distance falloff for positional one-shots (other players' guns should
+     not fire inside YOUR ear) */
+  function att(dist) { return 1 / (1 + (dist === undefined ? 8 : dist) * 0.09); }
 
   /* ---------------- sample bank (https only) ---------------- */
   const canFetch = /^https?:$/.test(location.protocol);
@@ -59,10 +66,10 @@ SKY.SFX = (function () {
     return true;
   }
 
-  /* ---------------- music (menu theme + combat tracks) ---------------- */
+  /* -------- music: calm ambient only, kept deliberately quiet -------- */
   const MUSIC_FILES = {
-    menu: ['assets/audio/music/menu_theme.mp3'],
-    game: ['assets/audio/music/combat_rush.ogg', 'assets/audio/music/combat_tech.mp3'],
+    menu: ['assets/audio/music/menu_sky.ogg'],
+    game: ['assets/audio/music/game_calm.mp3'],
   };
   const musicBufs = {};     // url -> AudioBuffer
   let musicWant = 'menu';   // 'menu' | 'game' | null — boot lands on the menu
@@ -94,10 +101,10 @@ SKY.SFX = (function () {
       musicSrc.buffer = buf;
       musicSrc.loop = true;
       musicGainNode = ctx.createGain();
-      const level = musicWant === 'menu' ? 0.34 : 0.26;
+      const level = musicWant === 'menu' ? 0.5 : 0.38;   // scaled by the music slider
       musicGainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
-      musicGainNode.gain.linearRampToValueAtTime(level, ctx.currentTime + 1.2);
-      musicSrc.connect(musicGainNode).connect(master);
+      musicGainNode.gain.linearRampToValueAtTime(level, ctx.currentTime + 1.6);
+      musicSrc.connect(musicGainNode).connect(musicBus);
       musicSrc.start();
     };
     if (musicBufs[url]) { start(musicBufs[url]); return; }
@@ -127,7 +134,8 @@ SKY.SFX = (function () {
 
   function rebuild() {
     try { if (ctx && ctx.state !== 'closed') ctx.close(); } catch (e) {}
-    ctx = null; master = null; windGain = null; windFilter = null; slideGain = null;
+    ctx = null; master = null; outFilter = null; musicBus = null;
+    windGain = null; windFilter = null; slideGain = null;
     musicSrc = null; musicGainNode = null; musicUrl = null;
     stuckTicks = 0;
     init();
@@ -156,9 +164,17 @@ SKY.SFX = (function () {
     if (!AC) return;
     try { ctx = new AC(); } catch (e) { ctx = null; return; }
     ctx.onstatechange = () => { if (ctx && ctx.state !== 'running') resumeCtx(); };
+    // graph: sfx bus + music bus -> shared lowpass (ear-ring muffle) -> out
+    outFilter = ctx.createBiquadFilter();
+    outFilter.type = 'lowpass';
+    outFilter.frequency.value = 19000;
+    outFilter.connect(ctx.destination);
     master = ctx.createGain();
-    master.gain.value = SKY.TUNING.audio.master;
-    master.connect(ctx.destination);
+    master.gain.value = SKY.TUNING.audio.master * sfxVol();
+    master.connect(outFilter);
+    musicBus = ctx.createGain();
+    musicBus.gain.value = musVol();
+    musicBus.connect(outFilter);
     noiseBuf = makeNoiseBuffer();
 
     // --- looping wind bed, gain driven by player speed ---
@@ -220,72 +236,130 @@ SKY.SFX = (function () {
     s.start(t0); s.stop(t0 + dur + 0.02);
   }
 
+  /* soft per-weapon "pew" table: [bank, rate, vol]. Everything is pitched
+     into toy-blaster territory — no bass-heavy samples on rapid fire. */
+  const FIRE_SND = {
+    pistol:    ['fire_med', 1.35, 0.20],
+    smg:       ['fire_light', 1.5, 0.13],
+    blaster:   ['fire_med', 1.12, 0.18],
+    burst:     ['fire_light', 1.3, 0.16],
+    scatter:   ['fire_med', 0.82, 0.28],
+    boomstick: ['fire_med', 0.65, 0.36],
+    longshot:  ['fire_heavy', 1.55, 0.26],
+    magnum:    ['fire_heavy', 1.65, 0.24],
+    mega:      ['fire_med', 1.0, 0.17],
+    bouncer:   ['fire_light', 1.15, 0.16],
+    piston:    ['fire_heavy', 1.3, 0.28],
+    lobber:    ['boom_low', 2.4, 0.3],     // "thoomp"
+    quad:      ['boom_low', 2.6, 0.26],
+  };
+
   return {
     init,
-    /* gunshot: real blaster sample by kick-weight tier, synth fallback */
-    fire(p, k) {
+    /* gunshot: kind-specific soft sample, distance-attenuated */
+    fire(kind, p, k, dist) {
       k = k || 1;
-      const v = SKY.U.clamp(k, 0.45, 1.6);
-      const tier = k < 0.75 ? 'fire_light' : k < 1.2 ? 'fire_med' : 'fire_heavy';
-      if (sample(tier, 0.4 * v, SKY.U.rand(0.94, 1.08))) return;
-      noise(0.05, 3200, 0.4 * v, 'highpass');                    // crack
-      noise(0.12 + k * 0.05, 500, 0.3 * v);                      // body
-      tone(150 - Math.min(k, 1.5) * 40, 45, 0.12 + k * 0.06, 'sine', 0.45 * v);  // thump
+      const a = att(dist);
+      if (a < 0.05) return;
+      const row = FIRE_SND[kind] || FIRE_SND.blaster;
+      if (sample(row[0], row[2] * a, row[1] * SKY.U.rand(0.96, 1.05))) return;
+      const v = SKY.U.clamp(k, 0.45, 1.4) * a;
+      noise(0.04, 3200, 0.22 * v, 'highpass');
+      tone(420, 180, 0.07, 'triangle', 0.18 * v);
     },
-    headshot(){ if (sample('headshot', 0.5, 1.35)) return;
-                tone(1180, 880, 0.12, 'square', 0.3); tone(1760, 1320, 0.1, 'sine', 0.2, 0.02); },
-    reload()  { if (sample('reload', 0.4, 1.25)) return;
-                noise(0.05, 1800, 0.22, 'highpass'); noise(0.05, 1200, 0.2, 'highpass', 0.16); },
-    reloadDone(){ if (sample('reload_done', 0.45, 1.1)) return;
-                noise(0.05, 2200, 0.25, 'highpass'); tone(520, 380, 0.05, 'square', 0.12); },
-    dry()     { if (sample('dry', 0.4, 1.2)) return;
-                tone(300, 240, 0.04, 'square', 0.16); },
-    dash()    { if (sample('dash', 0.5, SKY.U.rand(1.1, 1.3))) return;
-                noise(0.22, 900, 0.35, 'bandpass'); tone(300, 700, 0.18, 'sine', 0.2); },
-    pick()    { if (sample('pick', 0.5, SKY.U.rand(0.95, 1.05))) return;
-                tone(620, 930, 0.12, 'triangle', 0.3); tone(930, 1240, 0.14, 'triangle', 0.25, 0.09); },
+    headshot(dist){ const a = att(dist);
+                if (sample('headshot', 0.3 * a, 1.45)) return;
+                tone(1180, 880, 0.12, 'square', 0.22 * a); },
+    reload()  { if (sample('reload', 0.3, 1.3)) return;
+                noise(0.05, 1800, 0.16, 'highpass'); noise(0.05, 1200, 0.14, 'highpass', 0.16); },
+    reloadDone(){ if (sample('reload_done', 0.32, 1.15)) return;
+                noise(0.05, 2200, 0.18, 'highpass'); tone(520, 380, 0.05, 'square', 0.1); },
+    dry()     { if (sample('dry', 0.3, 1.2)) return;
+                tone(300, 240, 0.04, 'square', 0.12); },
+    dash()    { if (sample('dash', 0.38, SKY.U.rand(1.15, 1.35))) return;
+                noise(0.22, 900, 0.25, 'bandpass'); },
+    pick()    { if (sample('pick', 0.4, SKY.U.rand(0.95, 1.05))) return;
+                tone(620, 930, 0.12, 'triangle', 0.22); tone(930, 1240, 0.14, 'triangle', 0.18, 0.09); },
+    /* ricochet "boing" */
+    bounce(dist) { const a = att(dist);
+                if (a < 0.06) return;
+                if (sample('pick', 0.2 * a, SKY.U.rand(1.6, 1.9))) return;
+                tone(700, 1100, 0.06, 'triangle', 0.14 * a); },
+    /* piston compression clicks at 33/66/100% */
+    chargeTick(th) {
+      if (sample('beep', 0.16 + th * 0.1, 0.7 + th * 0.7)) return;
+      tone(240 + th * 420, 240 + th * 420, 0.05, 'square', 0.1 + th * 0.05);
+    },
+    /* close explosion: brief muffle + faint ring, then hearing comes back */
+    earRing(k) {
+      if (!ctx || !outFilter) return;
+      const t0 = ctx.currentTime;
+      const f = outFilter.frequency;
+      f.cancelScheduledValues(t0);
+      f.setValueAtTime(Math.min(f.value, 900), t0);
+      f.exponentialRampToValueAtTime(19000, t0 + 1.4 + k * 0.8);
+      const o = ctx.createOscillator();
+      o.frequency.value = 3400;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.05 + 0.06 * k, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.2);
+      o.connect(g).connect(ctx.destination);   // rings THROUGH the muffle
+      o.start(t0); o.stop(t0 + 1.25);
+    },
+    /* live volume sliders */
+    setVolumes() {
+      if (master) master.gain.value = SKY.TUNING.audio.master * sfxVol();
+      if (musicBus) musicBus.gain.value = musVol();
+    },
     taunt()   { tone(392, 392, 0.12, 'square', 0.2); tone(523, 523, 0.14, 'square', 0.2, 0.13); },
     honk()    { tone(220, 220, 0.35, 'sawtooth', 0.4); tone(277, 277, 0.35, 'sawtooth', 0.35); tone(220, 220, 0.4, 'sawtooth', 0.4, 0.5); tone(277, 277, 0.4, 'sawtooth', 0.35, 0.5); },
-    rumble()  { noise(0.6, 140, 0.55); tone(70, 35, 0.5, 'sine', 0.5); },
-    thunder() { if (sample('thunder_smp', 0.7, 0.8)) { noise(0.9, 220, 0.3, 'lowpass', 0.1); return; }
-                noise(0.08, 4000, 0.5, 'highpass'); noise(0.9, 220, 0.6, 'lowpass', 0.06); tone(60, 30, 0.8, 'sine', 0.45, 0.05); },
-    gust()    { noise(1.2, 700, 0.3, 'bandpass'); },
-    boom()    { if (sample('boom', 0.65, SKY.U.rand(0.92, 1.05))) { sample('boom_low', 0.5, 1, 0.02); return; }
-                noise(0.5, 300, 0.7); tone(90, 30, 0.5, 'sine', 0.6); noise(0.08, 3000, 0.35, 'highpass'); },
-    beep()    { if (sample('beep', 0.4)) return;
-                tone(880, 880, 0.07, 'square', 0.2); },
-    cash()    { if (sample('cash', 0.4, SKY.U.rand(0.98, 1.12))) return;
-                tone(1320, 1760, 0.07, 'square', 0.2); tone(1760, 1760, 0.08, 'square', 0.18, 0.08); },
-    crown()   { if (sample('crown', 0.5)) return;
-                [660, 880, 1100].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.26, i * 0.08)); },
-    overtime(){ tone(220, 110, 0.5, 'sawtooth', 0.4); tone(330, 165, 0.5, 'sawtooth', 0.3, 0.1); },
-    airCannon(){ if (sample('aircannon', 0.6, 1.15)) return;
-                noise(0.32, 420, 0.6); tone(160, 40, 0.3, 'sine', 0.5); },
-    hit(p)    { if (sample('hit', 0.45 + p * 0.3, 1.15 - p * 0.25)) return;
-                tone(130 + p * 90, 40, 0.18, 'sine', 0.5 + p * 0.3); tone(700 + p * 500, 160, 0.1, 'square', 0.18 + p * 0.15); noise(0.1, 800, 0.2); },
-    jump()    { tone(300, 430, 0.08, 'sine', 0.14); },
-    land(i)   { if (sample('land', SKY.U.clamp(i, 0, 1) * 0.45, SKY.U.rand(0.95, 1.1))) return;
-                noise(0.09, 320, SKY.U.clamp(i, 0, 1) * 0.3); },
-    pad()     { if (sample('pad', 0.55, 1.3)) return;
-                tone(220, 640, 0.24, 'sine', 0.4); tone(110, 320, 0.24, 'triangle', 0.28); },
-    grapple() { if (sample('grapple', 0.4, 1.5)) return;
-                noise(0.14, 2200, 0.25, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.2); },
+    rumble()  { noise(0.6, 140, 0.4); tone(70, 35, 0.5, 'sine', 0.35); },
+    thunder() { if (sample('thunder_smp', 0.5, 0.85)) { noise(0.9, 220, 0.2, 'lowpass', 0.1); return; }
+                noise(0.08, 4000, 0.35, 'highpass'); noise(0.9, 220, 0.4, 'lowpass', 0.06); },
+    gust()    { noise(1.2, 700, 0.22, 'bandpass'); },
+    boom(dist){ const a = att(dist);
+                if (a < 0.05) return;
+                if (sample('boom', 0.5 * a, SKY.U.rand(0.95, 1.1))) {
+                  if (a > 0.5) sample('boom_low', 0.3 * a, 1.2, 0.02);
+                  return;
+                }
+                noise(0.5, 300, 0.5 * a); noise(0.08, 3000, 0.25 * a, 'highpass'); },
+    beep()    { if (sample('beep', 0.3)) return;
+                tone(880, 880, 0.07, 'square', 0.15); },
+    cash()    { if (sample('cash', 0.26, SKY.U.rand(1.0, 1.15))) return;
+                tone(1320, 1760, 0.07, 'square', 0.14); },
+    crown()   { if (sample('crown', 0.36)) return;
+                [660, 880, 1100].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.2, i * 0.08)); },
+    overtime(){ tone(220, 110, 0.5, 'sawtooth', 0.28); tone(330, 165, 0.5, 'sawtooth', 0.2, 0.1); },
+    airCannon(){ if (sample('aircannon', 0.45, 1.2)) return;
+                noise(0.32, 420, 0.4); },
+    hit(p, dist) { const a = att(dist);
+                if (a < 0.06) return;
+                if (sample('hit', (0.3 + p * 0.22) * a, 1.15 - p * 0.25)) return;
+                tone(130 + p * 90, 40, 0.16, 'sine', (0.3 + p * 0.2) * a); },
+    jump()    { tone(300, 430, 0.08, 'sine', 0.1); },
+    land(i)   { if (sample('land', SKY.U.clamp(i, 0, 1) * 0.32, SKY.U.rand(0.95, 1.1))) return;
+                noise(0.09, 320, SKY.U.clamp(i, 0, 1) * 0.2); },
+    pad()     { if (sample('pad', 0.4, 1.35)) return;
+                tone(220, 640, 0.24, 'sine', 0.26); },
+    grapple() { if (sample('grapple', 0.3, 1.5)) return;
+                noise(0.14, 2200, 0.18, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.14); },
     grapMiss(){ tone(300, 180, 0.07, 'square', 0.12); },
     scream(loud) { // comedic falling whistle
       const v = loud ? 0.4 : 0.18;
       tone(900, 200, 0.9, 'sawtooth', v);
       tone(1350, 300, 0.9, 'sine', v * 0.5);
     },
-    ko(loud)  { const v = loud ? 0.6 : 0.35;
-                if (sample('ko', v, 0.9)) { tone(600, 90, 0.4, 'sawtooth', v * 0.4); return; }
-                tone(600, 90, 0.5, 'sawtooth', v); noise(0.3, 500, v * 0.8); },
-    countdown(){ if (sample('beep', 0.4, 0.85)) return;
-                tone(440, 440, 0.09, 'square', 0.22); },
-    go()      { if (sample('go', 0.55)) return;
-                tone(660, 660, 0.14, 'square', 0.26); tone(880, 880, 0.2, 'square', 0.24, 0.07); },
-    win()     { if (sample('win', 0.5)) return;
-                [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 'triangle', 0.3, i * 0.13)); },
-    slideStart(){ noise(0.12, 700, 0.2, 'bandpass'); },
+    ko(loud)  { const v = loud ? 0.42 : 0.26;
+                if (sample('ko', v, 0.95)) return;
+                tone(600, 90, 0.5, 'sawtooth', v); noise(0.3, 500, v * 0.7); },
+    countdown(){ if (sample('beep', 0.3, 0.85)) return;
+                tone(440, 440, 0.09, 'square', 0.16); },
+    go()      { if (sample('go', 0.4)) return;
+                tone(660, 660, 0.14, 'square', 0.2); tone(880, 880, 0.2, 'square', 0.18, 0.07); },
+    win()     { if (sample('win', 0.38)) return;
+                [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 'triangle', 0.22, i * 0.13)); },
+    slideStart(){ noise(0.12, 700, 0.15, 'bandpass'); },
 
     /* background music: 'menu' | 'game' | null. Combat tracks rotate. */
     music(key) {

@@ -78,20 +78,35 @@ SKY.Weapons = (function () {
     return v;
   }
 
-  function tryFirePrimary(pawn) {
+  /* opts: burstShot (follow-up shot of a burst — skips the cooldown gate),
+     chargeMul / speedMul / recoilMul (piston charge release) */
+  function tryFirePrimary(pawn, opts) {
+    opts = opts || {};
     const W = defOf(pawn);
-    if (pawn.pbCd > 0 || !pawn.alive || pawn.tauntT > 0 || pawn.ragdoll || pawn.reloadT > 0) return false;
+    if ((pawn.pbCd > 0 && !opts.burstShot) || !pawn.alive || pawn.tauntT > 0 || pawn.ragdoll || pawn.reloadT > 0) return false;
     if (pawn.grapple || pawn.drawT > 0) return false;   // hook arm out / mid-draw
     if (SKY.Game.roundTime < 0.75) return false;   // no spawn-cheese at GO!
-    if (pawn.ammo <= 0) {
+    // charge weapons fired without a charge (bots, autotest): decent mid-charge
+    if (W.charge && opts.chargeMul === undefined) {
+      opts.chargeMul = 1 + 0.55 * ((W.chargeMult || 2) - 1);
+      opts.speedMul = 1.4; opts.recoilMul = 2;
+    }
+    const cost = opts.burstShot ? 1 : (W.ammoPerShot || 1);
+    if (pawn.ammo < cost) {
       if (pawn.isLocal) SKY.SFX.dry();
       tryReload(pawn);
       return false;
     }
     pawn.pbCd = W.cooldown * pawn.mods.cdMult;
-    pawn.ammo--;
+    pawn.ammo -= cost;
 
     const push = computePush(pawn);
+    if (opts.chargeMul) {
+      push.force = Math.min(push.force * opts.chargeMul,
+        W.maxKnockback * pawn.mods.powerMult * (W.chargeMult || 1));
+      push.tier = push.force < 8 ? 0 : push.force < 14 ? 1 : push.force < 21 ? 2 : 3;
+      push.color = TIERS[push.tier].color;
+    }
     SKY.U.dirFromYawPitch(pawn.yaw, pawn.pitch, _dir);
     pawn.eyePos(_eye);
     // Bullets leave the actual gun BARREL (viewmodel tip for the local player,
@@ -127,20 +142,22 @@ SKY.Weapons = (function () {
         _pdir.addScaledVector(_right, Math.cos(a) * r).addScaledVector(_up, Math.sin(a) * r).normalize();
       }
       netDirs.push([+_pdir.x.toFixed(3), +_pdir.y.toFixed(3), +_pdir.z.toFixed(3)]);
+      const pspd = W.projSpeed * (opts.speedMul || 1);
       bullets.push({
         pos: _muzzle.clone(),
         prev: _muzzle.clone(),
-        vel: _pdir.clone().multiplyScalar(W.projSpeed).addScaledVector(pawn.vel, 0.25),
+        vel: _pdir.clone().multiplyScalar(pspd).addScaledVector(pawn.vel, 0.25),
         force: push.force, tier: push.tier, color: push.color,
         up: W.upFactor, headMult: W.headshotMult, maxK: W.maxKnockback,
         gravity: W.projGravity || 0,
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
+        bounces: W.bounces || 0,
         owner: pawn, auth,
-        life: W.range / W.projSpeed + 0.15,
+        life: W.range / pspd + 0.15,
         vis: makeBulletVisual(0xffe2a8, _muzzle),
       });
       SKY.Replay.bullet(_muzzle, bullets[bullets.length - 1].vel,
-        W.projGravity || 0, W.range / W.projSpeed + 0.15);
+        W.projGravity || 0, W.range / pspd + 0.15);
     }
     if (SKY.Net.online && auth) {
       SKY.Net.sendFire({
@@ -151,11 +168,11 @@ SKY.Weapons = (function () {
     }
 
     // recoil + feedback
-    pawn.vel.addScaledVector(_dir, -W.selfRecoil);
+    pawn.vel.addScaledVector(_dir, -W.selfRecoil * (opts.recoilMul || 1));
     if (pawn.grounded && pawn.vel.y > 1) pawn.grounded = false;
     SKY.Effects.muzzle(_muzzle, W.color, pawn.isLocal, W.kick);
     SKY.Effects.muzzleLight(_muzzle);
-    SKY.SFX.fire(push.tier / 3, W.kick);
+    SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
     if (pawn.isLocal) {
       SKY.Effects.shake(SKY.TUNING.camera.shakeFire * W.kick);
       // RECOIL: kick the view up with a hair of horizontal jitter — recovers
@@ -164,8 +181,55 @@ SKY.Weapons = (function () {
       SKY.Input.yaw += SKY.U.rand(-0.35, 0.35) * (W.kickPitch || 0);
     }
 
+    // burst weapons queue their follow-up shots
+    if (W.burstCount > 1 && !opts.burstShot) {
+      bursts.push({ pawn, left: W.burstCount - 1, t: W.burstDelay || 0.07, delay: W.burstDelay || 0.07 });
+    }
+
     if (pawn.ammo <= 0) tryReload(pawn);
     return true;
+  }
+
+  /* how far the local ear is from a sound source (for volume falloff) */
+  function listenDist(pos) {
+    const me = SKY.Game.player;
+    if (!me || !me.alive) return 12;
+    return Math.min(60, Math.sqrt(
+      (me.pos.x - pos.x) ** 2 + (me.pos.y + 1.5 - pos.y) ** 2 + (me.pos.z - pos.z) ** 2));
+  }
+
+  /* pending burst follow-ups */
+  const bursts = [];
+
+  /* piston-style charge weapons: hold fire to compress, release to launch */
+  function chargeTick(pawn, dt) {
+    const W = defOf(pawn);
+    if (!W.charge || !pawn.alive || pawn.ragdoll || pawn.reloadT > 0 || pawn.ammo <= 0) {
+      pawn.chargeT = 0;
+      return;
+    }
+    const before = pawn.chargeT || 0;
+    pawn.chargeT = Math.min(W.charge, before + dt);
+    if (pawn.isLocal) {
+      const t01 = pawn.chargeT / W.charge;
+      // rising click feedback at 33/66/100%
+      for (const th of [0.33, 0.66, 1]) {
+        if (before / W.charge < th && t01 >= th) SKY.SFX.chargeTick(th);
+      }
+      if (t01 > 0.5) SKY.Effects.shake(0.02 * t01);
+    }
+  }
+  function releaseCharge(pawn) {
+    const W = defOf(pawn);
+    if (!W.charge || !(pawn.chargeT > 0)) { pawn.chargeT = 0; return false; }
+    const t01 = SKY.U.clamp01(pawn.chargeT / W.charge);
+    pawn.chargeT = 0;
+    if (t01 < 0.12) return false;    // tap = fizzle, no wasted ammo
+    return tryFirePrimary(pawn, {
+      chargeMul: 1 + t01 * ((W.chargeMult || 2) - 1),
+      speedMul: 1 + t01 * 0.9,
+      recoilMul: 1 + t01 * 4,        // full charge = a little rocket jump
+    });
   }
 
   /* one simulation step of one bullet: sweep prev->pos against everything */
@@ -206,6 +270,17 @@ SKY.Weapons = (function () {
   }
 
   function tick(dt, pawns) {
+    // burst follow-up shots
+    for (let i = bursts.length - 1; i >= 0; i--) {
+      const q = bursts[i];
+      q.t -= dt;
+      if (q.t > 0) continue;
+      const ok = tryFirePrimary(q.pawn, { burstShot: true });
+      q.left--;
+      q.t = q.delay;
+      if (!ok || q.left <= 0) bursts.splice(i, 1);
+    }
+
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.life -= dt;
@@ -221,12 +296,32 @@ SKY.Weapons = (function () {
       if (res.pawn || res.world) {
         const point = b.prev.clone().addScaledVector(_dir, res.t);
         if (b.blast > 0) {
-          // LOBBER shells: area blast wherever they land
+          // launcher shells: area blast wherever they land — with IMPACT
           if (b.auth) blastAt(point, b.blast, b.force, b.blastUp, b.owner);
-          SKY.Effects.burst(point.clone(), { count: 18, speed: 8, color: b.color, life: 0.5, size: 0.6 });
-          SKY.Effects.ring(point.clone(), b.color, b.blast * 1.5, 0.35);
-          SKY.SFX.boom();
+          SKY.Effects.blastBoom(point.clone(), b.blast);
+          const dist = listenDist(point);
+          SKY.SFX.boom(dist);
+          // close blast rattles the local player: shake + brief ear-ring
+          const me = SKY.Game.player;
+          if (me && me.alive) {
+            const d = me.pos.distanceTo(point);
+            if (d < b.blast * 3) SKY.Effects.shake(SKY.U.clamp(1.6 - d / (b.blast * 2), 0.2, 1.4));
+            if (d < b.blast * 1.6) SKY.SFX.earRing(1 - d / (b.blast * 2));
+          }
           removeBullet(i);
+          continue;
+        }
+        // ricochet darts bounce off the world
+        if (res.world && b.bounces > 0) {
+          b.bounces--;
+          const n = res.world.normal;
+          const vd = b.vel.dot(n);
+          b.vel.addScaledVector(n, -2 * vd);
+          b.pos.copy(point).addScaledVector(n, 0.03);
+          b.prev.copy(b.pos);
+          SKY.Effects.impactSpark(point.clone(), n.clone());
+          SKY.Effects.ring(point.clone(), b.color, 0.7, 0.18);
+          SKY.SFX.bounce(listenDist(point));
           continue;
         }
         if (res.pawn && b.auth) {
@@ -248,7 +343,7 @@ SKY.Weapons = (function () {
           if (res.head) {
             SKY.Effects.headshotBurst(point.clone());
             SKY.Effects.muzzleLight(point);              // impact flash
-            SKY.SFX.headshot();
+            SKY.SFX.headshot(listenDist(point));
             if (b.owner && b.owner.isLocal) { SKY.HUD.hitmark(3, true); SKY.Effects.shake(0.5); }
             if (Math.random() < 0.35) {
               SKY.Effects.floatText(point.clone().add(new THREE.Vector3(0, 0.6, 0)), 'BONK!', '#ff6a6a');
@@ -257,7 +352,7 @@ SKY.Weapons = (function () {
             SKY.Effects.hitBurst(point.clone(), b.tier, b.color);
             SKY.Effects.impactSpark(point.clone(), _dir.clone().negate());  // backsplash
             SKY.Effects.muzzleLight(point);              // impact flash
-            SKY.SFX.hit(b.tier / 3);
+            SKY.SFX.hit(b.tier / 3, listenDist(point));
             if (b.owner && b.owner.isLocal) {
               SKY.HUD.hitmark(b.tier);
               SKY.Effects.shake(SKY.TUNING.camera.shakeHitDealt);
@@ -283,9 +378,10 @@ SKY.Weapons = (function () {
 
   function clear() { for (let i = bullets.length - 1; i >= 0; i--) removeBullet(i); }
 
-  /* radial knock helper (lobber shells) */
+  /* radial knock helper (launcher shells) */
   function blastAt(center, radius, force, up, owner) {
     const mid = new THREE.Vector3();
+    let victims = 0;
     for (const p of SKY.Game.pawns) {
       if (!p.alive) continue;
       p.midPos(mid);
@@ -296,6 +392,10 @@ SKY.Weapons = (function () {
       if (_imp.lengthSq() < 0.01) _imp.set(0, 1, 0);
       _imp.normalize().multiplyScalar(force * k);
       _imp.y += up * k;
+      if (p !== owner) {
+        victims++;
+        SKY.Effects.hitBurst(mid.clone(), 2, '#ffb06a');
+      }
       if (p.isRemote) {
         SKY.Net.sendHit(p.netId, [+_imp.x.toFixed(2), +_imp.y.toFixed(2), +_imp.z.toFixed(2)], false);
       } else {
@@ -303,6 +403,11 @@ SKY.Weapons = (function () {
         p.applyKnockback(_imp, owner === p ? null : owner);
         if (wasAir && force * k > SKY.TUNING.ragdoll.minAirForce) p.enterRagdoll('air', _imp);
       }
+    }
+    // the shooter gets a real hit confirm on blast damage
+    if (victims > 0 && owner && owner.isLocal) {
+      SKY.HUD.hitmark(2);
+      SKY.Effects.shake(SKY.TUNING.camera.shakeHitDealt * 1.4);
     }
   }
 
@@ -360,17 +465,20 @@ SKY.Weapons = (function () {
         force: m.force, tier: m.tier, color: TIERS[m.tier].color,
         up: W.upFactor, headMult: W.headshotMult, maxK: W.maxKnockback,
         gravity: W.projGravity || 0,
+        blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
+        bounces: W.bounces || 0,
         owner: pawn, auth: false,
         life: W.range / W.projSpeed + 0.15,
         vis: makeBulletVisual(0xffe2a8, ori),
       });
     }
     SKY.Effects.muzzle(ori, W.color, false, W.kick);
-    SKY.SFX.fire(m.tier / 3, W.kick * 0.6);
+    SKY.SFX.fire(m.w, m.tier / 3, W.kick * 0.6, listenDist(ori));
   }
 
   return {
     TIERS, computePush, defOf, tryFirePrimary, tryFireAirCannon, tryReload,
+    chargeTick, releaseCharge,
     tick, clear, spawnRemote,
     init(sc) { scene = sc; },
   };

@@ -13,21 +13,27 @@ window.SKY = window.SKY || {};
 SKY.GFX = (function () {
   const canLoad = /^https?:$/.test(location.protocol);
 
-  /* per-weapon fit: how a Kenney blaster GLB maps onto the procedural gun's
-     frame (-Z barrel, grip near origin). len = target length in units;
-     flip = model's muzzle points +Z natively (measured per model). */
+  /* per-weapon fit: which Blaster-Kit model (file) each weapon uses and how
+     it maps onto the procedural gun's frame (-Z barrel, grip near origin).
+     len = target length in units; flip = muzzle points +Z natively
+     (measured per model — see the calibration grid workflow). */
   const WEAPON_FIT = {
-    pistol:   { len: 0.30 },
-    blaster:  { len: 0.52, flip: true },
-    scatter:  { len: 0.50 },
-    smg:      { len: 0.38 },
-    longshot: { len: 0.72 },
-    magnum:   { len: 0.42, flip: true },
-    mega:     { len: 0.60 },
-    lobber:   { len: 0.44 },
-    hookgun:  { len: 0.34 },
-    grenade1: { len: 0.16 },
-    grenade2: { len: 0.16 },
+    pistol:    { file: 'i', len: 0.30, flip: true },
+    blaster:   { file: 'n', len: 0.52, flip: true },
+    scatter:   { file: 'g', len: 0.50 },
+    smg:       { file: 'j', len: 0.38 },
+    longshot:  { file: 'e', len: 0.72 },
+    magnum:    { file: 'a', len: 0.42, flip: true },
+    mega:      { file: 'f', len: 0.60 },
+    lobber:    { file: 'm', len: 0.46 },
+    hookgun:   { file: 'b', len: 0.34 },
+    burst:     { file: 'p', len: 0.54 },
+    boomstick: { file: 'q', len: 0.50 },
+    bouncer:   { file: 'r', len: 0.40 },
+    quad:      { file: 'o', len: 0.36 },
+    piston:    { file: 'h', len: 0.42 },
+    grenade1:  { file: 'grenade1', len: 0.16 },
+    grenade2:  { file: 'grenade2', len: 0.16 },
   };
   const TEX_NAMES = ['concrete', 'metal', 'panel', 'hazard', 'grass', 'dirt', 'sand',
     'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid'];
@@ -35,12 +41,27 @@ SKY.GFX = (function () {
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];
 
+  /* toy-style character cast (Quaternius UACP) — each GLB carries its own
+     17 animation clips. tint = the "main outfit" material recolored to the
+     player color for team identity. */
+  const CAST = [
+    { file: 'BlueSoldier_Male', tint: 'Main' },
+    { file: 'BlueSoldier_Female', tint: 'Main' },
+    { file: 'Casual_Male', tint: 'Shirt' },
+    { file: 'Casual_Female', tint: 'Shirt' },
+    { file: 'Ninja_Male', tint: 'Main' },
+    { file: 'Cowboy_Female', tint: 'Jacket' },
+    { file: 'Worker_Male', tint: 'Vest' },
+    { file: 'Chef_Male', tint: 'Clothes' },
+    { file: 'Pirate_Female', tint: 'Clothes' },
+    { file: 'Suit_Male', tint: 'Black' },
+  ];
+
   const weapons = {};     // kind -> normalized template Group (cloned per use)
   const props = {};       // name -> template Group
   const texImgs = {};     // name -> HTMLImageElement (decoded, ready)
   const texCache = {};    // name|repeat -> THREE.Texture
-  const chars = {};       // m/f -> { root(SkinnedMesh scene), height }
-  let clips = null;       // THREE.AnimationClip[]
+  const cast = {};        // file -> { root, clips, height, tint }
   let loader = null;
 
   // onReady fires ONCE when textures+weapons+characters have all settled
@@ -92,7 +113,8 @@ SKY.GFX = (function () {
     const kinds = Object.keys(WEAPON_FIT);
     let pending = kinds.length;
     for (const kind of kinds) {
-      gl().load('assets/models/weapons/' + kind + '.glb', (g) => {
+      const file = WEAPON_FIT[kind].file || kind;
+      gl().load('assets/models/weapons/' + file + '.glb', (g) => {
         try { weapons[kind] = normalizeWeapon(kind, g.scene || g.scenes[0]); } catch (e) {}
         if (--pending === 0 && done) done();
       }, undefined, () => { if (--pending === 0 && done) done(); });
@@ -100,34 +122,36 @@ SKY.GFX = (function () {
   }
 
   function loadChars() {
-    let pending = 3;
+    let pending = CAST.length;
     const settle = () => { if (--pending === 0) groupDone(); };
-    const prep = (key) => (g) => {
-      const root = g.scene || g.scenes[0];
-      root.traverse((o) => {
-        if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; }
-        if (o.isMesh && o.material) {
-          // stylized look: kill PBR response. The BODY drops its skin texture
-          // entirely — avatars ship as solid player-color "hero figures"
-          // (the base-character skin texture reads as undressed otherwise).
-          const src = o.material;
-          const isBody = (src.name || '').toLowerCase().includes('superhero');
-          const m = new THREE.MeshLambertMaterial({
-            map: isBody ? null : (src.map || null),
-            color: isBody ? 0xc8ccd6 : (src.color ? src.color.clone() : 0xffffff),
-          });
-          m.name = src.name || '';
-          o.material = m;
-        }
-      });
-      const box = new THREE.Box3().setFromObject(root);
-      chars[key] = { root, height: Math.max(0.1, box.max.y - box.min.y) };
-      settle();
-    };
-    gl().load('assets/models/chars/hero_m.gltf', prep('m'), undefined, settle);
-    gl().load('assets/models/chars/hero_f.gltf', prep('f'), undefined, settle);
-    gl().load('assets/models/chars/anims.glb', (g) => { clips = g.animations || []; settle(); },
-      undefined, settle);
+    for (const entry of CAST) {
+      gl().load('assets/models/chars/cast/' + entry.file + '.glb', (g) => {
+        const root = g.scene || g.scenes[0];
+        root.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = true;
+          o.frustumCulled = false;
+          if (o.material) {
+            // materials are flat colors — swap PBR for cheap Lambert
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            const conv = mats.map((src) => {
+              const m = new THREE.MeshLambertMaterial({
+                color: src.color ? src.color.clone() : 0xffffff,
+              });
+              m.name = src.name || '';
+              return m;
+            });
+            o.material = Array.isArray(o.material) ? conv : conv[0];
+          }
+        });
+        const box = new THREE.Box3().setFromObject(root);
+        cast[entry.file] = {
+          root, clips: g.animations || [], tint: entry.tint,
+          height: Math.max(0.1, box.max.y - box.min.y),
+        };
+        settle();
+      }, undefined, settle);
+    }
   }
 
   function loadProps() {
@@ -177,20 +201,26 @@ SKY.GFX = (function () {
     },
 
     /* ---- characters ---- */
-    charReady() { return !!(clips && clips.length && (chars.m || chars.f)); },
+    charReady() { return Object.keys(cast).length >= 3; },
     /* hash-stable pick; clone with skeleton bindings intact */
     charInstance(h) {
       if (!api.charReady()) return null;
-      const key = chars.m && chars.f ? (h % 2 ? 'f' : 'm') : (chars.m ? 'm' : 'f');
-      const t = chars[key];
-      const root = THREE.SkeletonUtils.clone(t.root);
-      // clone materials so per-player tinting doesn't leak between avatars
-      root.traverse((o) => { if (o.isMesh && o.material) o.material = o.material.clone(); });
-      return { root, height: t.height, key };
-    },
-    clip(name) {
-      if (!clips) return null;
-      for (const c of clips) if (c.name === name) return c;
+      // deterministic across clients: index into the FULL cast list, then
+      // walk forward to the nearest loaded entry
+      for (let i = 0; i < CAST.length; i++) {
+        const entry = CAST[(h + i) % CAST.length];
+        const t = cast[entry.file];
+        if (!t) continue;
+        const root = THREE.SkeletonUtils.clone(t.root);
+        // clone materials so per-player tinting doesn't leak between avatars
+        root.traverse((o) => {
+          if (o.isMesh && o.material) {
+            o.material = Array.isArray(o.material)
+              ? o.material.map((m) => m.clone()) : o.material.clone();
+          }
+        });
+        return { root, clips: t.clips, tint: t.tint, height: t.height, key: entry.file };
+      }
       return null;
     },
 

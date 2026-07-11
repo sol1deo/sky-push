@@ -494,8 +494,14 @@ SKY.Game = (function () {
 
       p.zoomed = In.action('aim') && !p.ragdoll && !p.grapple;
 
-      const auto = SKY.Weapons.defOf(p).auto;
-      if (auto ? In.action('fire') : In.actionPressed('fire')) SKY.Weapons.tryFirePrimary(p);
+      const Wd = SKY.Weapons.defOf(p);
+      if (Wd.charge) {
+        // piston-style: hold to compress, release to launch
+        if (In.action('fire')) SKY.Weapons.chargeTick(p, 1 / 120);
+        else if (p.chargeT > 0) SKY.Weapons.releaseCharge(p);
+      } else if (Wd.auto ? In.action('fire') : In.actionPressed('fire')) {
+        SKY.Weapons.tryFirePrimary(p);
+      }
       if (In.actionPressed('cannon')) SKY.Weapons.tryFireAirCannon(p, api.pawns);
       if (In.actionPressed('grapple')) SKY.Grapple.tryFire(p);
       if (In.actionPressed('grenade')) SKY.Grenades.throwNade(p);
