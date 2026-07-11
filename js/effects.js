@@ -85,7 +85,7 @@ SKY.Effects = (function () {
     return WMAT;
   }
 
-  function buildWeaponMesh(kind) {
+  function buildWeaponMesh(kind, finish) {
     const W = SKY.TUNING.weapons[kind] || SKY.TUNING.weapons.blaster;
     // real model (Kenney Blaster Kit GLB) when the asset pack has loaded —
     // procedural primitives below stay as the file:// / slow-net fallback
@@ -99,8 +99,12 @@ SKY.Effects = (function () {
           new THREE.MeshLambertMaterial({
             color: W.color, emissive: new THREE.Color(W.color).multiplyScalar(0.65),
           }));
+        glow.name = 'tierglow';
         glow.position.set(0, tip.position.y - 0.045, tip.position.z * 0.4);
         grp.add(glow);
+      }
+      if (finish && finish !== 'stock' && SKY.Profile) {
+        SKY.Profile.applyFinish(grp, finish, W.color);
       }
       return grp;
     }
@@ -265,12 +269,13 @@ SKY.Effects = (function () {
    * used by the death-reward cards so a weapon reads at a glance. */
   const thumbCache = {};
   let thumbRig = null;
-  function thumbKey(kind) {
+  function thumbKey(kind, finish) {
     // thumbs re-render once the real GLB arrives (asset pack loads async)
-    return kind + (SKY.GFX && SKY.GFX.hasWeapon(kind) ? '+glb' : '');
+    return kind + (finish ? ':' + finish : '') +
+      (SKY.GFX && SKY.GFX.hasWeapon(kind) ? '+glb' : '');
   }
-  function weaponThumb(kind) {
-    if (thumbCache[thumbKey(kind)]) return thumbCache[thumbKey(kind)];
+  function weaponThumb(kind, finish) {
+    if (thumbCache[thumbKey(kind, finish)]) return thumbCache[thumbKey(kind, finish)];
     try {
       if (!thumbRig) {
         const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -285,7 +290,7 @@ SKY.Effects = (function () {
         sc.add(key);
         thumbRig = { r, sc, cam };
       }
-      const mesh = buildWeaponMesh(kind);
+      const mesh = buildWeaponMesh(kind, finish);
       const box = new THREE.Box3().setFromObject(mesh);
       const c = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3()).length();
@@ -300,7 +305,7 @@ SKY.Effects = (function () {
       thumbRig.r.render(thumbRig.sc, thumbRig.cam);
       const url = thumbRig.r.domElement.toDataURL();
       thumbRig.sc.remove(grp);
-      thumbCache[thumbKey(kind)] = url;
+      thumbCache[thumbKey(kind, finish)] = url;
       return url;
     } catch (e) { return null; }   // headless / no-GL fallback
   }
@@ -348,7 +353,7 @@ SKY.Effects = (function () {
   function mountWeapon(kind) {
     if (vm.group) camera.remove(vm.group);
     vm.kind = kind;
-    vm.group = buildWeaponMesh(kind);
+    vm.group = buildWeaponMesh(kind, SKY.Profile && SKY.Profile.finishFor(kind));
     vm.group.scale.setScalar(0.85);
     vm.group.position.set(0.3, -0.27, -0.52);
     vm.group.visible = vm.visible;
@@ -364,7 +369,7 @@ SKY.Effects = (function () {
 
   function ensureHook() {
     if (vm.hook || !camera) return;
-    vm.hook = buildWeaponMesh('hookgun');
+    vm.hook = buildWeaponMesh('hookgun', SKY.Profile && SKY.Profile.finishFor('hookgun'));
     vm.hook.scale.setScalar(0.85);
     vm.hook.position.set(-0.32, -0.9, -0.5);
     vm.hook.visible = vm.visible;

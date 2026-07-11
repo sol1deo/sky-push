@@ -634,8 +634,14 @@ SKY.Game = (function () {
       const rp = SKY.Net.online ? ''
         : ' · ' + SKY.Settings.bindName(SKY.Settings.data.binds.replay) + ' — replay';
       if (champion) {
+        // LOCKER coins: participation + KOs + win bonus (local, cosmetic-only)
+        let payline = '';
+        if (api.player && SKY.Profile) {
+          const payout = SKY.Profile.matchReward(winner === api.player, api.player.koCount || 0);
+          payline = ' · +' + payout + ' ⬡';
+        }
         SKY.HUD.centerMsg(name + ' wins the match', 8, 40);
-        SKY.HUD.subMsg('Enter — back to menu' + rp, 8);
+        SKY.HUD.subMsg('Enter — back to menu' + rp + payline, 8);
       } else {
         const stars = winner ? ' · ' + '★'.repeat(winner.roundWins) + '☆'.repeat(SKY.TUNING.game.roundsToWin - winner.roundWins) : '';
         SKY.HUD.centerMsg(name + ' wins the round' + stars, 4.5, 36);

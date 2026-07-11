@@ -1088,10 +1088,11 @@ SKY.Net = (function () {
   }
 
   function selectTab(id) {
-    for (const t of ['tab-offline', 'tab-matches']) {
+    for (const t of ['tab-offline', 'tab-locker', 'tab-matches']) {
       $(t).classList.toggle('sel', t === id);
     }
     $('panel-offline').classList.toggle('hidden', id !== 'tab-offline');
+    $('panel-locker').classList.toggle('hidden', id !== 'tab-locker');
     $('panel-matches').classList.toggle('hidden', id !== 'tab-matches');
   }
 
@@ -1123,6 +1124,11 @@ SKY.Net = (function () {
   function initUI() {
     // rail navigation
     $('tab-offline').onclick = () => { if (!api.online) selectTab('tab-offline'); };
+    $('tab-locker').onclick = () => {
+      if (api.online) return;
+      selectTab('tab-locker');
+      SKY.Locker.renderPanel();
+    };
     $('tab-matches').onclick = () => {
       if (api.online) return;
       selectTab('tab-matches');

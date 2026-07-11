@@ -74,6 +74,7 @@
       SKY.Map.load(scene, (SKY.HUD && SKY.HUD.mapSel) || 'sky');
       SKY.Attract.reset();
     }
+    SKY.Locker.refreshPreview();
   };
   SKY.Characters.init();
   SKY.Map.load(scene, 'sky');
@@ -90,6 +91,7 @@
   SKY.Demos.init();
   SKY.Editor.init(scene, camera);
   SKY.Net.init();
+  SKY.Locker.init();
 
   const STEP = 1 / 120;
   let acc = 0;
@@ -124,6 +126,7 @@
       }
     }
     if (!rendered) renderer.render(scene, camera);
+    SKY.Locker.tick(Math.min(rdt, 0.05));   // menu character preview
 
     // fps counter (updates twice a second)
     fpsAcc += rdt; fpsN++;

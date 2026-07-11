@@ -18,7 +18,7 @@ SKY.GFX = (function () {
      len = target length in units; flip = muzzle points +Z natively
      (measured per model — see the calibration grid workflow). */
   const WEAPON_FIT = {
-    pistol:    { file: 'i', len: 0.30, flip: true },
+    pistol:    { file: 'b', len: 0.32 },
     // 'd' = classic carbine silhouette — the old 'n' had stock struts that
     // read as twin barrels pointing at the player
     blaster:   { file: 'd', len: 0.52, flip: true },
@@ -28,7 +28,7 @@ SKY.GFX = (function () {
     magnum:    { file: 'a', len: 0.42, flip: true },
     mega:      { file: 'f', len: 0.60 },
     lobber:    { file: 'm', len: 0.46 },
-    hookgun:   { file: 'b', len: 0.34 },
+    hookgun:   { file: 'n', len: 0.38, flip: true },   // pronged front = hook launcher
     burst:     { file: 'p', len: 0.54 },
     boomstick: { file: 'q', len: 0.50 },
     bouncer:   { file: 'r', len: 0.40 },
@@ -204,9 +204,21 @@ SKY.GFX = (function () {
 
     /* ---- characters ---- */
     charReady() { return Object.keys(cast).length >= 3; },
-    /* hash-stable pick; clone with skeleton bindings intact */
-    charInstance(h) {
+    /* hash-stable pick (or an explicit character key, e.g. the LOCKER pick);
+       clone with skeleton bindings intact */
+    charInstance(h, key) {
       if (!api.charReady()) return null;
+      if (key && cast[key]) {
+        const t = cast[key];
+        const root = THREE.SkeletonUtils.clone(t.root);
+        root.traverse((o) => {
+          if (o.isMesh && o.material) {
+            o.material = Array.isArray(o.material)
+              ? o.material.map((m) => m.clone()) : o.material.clone();
+          }
+        });
+        return { root, clips: t.clips, tint: t.tint, height: t.height, key };
+      }
       // deterministic across clients: index into the FULL cast list, then
       // walk forward to the nearest loaded entry
       for (let i = 0; i < CAST.length; i++) {
