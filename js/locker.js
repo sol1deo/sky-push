@@ -169,7 +169,7 @@ SKY.Locker = (function () {
     }).join('');
 
     const finCards = P.FINISHES.map((f) => {
-      const owned = P.ownsFinish(f.id);
+      const owned = P.ownsFinish(selWeapon, f.id);
       const equipped = P.finishFor(selWeapon) === f.id;
       const img = SKY.Effects.weaponThumb(selWeapon, f.id === 'stock' ? undefined : f.id);
       return `<div class="lk-card lk-fin ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}" data-fin="${f.id}">
@@ -180,7 +180,11 @@ SKY.Locker = (function () {
     }).join('');
 
     panel.innerHTML = `
-      <div class="lk-head"><h3>LOCKER</h3>${coinsChip()}</div>
+      <div class="lk-head"><h3>LOCKER</h3>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="lk-wbtn" id="lk-dev" title="testing only">+1000 ⬡ dev</button>
+          ${coinsChip()}
+        </div></div>
       ${ready ? '' : '<div class="lk-note">character previews load with the asset pack…</div>'}
       <h4 class="lk-h">CHARACTER</h4>
       <div class="lk-grid">${randomCard}${charCards}</div>
@@ -190,6 +194,11 @@ SKY.Locker = (function () {
       <div class="lk-note">earn ⬡ by finishing matches — KOs and wins pay extra</div>`;
 
     panel.onclick = (e) => {
+      if (e.target.id === 'lk-dev') {
+        SKY.Profile.addCoins(1000);
+        SKY.SFX.init(); SKY.SFX.cash();
+        return;
+      }
       const cCard = e.target.closest('[data-char]');
       const fCard = e.target.closest('[data-fin]');
       const wBtn = e.target.closest('.lk-wbtn');
@@ -205,8 +214,8 @@ SKY.Locker = (function () {
       }
       if (fCard) {
         const id = fCard.dataset.fin;
-        if (P.ownsFinish(id)) { P.equipFinish(selWeapon, id); }
-        else if (P.buyFinish(id)) { P.equipFinish(selWeapon, id); SKY.SFX.init(); SKY.SFX.pick(); }
+        if (P.ownsFinish(selWeapon, id)) { P.equipFinish(selWeapon, id); }
+        else if (P.buyFinish(selWeapon, id)) { P.equipFinish(selWeapon, id); SKY.SFX.init(); SKY.SFX.pick(); }
         else { flashPoor(fCard); return; }
         renderPanel();
       }

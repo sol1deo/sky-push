@@ -80,9 +80,13 @@ SKY.Profile = (function () {
       const def = charDef(id);
       return !!def && (def.price === 0 || data.ownedChars.includes(id));
     },
-    ownsFinish(id) {
+    /* finishes are bought PER WEAPON: 'pistol:pearl' etc. (plain ids from
+       the earlier build stay honored as own-everywhere legacy entries) */
+    ownsFinish(kind, id) {
       const def = finishDef(id);
-      return def.price === 0 || data.ownedFinishes.includes(id);
+      return def.price === 0 ||
+        data.ownedFinishes.includes(kind + ':' + id) ||
+        data.ownedFinishes.includes(id);
     },
 
     buyChar(id) {
@@ -94,11 +98,11 @@ SKY.Profile = (function () {
       if (api.onChange) api.onChange();
       return true;
     },
-    buyFinish(id) {
+    buyFinish(kind, id) {
       const def = finishDef(id);
-      if (!def || api.ownsFinish(id) || data.coins < def.price) return false;
+      if (!def || api.ownsFinish(kind, id) || data.coins < def.price) return false;
       data.coins -= def.price;
-      data.ownedFinishes.push(id);
+      data.ownedFinishes.push(kind + ':' + id);
       save();
       if (api.onChange) api.onChange();
       return true;
@@ -112,7 +116,7 @@ SKY.Profile = (function () {
       return true;
     },
     equipFinish(kind, id) {
-      if (!api.ownsFinish(id)) return false;
+      if (!api.ownsFinish(kind, id)) return false;
       if (id === 'stock') delete data.finishes[kind];
       else data.finishes[kind] = id;
       save();

@@ -19,16 +19,17 @@ SKY.GFX = (function () {
      (measured per model — see the calibration grid workflow). */
   const WEAPON_FIT = {
     pistol:    { file: 'b', len: 0.32 },
-    // 'd' = classic carbine silhouette — the old 'n' had stock struts that
-    // read as twin barrels pointing at the player
-    blaster:   { file: 'd', len: 0.52, flip: true },
+    // 'd' = classic carbine silhouette; native muzzle already at -Z.
+    // (A sign error in the old calibration page had this flipped — the
+    // user-facing symptom was "the rifle points at me".)
+    blaster:   { file: 'd', len: 0.52 },
     scatter:   { file: 'g', len: 0.50 },
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
     magnum:    { file: 'a', len: 0.42, flip: true },
     mega:      { file: 'f', len: 0.60 },
-    lobber:    { file: 'm', len: 0.46 },
-    hookgun:   { file: 'n', len: 0.38, flip: true },   // pronged front = hook launcher
+    lobber:    { file: 'm', len: 0.46, flip: true },
+    hookgun:   { file: 'n', len: 0.38 },   // pronged front = hook launcher, native -Z
     burst:     { file: 'p', len: 0.54 },
     boomstick: { file: 'q', len: 0.50 },
     bouncer:   { file: 'r', len: 0.40 },
@@ -42,6 +43,9 @@ SKY.GFX = (function () {
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];
+  // extra Blaster-Kit set for the editor's built-in library (self-contained GLBs)
+  const KIT_NAMES = ['crate-small', 'crate-medium', 'crate-wide',
+    'target-small', 'target-large', 'target-detail', 'smoke'];
 
   /* toy-style character cast (Quaternius UACP) — each GLB carries its own
      17 animation clips. tint = the "main outfit" material recolored to the
@@ -157,15 +161,19 @@ SKY.GFX = (function () {
   }
 
   function loadProps() {
-    let pending = PROP_NAMES.length;
+    let pending = PROP_NAMES.length + KIT_NAMES.length;
     const settle = () => { if (--pending === 0) groupDone(); };
+    const store = (name) => (g) => {
+      const root = g.scene || g.scenes[0];
+      root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      props[name] = root;
+      settle();
+    };
     for (const name of PROP_NAMES) {
-      gl().load('assets/models/props/' + name + '.gltf', (g) => {
-        const root = g.scene || g.scenes[0];
-        root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-        props[name] = root;
-        settle();
-      }, undefined, settle);
+      gl().load('assets/models/props/' + name + '.gltf', store(name), undefined, settle);
+    }
+    for (const name of KIT_NAMES) {
+      gl().load('assets/models/kit/' + name + '.glb', store(name), undefined, settle);
     }
   }
 
@@ -261,7 +269,7 @@ SKY.GFX = (function () {
       const t = props[name];
       return t ? t.clone(true) : null;
     },
-    propNames() { return PROP_NAMES.slice(); },
+    propNames() { return PROP_NAMES.concat(KIT_NAMES); },
   };
   return api;
 })();

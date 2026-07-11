@@ -191,8 +191,9 @@ SKY.Characters = (function () {
 
     /* ==================== rigged GLTF puppet ==================== */
     _buildGltfPuppet(h) {
-      // the local player's LOCKER pick wins; everyone else rolls by name hash
-      const pick = this.pawn.isLocal && SKY.Profile ? SKY.Profile.data.char : null;
+      // synced cosmetics (online) or the local LOCKER pick; else name hash
+      const pick = this.pawn.cos ? this.pawn.cos.char
+        : (this.pawn.isLocal && SKY.Profile ? SKY.Profile.data.char : null);
       const inst = SKY.GFX.charInstance(h, pick);
       if (!inst) throw new Error('char not ready');
       const root = new THREE.Group();
@@ -330,7 +331,8 @@ SKY.Characters = (function () {
       this.gunKind = kind;
       while (this.gunHolder.children.length) this.gunHolder.remove(this.gunHolder.children[0]);
       while (this.proxyGunHolder.children.length) this.proxyGunHolder.remove(this.proxyGunHolder.children[0]);
-      const fin = this.pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor(kind) : null;
+      const fin = this.pawn.cos && this.pawn.cos.fin ? (this.pawn.cos.fin[kind] || null)
+        : (this.pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor(kind) : null);
       const g1 = SKY.Effects.buildWeaponMesh(kind, fin);
       g1.scale.setScalar(this.isGltf ? 1.05 : 1.25);
       this.gunHolder.add(g1);

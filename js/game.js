@@ -144,6 +144,7 @@ SKY.Game = (function () {
         const isLocal = r.id === cfg.myId;
         const p = new SKY.Pawn({ name: r.name, color: r.color, isLocal });
         p.netId = r.id;
+        p.cos = r.cos || null;   // synced cosmetics: {char, fin:{kind:finishId}}
         p.isBot = !!r.bot;
         p.isRemote = !isLocal && !(amHost && r.bot);   // host simulates bots
         p.buildVisual(scene);

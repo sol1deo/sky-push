@@ -113,9 +113,10 @@ SKY.Editor = (function () {
     const ph = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshLambertMaterial({ color: 0x8a5aff, wireframe: true }));
     holder.add(ph);
+    const isPack = (pr.asset || '').startsWith('gfx:');
     const embed = def.assets[pr.asset];
-    if (embed) {
-      SKY.Assets.instantiate(embed, (obj) => {
+    if (embed || isPack) {
+      SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
         if (!obj || !holder.parent) return;
         holder.remove(ph);
         holder.add(obj);
@@ -704,7 +705,7 @@ SKY.Editor = (function () {
     ui.assetGrid.innerHTML = list.length ? list.map(a => `
       <div class="ed-asset" draggable="true" data-id="${a.id}" title="${a.name} — drag into the scene">
         ${a.thumb ? `<img src="${a.thumb}" alt="">` : `<span class="ed-asset-ph">${a.type === 'model' ? '◆' : '🖼'}</span>`}
-        <i>${a.name}</i><b class="ed-asset-x" data-x="${a.id}">×</b>
+        <i>${a.name}</i>${a.builtin ? '' : `<b class="ed-asset-x" data-x="${a.id}">×</b>`}
       </div>`).join('')
       : '<div class="ed-hint">Drop .glb models or images here, or use ADD FILES.</div>';
   }

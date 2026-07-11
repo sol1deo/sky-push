@@ -224,6 +224,12 @@ SKY.Net = (function () {
     return s;
   }
 
+  /* equipped cosmetics, sent with hello / seeded into the host roster */
+  function myCos() {
+    if (!SKY.Profile) return null;
+    return { char: SKY.Profile.data.char, fin: SKY.Profile.data.finishes };
+  }
+
   function nickname() {
     return (SKY.Settings.data.nickname || '').trim() || 'BEAN-' + randCode(3);
   }
@@ -275,7 +281,7 @@ SKY.Net = (function () {
         openedAny = true;
         api.online = true; api.role = 'host'; api.code = code; api.isPublic = isPublic;
         api.myId = 'host';
-        api.roster = [{ id: 'host', name: nickname(), color: COLORS[0] }];
+        api.roster = [{ id: 'host', name: nickname(), color: COLORS[0], cos: myCos() }];
         pings.host = 0;
         showLobby();
         status('');
@@ -352,7 +358,7 @@ SKY.Net = (function () {
         const id = 'p' + randCode(4);
         conn.__id = id; conn.__name = m.name;
         conns.set(id, conn);
-        api.roster.push({ id, name: m.name, color: COLORS[api.roster.length % COLORS.length] });
+        api.roster.push({ id, name: m.name, color: COLORS[api.roster.length % COLORS.length], cos: m.cos || null });
         conn.send({ t: 'welcome', you: id, roster: api.roster, settings: api.settings });
         broadcast({ t: 'roster', roster: api.roster }, id);
         renderLobby();
@@ -471,7 +477,7 @@ SKY.Net = (function () {
         conn.on('open', () => {
           if (sess !== sessionId) return;
           status('Connected — entering lobby…');
-          conn.send({ t: 'hello', name: nickname() });
+          conn.send({ t: 'hello', name: nickname(), cos: myCos() });
         });
         conn.on('data', (m) => {
           if (sess !== sessionId) return;
@@ -624,7 +630,7 @@ SKY.Net = (function () {
     destroyPeer();
     api.online = true; api.role = 'host'; api.code = 'direct'; api.isPublic = false;
     api.myId = 'host';
-    api.roster = [{ id: 'host', name: nickname(), color: COLORS[0] }];
+    api.roster = [{ id: 'host', name: nickname(), color: COLORS[0], cos: myCos() }];
     pings.host = 0;
     showLobby();
     status('');
@@ -669,7 +675,7 @@ SKY.Net = (function () {
       conn.on('open', () => {
         if (sess !== sessionId) return;
         status('Connected — entering lobby…');
-        conn.send({ t: 'hello', name: nickname() });
+        conn.send({ t: 'hello', name: nickname(), cos: myCos() });
       });
       conn.on('data', (m) => {
         if (sess !== sessionId) return;

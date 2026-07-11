@@ -75,6 +75,8 @@
       SKY.Attract.reset();
     }
     SKY.Locker.refreshPreview();
+    // the editor's ASSETS panel gains the built-in 'pack' folder once loaded
+    if (SKY.Assets.onChange) SKY.Assets.onChange();
   };
   SKY.Characters.init();
   SKY.Map.load(scene, 'sky');

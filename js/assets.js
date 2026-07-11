@@ -103,13 +103,43 @@ SKY.Assets = (function () {
     } catch (e) { return null; }
   }
 
+  /* built-in "pack" folder: read-only props from the shipped asset pack
+     (SKY.GFX). Maps reference them as 'gfx:<name>' — nothing to embed,
+     every https client resolves them locally. */
+  const packCache = {};
+  function packItems() {
+    if (!SKY.GFX) return [];
+    const out = [];
+    for (const n of SKY.GFX.propNames()) {
+      if (!SKY.GFX.hasProp(n)) continue;
+      let it = packCache[n];
+      if (!it) {
+        it = {
+          id: 'gfx:' + n, folder: 'pack', type: 'model', builtin: true, thumb: null,
+          name: n.replace(/^Prop_/, '').replace(/_/g, ' ').replace(/-/g, ' ').toLowerCase(),
+        };
+        packCache[n] = it;
+      }
+      if (!it.thumb) {
+        const o = SKY.GFX.prop(n);
+        if (o) it.thumb = thumbFromObject(o);
+      }
+      out.push(it);
+    }
+    return out;
+  }
+
   const api = {
     onChange: null,
-    list() { return items; },
-    get(id) { return items.find(a => a.id === id); },
+    list() { return items.concat(packItems()); },
+    get(id) {
+      return items.find(a => a.id === id) ||
+        (id && id.startsWith('gfx:') ? packCache[id.slice(4)] : undefined);
+    },
     folders() {
       const f = new Set(items.map(a => a.folder || 'assets'));
       f.add('assets');
+      if (packItems().length) f.add('pack');
       return [...f].sort();
     },
 
@@ -158,6 +188,10 @@ SKY.Assets = (function () {
     /* instantiate a model asset (from the library OR a map def's embedded copy) */
     instantiate(idOrEmbed, cb) {
       if (typeof idOrEmbed === 'string') {
+        if (idOrEmbed.startsWith('gfx:')) {   // built-in pack prop
+          cb(SKY.GFX ? SKY.GFX.prop(idOrEmbed.slice(4)) : null);
+          return;
+        }
         const a = api.get(idOrEmbed);
         if (!a || a.type !== 'model') { cb(null); return; }
         parseModel(a.id, a.data, cb);
@@ -166,8 +200,10 @@ SKY.Assets = (function () {
       }
     },
 
-    /* copy an asset's payload into a map def so the map is self-contained */
+    /* copy an asset's payload into a map def so the map is self-contained
+       (built-in 'gfx:' props ship with the game — nothing to embed) */
     embed(def, id) {
+      if (id && id.startsWith('gfx:')) return;
       const a = api.get(id);
       if (a && !def.assets[id]) {
         def.assets[id] = { id, name: a.name, type: a.type, data: a.data };

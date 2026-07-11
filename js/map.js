@@ -1266,13 +1266,14 @@ SKY.Map = (function () {
     for (const it of def.items) {
       SKY.World.itemPoints.push(new THREE.Vector3(it.p[0], it.p[1], it.p[2]));
     }
-    // 3D asset props (GLB payloads embedded in the def) — async parse, the
-    // meshes pop in within a frame or two; collision = their bounding box
+    // 3D asset props — embedded GLB payloads, or built-in pack props
+    // referenced as 'gfx:<name>' (shipped with the game, nothing embedded)
     for (const pr of def.props || []) {
+      const isPack = (pr.asset || '').startsWith('gfx:');
       const embed = (def.assets || {})[pr.asset];
-      if (!embed || !SKY.Assets) continue;
+      if ((!embed && !isPack) || !SKY.Assets) continue;
       const g = group;
-      SKY.Assets.instantiate(embed, (obj) => {
+      SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
         if (!obj || group !== g) return;   // map changed while parsing
         obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
         const rot = pr.r || [0, 0, 0];
