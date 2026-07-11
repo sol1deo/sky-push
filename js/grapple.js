@@ -78,6 +78,15 @@ SKY.Grapple = (function () {
     const G = SKY.TUNING.grapple;
     if (!pawn.alive) return false;
     if (pawn.grapple) { release(pawn); return false; }   // press again = detach
+    // heavy knock jammed the hook (pawn.hookLockT, set in applyKnockback) —
+    // this also blocks the ragdoll-escape below, so a clean yeet STICKS
+    if (pawn.hookLockT > 0) {
+      if (pawn.isLocal) {
+        SKY.SFX.grapMiss();
+        SKY.HUD.subMsg('Hook jammed!', 0.7);
+      }
+      return false;
+    }
     // ONE hook per airtime — land (or take a hit) to refill
     const airborne = !pawn.grounded;
     if (airborne && pawn.airGrapples <= 0) {

@@ -288,8 +288,9 @@
   #lv-timer { margin:10px auto 0; height:3px; width:300px;
     background:rgba(255,255,255,.14); border-radius:2px; overflow:hidden; }
   #lv-timer div { height:100%; width:100%; background:#ffd34d; }
-  /* grenade chip — small slot-style box docked left of the weapon slots */
-  #nades { position:relative; display:flex; align-items:center; justify-content:center;
+  /* grenade chip — small slot-style box perched ABOVE the pistol slot */
+  #nades { position:absolute; right:0; bottom:46px;
+    display:flex; align-items:center; justify-content:center;
     width:54px; height:40px; border-radius:8px; opacity:.85;
     background:var(--bg2); border:1px solid var(--line2); backdrop-filter:blur(8px); }
   #nades.hidden { display:none; }
@@ -829,7 +830,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 37</div>
+    <div class="rail-foot">prototype · build 38</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -1067,36 +1068,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=37"></script>
-<script src="js/profile.js?v=37"></script>
-<script src="js/utils.js?v=37"></script>
-<script src="js/gfx.js?v=37"></script>
-<script src="js/mapdata.js?v=37"></script>
-<script src="js/audio.js?v=37"></script>
-<script src="js/settings.js?v=37"></script>
-<script src="js/input.js?v=37"></script>
-<script src="js/world.js?v=37"></script>
-<script src="js/effects.js?v=37"></script>
-<script src="js/map.js?v=37"></script>
-<script src="js/characters.js?v=37"></script>
-<script src="js/pawn.js?v=37"></script>
-<script src="js/weapons.js?v=37"></script>
-<script src="js/loot.js?v=37"></script>
-<script src="js/pickups.js?v=37"></script>
-<script src="js/sparks.js?v=37"></script>
-<script src="js/grenades.js?v=37"></script>
-<script src="js/grapple.js?v=37"></script>
-<script src="js/bots.js?v=37"></script>
-<script src="js/hud.js?v=37"></script>
-<script src="js/game.js?v=37"></script>
-<script src="js/attract.js?v=37"></script>
-<script src="js/net.js?v=37"></script>
-<script src="js/dof.js?v=37"></script>
-<script src="js/replay.js?v=37"></script>
-<script src="js/demos.js?v=37"></script>
-<script src="js/locker.js?v=37"></script>
-<script src="js/assets.js?v=37"></script>
-<script src="js/editor.js?v=37"></script>
-<script src="js/main.js?v=37"></script>
+<script src="js/config.js?v=38"></script>
+<script src="js/profile.js?v=38"></script>
+<script src="js/utils.js?v=38"></script>
+<script src="js/gfx.js?v=38"></script>
+<script src="js/mapdata.js?v=38"></script>
+<script src="js/audio.js?v=38"></script>
+<script src="js/settings.js?v=38"></script>
+<script src="js/input.js?v=38"></script>
+<script src="js/world.js?v=38"></script>
+<script src="js/effects.js?v=38"></script>
+<script src="js/map.js?v=38"></script>
+<script src="js/characters.js?v=38"></script>
+<script src="js/pawn.js?v=38"></script>
+<script src="js/weapons.js?v=38"></script>
+<script src="js/loot.js?v=38"></script>
+<script src="js/pickups.js?v=38"></script>
+<script src="js/sparks.js?v=38"></script>
+<script src="js/grenades.js?v=38"></script>
+<script src="js/grapple.js?v=38"></script>
+<script src="js/bots.js?v=38"></script>
+<script src="js/hud.js?v=38"></script>
+<script src="js/game.js?v=38"></script>
+<script src="js/attract.js?v=38"></script>
+<script src="js/net.js?v=38"></script>
+<script src="js/dof.js?v=38"></script>
+<script src="js/replay.js?v=38"></script>
+<script src="js/demos.js?v=38"></script>
+<script src="js/locker.js?v=38"></script>
+<script src="js/assets.js?v=38"></script>
+<script src="js/editor.js?v=38"></script>
+<script src="js/main.js?v=38"></script>
 </body>
 </html>

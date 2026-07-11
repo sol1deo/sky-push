@@ -228,7 +228,9 @@ SKY.TUNING = {
   /* shared knockback + hit rules */
   knock: {
     victimMinUpVel: 4.0,   // strong hits always pop the victim at least this far up
-    headRadius: 0.24,      // headshot hitbox around the eyes
+    headRadius: 0.36,      // headshot hitbox — matches the big toon heads
+    headBoneLift: 0.45,    // head-bone origin is at the neck; ball sits above it
+                           // (tuned against the UACP rig with debug spheres)
     bodyRadius: 0.55,      // bullet-vs-body capsule radius
     // grounded victims get popped AIRBORNE by any real hit so ground friction
     // can't eat the push — a runner flies as far as a jumper.
@@ -261,6 +263,7 @@ SKY.TUNING = {
    * ------------------------------------------------------------------ */
   cannon: {
     cooldown:      2.4,
+    fireDelay:     0.16,  // blast lands when the takeout anim hits its kick
     range:         6.5,
     coneDeg:       55,
     baseKnockback: 13.0,
@@ -275,8 +278,15 @@ SKY.TUNING = {
    * of the cooldown.
    * ------------------------------------------------------------------ */
   grapple: {
-    range:        32.0,   // max attach distance — a real limit, no cross-map ropes
+    range:        26.0,   // max attach distance — a real limit, no cross-map ropes
                           // (Long Arm powerup extends it ×1.5)
+    // HEAVY hits jam the hook: a clean big yeet (cannon, charged piston,
+    // point-blank blast) should actually stick — no free hook-back. Light
+    // and medium pokes still refill the air-hook like before.
+    heavyKnock:     15.0,  // impulse magnitude that counts as heavy
+    heavyLockScale: 0.22,  // lock seconds per impulse unit over the threshold
+    heavyLockMin:   0.5,
+    heavyLockMax:   2.4,
     reelSpeed:    5.5,    // m/s the rope winches in while held (slow = real swings)
     pullAccel:    26.0,   // assist acceleration toward the point (×0.35 applied)
     maxDuration:  6.0,    // rope auto-releases after this long

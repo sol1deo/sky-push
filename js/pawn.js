@@ -57,6 +57,7 @@ window.SKY = window.SKY || {};
       this.owned = new Set();             // powerup/ability ids already taken
       this.airJumps = 0; this.dashCd = 0;
       this.airGrapples = 1;               // hooks left this airtime (grapple.js)
+      this.hookLockT = 0;                 // heavy knock jams the hook briefly
       this.pounding = false; this._crouchWas = false;
 
       // grenades (G)
@@ -119,6 +120,7 @@ window.SKY = window.SKY || {};
       this.pbCd = Math.max(0, this.pbCd - dt);
       this.acCd = Math.max(0, this.acCd - dt);
       this.grappleCd = Math.max(0, this.grappleCd - dt);
+      this.hookLockT = Math.max(0, this.hookLockT - dt);
       this.slideCd = Math.max(0, this.slideCd - dt);
       this.padLockT = Math.max(0, this.padLockT - dt);
       this.dashCd = Math.max(0, this.dashCd - dt);
@@ -190,6 +192,7 @@ window.SKY = window.SKY || {};
       if (this.grounded) {
         this.airJumps = 1;
         this.airGrapples = SKY.TUNING.grapple.airHooks;   // landing refills hooks
+        this.hookLockT = 0;                               // ...and un-jams them
       }
 
       // ---- slide state ----
@@ -247,7 +250,11 @@ window.SKY = window.SKY || {};
           const maxs = this.crouching ? maxRun * T.crouchSpeedMult : maxRun;
           this._accelerate(_wish, maxs, T.groundAccel, dt);
         }
-        this.vel.y = -T.groundStick;   // keep contact on ramps
+        // NO downward stick velocity: pressing into a ramp made the solver
+        // push back out along the slope normal every tick = constant
+        // downhill creep (and ate speed running up). The ground-snap
+        // raycast below keeps contact on ramps/crests instead.
+        this.vel.y = 0;
       } else {
         // GROUND POUND: crouch pressed mid-air, high enough -> slam
         const A = SKY.TUNING.abilities;
@@ -478,8 +485,15 @@ window.SKY = window.SKY || {};
       const r = this.mods.knockResist;   // Heavyweight powerup reduces this
       this.vel.addScaledVector(impulse, r);
       const m = impulse.length() * r;
-      // getting hit refreshes the air-hook — you can always TRY to save yourself
-      this.airGrapples = Math.max(this.airGrapples, SKY.TUNING.grapple.airHooks);
+      // light/medium hits refresh the air-hook — you can TRY to save yourself.
+      // HEAVY hits JAM it instead: a clean yeet shouldn't be hooked back from.
+      const GR = SKY.TUNING.grapple;
+      if (m > GR.heavyKnock) {
+        this.hookLockT = Math.max(this.hookLockT,
+          SKY.U.clamp((m - GR.heavyKnock) * GR.heavyLockScale, GR.heavyLockMin, GR.heavyLockMax));
+      } else {
+        this.airGrapples = Math.max(this.airGrapples, GR.airHooks);
+      }
       // incoming-damage feedback for the local player (flash + direction arc)
       if (this.isLocal && m > 2.5) SKY.HUD.damage(impulse, false);
       // Standing is NOT a defensive stance: grounded victims pop AIRBORNE so
@@ -511,6 +525,7 @@ window.SKY = window.SKY || {};
       this.padLockT = 0;
       this.airJumps = 1;
       this.airGrapples = SKY.TUNING.grapple.airHooks;
+      this.hookLockT = 0;
       this.ragdoll = null;
       this.pounding = false;
       this.reloadT = 0; this.drawT = 0;

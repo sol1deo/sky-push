@@ -34,6 +34,7 @@ SKY.Weapons = (function () {
   const _ray = new THREE.Ray();
   const _sph = new THREE.Sphere();
   const _hitP = new THREE.Vector3();
+  const _headC = new THREE.Vector3();
 
   const TIERS = [
     { name: 'WEAK',   color: '#dfe7f2' },
@@ -119,7 +120,12 @@ SKY.Weapons = (function () {
     const tip = pawn.isLocal ? SKY.Effects.viewmodelTip()
       : pawn.avatar ? pawn.avatar.gunTipWorld(_tip) : null;
     const wallHit = SKY.World.raycast(_eye, _dir, W.range);
-    const aimDist = wallHit ? wallHit.t : W.range;
+    let aimDist = wallHit ? wallHit.t : W.range;
+    // the aim point must include PAWNS: converging on the wall BEHIND an
+    // enemy leaves the barrel offset unresolved at the enemy's distance —
+    // that was "I have to aim left of people to headshot them"
+    const pawnT = aimRayPawns(pawn, _eye, _dir, aimDist);
+    if (pawnT < aimDist) aimDist = pawnT;
     // point-blank / barrel-in-wall: keep the eye muzzle so nothing spawns
     // behind geometry
     if (tip && aimDist > 2.0 && SKY.World.los(_eye, tip)) {
@@ -234,6 +240,34 @@ SKY.Weapons = (function () {
     });
   }
 
+  /* nearest pawn (head sphere or body capsule) along a ray — used to pick
+     the barrel-convergence point so shots land ON the aimed enemy */
+  function aimRayPawns(owner, origin, dir, maxDist) {
+    _ray.origin.copy(origin);
+    _ray.direction.copy(dir);
+    const K = SKY.TUNING.knock;
+    let best = Infinity;
+    for (const p of SKY.Game.pawns) {
+      if (p === owner || !p.alive) continue;
+      const hp = p.avatar && p.avatar.headHitPos ? p.avatar.headHitPos(_headC) : null;
+      if (hp) _sph.center.copy(hp);
+      else _sph.center.set(p.pos.x, p.pos.y + p.eyeHeight + 0.05, p.pos.z);
+      _sph.radius = K.headRadius;
+      if (_ray.intersectSphere(_sph, _hitP)) {
+        const t = _hitP.distanceTo(origin);
+        if (t <= maxDist && t < best) best = t;
+      }
+      _a.set(p.pos.x, p.pos.y + 0.25, p.pos.z);
+      _b.set(p.pos.x, p.pos.y + p.height - 0.1, p.pos.z);
+      const d2 = _ray.distanceSqToSegment(_a, _b, _ptRay, _ptSeg);
+      if (d2 < K.bodyRadius * K.bodyRadius) {
+        const t = _ptRay.distanceTo(origin);
+        if (t <= maxDist && t < best) best = t;
+      }
+    }
+    return best;
+  }
+
   /* one simulation step of one bullet: sweep prev->pos against everything */
   function sweep(b, segLen) {
     _ray.origin.copy(b.prev);
@@ -246,14 +280,18 @@ SKY.Weapons = (function () {
     for (const p of SKY.Game.pawns) {
       if (p === b.owner || !p.alive) continue;
       let pawnT = Infinity, pawnHead = false;
-      _sph.center.set(p.pos.x, p.pos.y + p.eyeHeight + 0.05, p.pos.z);
+      // head sphere rides the ACTUAL animated head (the toon heads are big
+      // and sway with the run cycle); capsule-top formula is the fallback
+      const hp = p.avatar && p.avatar.headHitPos ? p.avatar.headHitPos(_headC) : null;
+      if (hp) _sph.center.copy(hp);
+      else _sph.center.set(p.pos.x, p.pos.y + p.eyeHeight + 0.05, p.pos.z);
       _sph.radius = K.headRadius;
       if (_ray.intersectSphere(_sph, _hitP)) {
         const t = _hitP.distanceTo(b.prev);
         if (t <= segLen && t < pawnT) { pawnT = t; pawnHead = true; }
       }
       _a.set(p.pos.x, p.pos.y + 0.25, p.pos.z);
-      _b.set(p.pos.x, p.pos.y + p.height - 0.2, p.pos.z);
+      _b.set(p.pos.x, p.pos.y + p.height - 0.1, p.pos.z);
       const d2 = _ray.distanceSqToSegment(_a, _b, _ptRay, _ptSeg);
       if (d2 < K.bodyRadius * K.bodyRadius) {
         const t = _ptRay.distanceTo(b.prev);
@@ -272,6 +310,14 @@ SKY.Weapons = (function () {
   }
 
   function tick(dt, pawns) {
+    // air-cannon blasts land when the takeout anim reaches its kick
+    for (let i = pendingCannon.length - 1; i >= 0; i--) {
+      const q = pendingCannon[i];
+      q.t -= dt;
+      if (q.t > 0) continue;
+      fireCannonNow(q.pawn, pawns);
+      pendingCannon.splice(i, 1);
+    }
     // burst follow-up shots
     for (let i = bursts.length - 1; i >= 0; i--) {
       const q = bursts[i];
@@ -384,7 +430,10 @@ SKY.Weapons = (function () {
     }
   }
 
-  function clear() { for (let i = bullets.length - 1; i >= 0; i--) removeBullet(i); }
+  function clear() {
+    for (let i = bullets.length - 1; i >= 0; i--) removeBullet(i);
+    pendingCannon.length = 0;
+  }
 
   /* radial knock helper (launcher shells) */
   function blastAt(center, radius, force, up, owner) {
@@ -423,11 +472,24 @@ SKY.Weapons = (function () {
     }
   }
 
+  /* Q press: start the takeout anim now, land the blast when the raise
+     finishes (C.fireDelay) — the shot used to fire on the keypress while
+     the cannon was still coming up, which read as a huge visual gap */
+  const pendingCannon = [];
   function tryFireAirCannon(pawn, pawns) {
     const C = SKY.TUNING.cannon;
     if (pawn.acCd > 0 || !pawn.alive || pawn.tauntT > 0 || pawn.ragdoll) return false;
     if (SKY.Game.roundTime < 0.75) return false;
     pawn.acCd = C.cooldown * pawn.mods.cdMult;
+    pendingCannon.push({ pawn, t: C.fireDelay || 0 });
+    if (pawn.isLocal) SKY.Effects.cannonPop();   // left arm whips the cannon up
+    return true;
+  }
+
+  /* the actual blast — aim/velocity sampled NOW so it matches the visual */
+  function fireCannonNow(pawn, pawns) {
+    const C = SKY.TUNING.cannon;
+    if (!pawn.alive || pawn.ragdoll) return;
 
     SKY.U.dirFromYawPitch(pawn.yaw, pawn.pitch, _dir);
     pawn.eyePos(_eye);
@@ -463,11 +525,9 @@ SKY.Weapons = (function () {
     SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone());
     SKY.SFX.airCannon();
     if (pawn.isLocal) {
-      SKY.Effects.cannonPop();   // left arm whips the cannon up + fires
       SKY.Effects.shake(1.25);
       SKY.HUD.hitmark(1);
     }
-    return true;
   }
 
   /* visual-only bullets fired by a remote player (their sim owns the hits) */

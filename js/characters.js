@@ -27,6 +27,8 @@ SKY.Characters = (function () {
 
   function lam(c) { return new THREE.MeshLambertMaterial({ color: c }); }
 
+  const _hw = new THREE.Vector3(), _hr = new THREE.Vector3();  // headHitPos temps
+
   // particle indices
   const HEAD = 0, CHEST = 1, PELV = 2, ELBL = 3, HANDL = 4, ELBR = 5, HANDR = 6,
         KNEL = 7, FOOTL = 8, KNER = 9, FOOTR = 10;
@@ -63,6 +65,22 @@ SKY.Characters = (function () {
         this.nameSpr = SKY.U.makeTextSprite(pawn.name, { color: '#ffffff', px: 40, scale: 0.009 });
         scene.add(this.nameSpr);
       }
+    }
+
+    /* head-hitbox anchor for bullet sweeps: the head bone's offset from the
+       avatar root, re-applied to the pawn's CURRENT position (bone matrices
+       are one render frame stale — the pose offset is stable, the absolute
+       position is not). Returns null when there's nothing fresh to read
+       (local pawn: its third-person rig is never posed; ragdolls: the
+       capsule is authoritative). */
+    headHitPos(out) {
+      const b = this.bHead || this.head;
+      if (!b || this.ragActive || this.pawn.isLocal || !this.root.visible) return null;
+      b.getWorldPosition(_hw);
+      this.root.getWorldPosition(_hr);
+      out.copy(_hw).sub(_hr).add(this.pawn.pos);
+      out.y += SKY.TUNING.knock.headBoneLift;   // bone origin sits at the neck
+      return out;
     }
 
     /* ==================== FK puppet ==================== */

@@ -336,7 +336,7 @@ SKY.Effects = (function () {
   const wireCache = {};
   /* white-silhouette render of any mesh through the thumb rig — shared by
      the weapon and grenade outline icons */
-  function wireRender(mesh, rotY) {
+  function wireRender(mesh, rotY, zoom) {
     weaponThumb('pistol');                    // ensures thumbRig exists
     if (!thumbRig) return null;
     const solid = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -349,7 +349,9 @@ SKY.Effects = (function () {
     grp.add(mesh);
     grp.rotation.y = rotY;
     thumbRig.sc.add(grp);
-    thumbRig.cam.position.set(0, 0.02, size * 1.15);
+    // 1.15 frames long thin weapons; chunky shapes (grenade ball) need to
+    // sit further back or they overflow the 26° cone and render as slivers
+    thumbRig.cam.position.set(0, 0.02, size * (zoom || 1.15));
     thumbRig.cam.lookAt(0, 0, 0);
     thumbRig.r.render(thumbRig.sc, thumbRig.cam);
     const src = thumbRig.r.domElement;
@@ -419,7 +421,7 @@ SKY.Effects = (function () {
         lever.rotation.z = -0.5;
         g.add(body, neck, lever);
       }
-      const src = wireRender(g, -Math.PI / 2 + 0.35);   // slight 3/4 turn
+      const src = wireRender(g, -Math.PI / 2 + 0.35, 2.6);   // slight 3/4 turn, framed out
       if (!src) return null;
       const url = composeWire(src, colorHex);
       wireCache[key] = url;
