@@ -202,20 +202,28 @@ SKY.Characters = (function () {
       model.add(inst.root);
       // UACP characters face +Z natively; game forward is -Z
       model.rotation.y = Math.PI;
-      const k = 1.72 / inst.height;
+      // slightly larger than the capsule: chunky toon proportions read small
+      // otherwise, and this puts the visual head at the head-hitbox height
+      const k = 1.95 / inst.height;
       model.scale.setScalar(k);
       root.add(model);
       this.model = model;
 
-      // player-color identity: recolor the outfit's main material
+      // player-color identity: recolor the outfit's main material.
+      // skin tone varies per player (name hash) instead of the pack's
+      // uniform dark-gray mannequin skin.
       const col = new THREE.Color(this.pawn.color);
+      const skinCol = SKINS[h % SKINS.length];
       inst.root.traverse((o) => {
         if (!o.isMesh || !o.material) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         for (const m of mats) {
-          if ((m.name || '') === inst.tint) {
+          const n = m.name || '';
+          if (n === inst.tint) {
             m.color.copy(col).multiplyScalar(0.92);
             m.emissive = col.clone().multiplyScalar(0.1);
+          } else if (n === 'Skin') {
+            m.color.set(skinCol);
           }
         }
       });

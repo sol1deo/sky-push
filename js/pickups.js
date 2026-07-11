@@ -32,9 +32,9 @@ SKY.Pickups = (function () {
 
   function buildVisual(item) {
     const grp = new THREE.Group();
-    const color = item.kind === 'weapon'
-      ? SKY.TUNING.weapons[item.id].color
-      : SKY.Loot.RARITY[item.rarity].color;
+    // presentation is RARITY-driven: gray-blue common, cyan rare, pink epic
+    const rcolor = (SKY.Loot.RARITY[item.rarity] || {}).color || '#9fb2c8';
+    const strong = item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.3;
     if (item.kind === 'weapon') {
       const m = SKY.Effects.buildWeaponMesh(item.id);
       m.scale.setScalar(2.1);
@@ -44,18 +44,31 @@ SKY.Pickups = (function () {
       const crystal = new THREE.Mesh(
         new THREE.OctahedronGeometry(0.34),
         new THREE.MeshLambertMaterial({
-          color, emissive: new THREE.Color(color).multiplyScalar(0.55),
+          color: rcolor, emissive: new THREE.Color(rcolor).multiplyScalar(0.55),
         }));
       crystal.position.y = 1.05;
       grp.add(crystal);
     }
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: SKY.U.blobTexture(), color, transparent: true, opacity: 0.5,
+      map: SKY.U.blobTexture(), color: rcolor, transparent: true,
+      opacity: 0.35 + 0.3 * strong,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
-    glow.scale.set(2.4, 2.4, 1);
+    const gs = 2.2 + 1.4 * strong;
+    glow.scale.set(gs, gs, 1);
     glow.position.y = 1.0;
     grp.add(glow);
+    // rare/epic drops get a light pillar you can spot across the map
+    if (strong > 0.5) {
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.14, 0.2, 6, 8, 1, true),
+        new THREE.MeshBasicMaterial({
+          color: rcolor, transparent: true, opacity: 0.14 + 0.14 * strong,
+          blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        }));
+      beam.position.y = 3.4;
+      grp.add(beam);
+    }
     scene.add(grp);
     return grp;
   }
@@ -72,7 +85,7 @@ SKY.Pickups = (function () {
     });
     spawnedTotal++;
     SKY.Effects.respawnBeam(new THREE.Vector3(pos.x, pos.y, pos.z),
-      item.kind === 'weapon' ? '#ffd34d' : '#40c8ff');
+      (SKY.Loot.RARITY[item.rarity] || {}).color || '#ffd34d');
   }
 
   function hostSpawn() {

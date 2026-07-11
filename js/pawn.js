@@ -357,7 +357,10 @@ window.SKY = window.SKY || {};
       if (this.activeSlot === n && !force) return false;
       // force = weapon granted (loot picks happen while DEAD, waiting to respawn)
       if (!force && (!this.alive || this.ragdoll)) return false;
-      this.slotAmmo[this.activeSlot] = this.ammo;   // remember what's left
+      // remember what's left — but NOT on a same-slot force switch (that's a
+      // weapon grant: giveWeapon just loaded the fresh mag, don't clobber it
+      // with the OLD gun's ammo)
+      if (this.activeSlot !== n) this.slotAmmo[this.activeSlot] = this.ammo;
       this.activeSlot = n;
       this.weapon = this.slots[n];
       this.ammo = this.slotAmmo[n];

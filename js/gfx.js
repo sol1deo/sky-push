@@ -19,7 +19,9 @@ SKY.GFX = (function () {
      (measured per model — see the calibration grid workflow). */
   const WEAPON_FIT = {
     pistol:    { file: 'i', len: 0.30, flip: true },
-    blaster:   { file: 'n', len: 0.52, flip: true },
+    // 'd' = classic carbine silhouette — the old 'n' had stock struts that
+    // read as twin barrels pointing at the player
+    blaster:   { file: 'd', len: 0.52, flip: true },
     scatter:   { file: 'g', len: 0.50 },
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
