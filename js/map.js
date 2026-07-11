@@ -90,7 +90,7 @@ SKY.Map = (function () {
   function plat(x, y, z, sx, sy, sz, opts) {
     opts = opts || {};
     const m = new THREE.Mesh(
-      new THREE.BoxGeometry(sx, sy, sz),
+      SKY.U.blockGeometry(opts.shape || 'box', sx, sy, sz),
       opts.material || mat(opts.pal, Math.max(2, Math.round(Math.max(sx, sz) / 3)))
     );
     m.position.set(x, y, z);
@@ -1250,6 +1250,7 @@ SKY.Map = (function () {
     for (const b of def.blocks) {
       plat(b.p[0], b.p[1], b.p[2], b.s[0], b.s[1], b.s[2], {
         material: customBlockMaterial(b),
+        shape: b.shape || 'box',
         rotX: b.r[0], rotY: b.r[1], rotZ: b.r[2],
         crumble: !!b.crumble,
         path: moverPath(b),

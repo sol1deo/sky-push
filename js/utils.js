@@ -229,6 +229,97 @@ SKY.U = {
           g.beginPath(); g.moveTo(0, i * 32); g.lineTo(s, i * 32); g.stroke();
         }
       },
+      crane(g, s) {
+        g.fillStyle = '#e8b23a'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(90,60,10,0.5)'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(0, 0); g.lineTo(s, s); g.moveTo(s, 0); g.lineTo(0, s); g.stroke();
+        g.strokeStyle = 'rgba(90,60,10,0.35)'; g.lineWidth = 2;
+        g.strokeRect(2, 2, s - 4, s - 4);
+        for (let x = 12; x < s; x += 34) for (let y = 12; y < s; y += 34) {
+          g.fillStyle = '#a87c20';
+          g.beginPath(); g.arc(x, y, 2.5, 0, Math.PI * 2); g.fill();
+        }
+      },
+      plywood(g, s) {
+        g.fillStyle = '#d8b47c'; g.fillRect(0, 0, s, s);
+        for (let i = 0; i < 160; i++) {
+          g.fillStyle = `rgba(${150 + (Math.random() * 60 | 0)},${110 + (Math.random() * 50 | 0)},60,0.35)`;
+          g.save();
+          g.translate(Math.random() * s, Math.random() * s);
+          g.rotate(Math.random() * Math.PI);
+          g.fillRect(-6, -2, 12, 4);
+          g.restore();
+        }
+      },
+      leather(g, s) {
+        g.fillStyle = '#7a4b2a'; g.fillRect(0, 0, s, s);
+        speck(g, s, 200, ['rgba(0,0,0,0.08)', 'rgba(255,255,255,0.05)'], 0.5, 1.5);
+        g.strokeStyle = 'rgba(240,220,180,0.4)'; g.lineWidth = 1.5;
+        g.setLineDash([3, 3]);
+        for (let i = -s; i < s; i += 32) {
+          g.beginPath(); g.moveTo(i, 0); g.lineTo(i + s, s); g.stroke();
+          g.beginPath(); g.moveTo(i + s, 0); g.lineTo(i, s); g.stroke();
+        }
+        g.setLineDash([]);
+      },
+      balloon(g, s) {
+        g.fillStyle = '#e8483a'; g.fillRect(0, 0, s, s);
+        for (let x = 16; x < s; x += 42) for (let y = 16; y < s; y += 42) {
+          const grad = g.createRadialGradient(x - 4, y - 4, 2, x, y, 18);
+          grad.addColorStop(0, 'rgba(255,255,255,0.5)');
+          grad.addColorStop(1, 'rgba(255,255,255,0)');
+          g.fillStyle = grad;
+          g.beginPath(); g.arc(x, y, 18, 0, Math.PI * 2); g.fill();
+        }
+      },
+      marble(g, s) {
+        g.fillStyle = '#eceef0'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(140,148,160,0.35)';
+        for (let i = 0; i < 7; i++) {
+          g.lineWidth = 1 + Math.random() * 1.5;
+          let x = Math.random() * s, y = Math.random() * s;
+          g.beginPath(); g.moveTo(x, y);
+          for (let k = 0; k < 5; k++) {
+            x += Math.random() * 40 - 20; y += Math.random() * 40 - 20;
+            g.lineTo(x, y);
+          }
+          g.stroke();
+        }
+      },
+      carpet(g, s) {
+        g.fillStyle = '#2a6a68'; g.fillRect(0, 0, s, s);
+        speck(g, s, 500, ['rgba(255,255,255,0.06)', 'rgba(0,0,0,0.08)'], 0.5, 1);
+        g.fillStyle = 'rgba(220,200,140,0.25)';
+        for (let x = 16; x < s; x += 32) for (let y = 16; y < s; y += 32) {
+          g.fillRect(x - 2, y - 2, 4, 4);
+        }
+      },
+      circuit(g, s) {
+        g.fillStyle = '#12401f'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(220,180,60,0.55)'; g.lineWidth = 2;
+        for (let i = 0; i < 9; i++) {
+          let x = (Math.random() * 4 | 0) * 32 + 16, y = (Math.random() * 4 | 0) * 32 + 16;
+          g.beginPath(); g.moveTo(x, y);
+          const horiz = Math.random() < 0.5;
+          if (horiz) { g.lineTo(x + 64, y); g.lineTo(x + 64, y + 32); } else { g.lineTo(x, y + 64); g.lineTo(x + 32, y + 64); }
+          g.stroke();
+          g.fillStyle = '#d8bc50';
+          g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill();
+        }
+        g.fillStyle = '#0a2a12';
+        g.fillRect(70, 70, 26, 20);
+      },
+      camo(g, s) {
+        g.fillStyle = '#7a7c52'; g.fillRect(0, 0, s, s);
+        const cols = ['#4c503a', '#a89a6a', '#3a3c2c'];
+        for (let i = 0; i < 22; i++) {
+          g.fillStyle = cols[i % 3];
+          const x = Math.random() * s, y = Math.random() * s, r = 10 + Math.random() * 18;
+          g.beginPath();
+          g.ellipse(x, y, r, r * 0.65, Math.random() * Math.PI, 0, Math.PI * 2);
+          g.fill();
+        }
+      },
     };
   })(),
 
@@ -266,6 +357,20 @@ SKY.U = {
       SKY.U._procThumbs[id] = SKY.U._procCanvas[id].toDataURL();
     }
     return SKY.U._procThumbs[id];
+  },
+
+  /* --- block geometry factory (editor + custom maps share it) ---
+     Non-box shapes still collide as their bounding box — tops are what
+     matters for platforming. sx doubles as the diameter. */
+  blockGeometry(shape, sx, sy, sz) {
+    switch (shape) {
+      case 'cyl':    return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 24);
+      case 'hex':    return new THREE.CylinderGeometry(sx / 2, sx / 2, sy, 6);
+      case 'cone':   return new THREE.CylinderGeometry(sx * 0.08, sx / 2, sy, 20);
+      case 'sphere': return new THREE.SphereGeometry(sx / 2, 18, 14);
+      case 'pyramid': return new THREE.CylinderGeometry(0.01, sx / 2, sy, 4);
+      default:       return new THREE.BoxGeometry(sx, sy, sz);
+    }
   },
 
   /* --- soft radial blob texture, shared by all particles --- */

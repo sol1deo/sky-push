@@ -227,7 +227,8 @@ SKY.Net = (function () {
   /* equipped cosmetics, sent with hello / seeded into the host roster */
   function myCos() {
     if (!SKY.Profile) return null;
-    return { char: SKY.Profile.data.char, fin: SKY.Profile.data.finishes };
+    const d = SKY.Profile.data;
+    return { char: d.char, fin: d.finishes, skin: d.skin, outfit: d.outfit };
   }
 
   function nickname() {

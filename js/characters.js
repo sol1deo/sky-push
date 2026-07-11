@@ -212,11 +212,15 @@ SKY.Characters = (function () {
       root.add(model);
       this.model = model;
 
-      // player-color identity: recolor the outfit's main material.
-      // skin tone varies per player (name hash) instead of the pack's
-      // uniform dark-gray mannequin skin.
-      const col = new THREE.Color(this.pawn.color);
-      const skinCol = SKINS[h % SKINS.length];
+      // outfit color: LOCKER pick > player color. Skin tone: LOCKER pick >
+      // name hash (the pack's uniform dark-gray mannequin skin is replaced).
+      const cos = this.pawn.cos;
+      const localP = this.pawn.isLocal && SKY.Profile ? SKY.Profile.data : null;
+      const outfitPick = cos ? cos.outfit : (localP ? localP.outfit : null);
+      const skinPick = cos ? cos.skin : (localP ? localP.skin : null);
+      const col = new THREE.Color(outfitPick || this.pawn.color);
+      const skinCol = (skinPick !== null && skinPick !== undefined)
+        ? SKINS[skinPick % SKINS.length] : SKINS[h % SKINS.length];
       inst.root.traverse((o) => {
         if (!o.isMesh || !o.material) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -620,6 +624,7 @@ SKY.Characters = (function () {
   }
 
   return {
+    SKINS,
     init() { /* nothing to preload — characters are code-built */ },
     create(pawn, scene) { return new Avatar(pawn, scene); },
   };

@@ -69,7 +69,8 @@ SKY.Editor = (function () {
   }
 
   function buildBlockMesh(b) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.s[0], b.s[1], b.s[2]), blockMaterial(b));
+    const mesh = new THREE.Mesh(
+      SKY.U.blockGeometry(b.shape || 'box', b.s[0], b.s[1], b.s[2]), blockMaterial(b));
     mesh.position.set(b.p[0], b.p[1], b.p[2]);
     mesh.rotation.set(b.r[0], b.r[1], b.r[2]);
     mesh.castShadow = mesh.receiveShadow = true;
@@ -302,7 +303,7 @@ SKY.Editor = (function () {
     d.s = [Math.max(0.25, d.s[0] * m.scale.x), Math.max(0.25, d.s[1] * m.scale.y), Math.max(0.25, d.s[2] * m.scale.z)];
     m.scale.setScalar(1);
     m.geometry.dispose();
-    m.geometry = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
+    m.geometry = SKY.U.blockGeometry(d.shape || 'box', d.s[0], d.s[1], d.s[2]);
     if (!d.rep) m.material = blockMaterial(d);   // re-spread the checker evenly
     if (selBox) selBox.update();
   }
@@ -518,13 +519,10 @@ SKY.Editor = (function () {
     if (o.kind === 'block') {
       m.position.set(d.p[0], d.p[1], d.p[2]);
       m.rotation.set(d.r[0], d.r[1], d.r[2]);
-      const g = m.geometry.parameters;
-      if (g.width !== d.s[0] || g.height !== d.s[1] || g.depth !== d.s[2]) {
-        m.geometry.dispose();
-        m.geometry = new THREE.BoxGeometry(d.s[0], d.s[1], d.s[2]);
-        // keep the checker density even instead of stretching the texture
-        if (!d.rep) m.material = blockMaterial(d);
-      }
+      m.geometry.dispose();
+      m.geometry = SKY.U.blockGeometry(d.shape || 'box', d.s[0], d.s[1], d.s[2]);
+      // keep the checker density even instead of stretching the texture
+      if (!d.rep) m.material = blockMaterial(d);
     } else if (o.kind === 'pad') m.position.set(d.p[0], d.p[1] + 0.11, d.p[2]);
     else if (o.kind === 'item') m.position.set(d.p[0], d.p[1] + 1, d.p[2]);
     else if (o.kind === 'spawn') m.position.set(d.p[0], d.p[1], d.p[2]);
@@ -570,7 +568,15 @@ SKY.Editor = (function () {
     const d = o.data;
     let h = numRow('X', d.p[0], 'p0') + numRow('Y', d.p[1], 'p1') + numRow('Z', d.p[2], 'p2');
     if (o.kind === 'block') {
-      h += numRow('Width', d.s[0], 's0') + numRow('Height', d.s[1], 's1') + numRow('Length', d.s[2], 's2');
+      const shp = d.shape || 'box';
+      h += `<div class="ed-row"><span>Shape</span><select data-k="shape">
+        ${[['box', 'Box'], ['cyl', 'Cylinder'], ['hex', 'Hexagon'], ['sphere', 'Sphere'],
+           ['cone', 'Cone'], ['pyramid', 'Pyramid']].map(([v, l]) =>
+          `<option value="${v}"${shp === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select></div>`;
+      h += numRow(shp === 'box' ? 'Width' : 'Diameter', d.s[0], 's0')
+        + numRow('Height', d.s[1], 's1')
+        + numRow('Length', d.s[2], 's2');
       h += `<div class="ed-row"><span>Extend faces</span></div>
         <div class="ed-row ed-faces">
           <span class="ed-face" data-f="0,-1">−X</span><span class="ed-face" data-f="0,1">+X</span>
@@ -612,7 +618,15 @@ SKY.Editor = (function () {
         }
       }
     } else if (o.kind === 'pad') {
-      h += numRow('Launch X', d.launch[0], 'l0') + numRow('Launch Y', d.launch[1], 'l1') + numRow('Launch Z', d.launch[2], 'l2');
+      // intuitive controls: strength + direction (plus raw XYZ below)
+      const lv = new THREE.Vector3(d.launch[0], d.launch[1], d.launch[2]);
+      const str = lv.length();
+      const tilt = str > 0.01 ? Math.acos(SKY.U.clamp(lv.y / str, -1, 1)) * 180 / Math.PI : 0;
+      const pyaw = Math.atan2(lv.x, lv.z) * 180 / Math.PI;
+      h += numRow('Strength', +str.toFixed(1), 'pstr', 1)
+        + numRow('Tilt°', +tilt.toFixed(0), 'ptilt', 5)
+        + numRow('Yaw°', +pyaw.toFixed(0), 'pyaw', 15)
+        + numRow('Launch X', d.launch[0], 'l0') + numRow('Launch Y', d.launch[1], 'l1') + numRow('Launch Z', d.launch[2], 'l2');
     } else if (o.kind === 'spawn') {
       h += numRow('Yaw°', (d.yaw || 0) * 180 / Math.PI, 'yaw', 15);
     } else if (o.kind === 'prop') {
@@ -655,7 +669,23 @@ SKY.Editor = (function () {
     if (k[0] === 'p' && k.length === 2 && !isNaN(+k[1])) d.p[+k[1]] = num;
     else if (k[0] === 's' && k.length === 2) d.s[+k[1]] = Math.max(0.25, num);
     else if (k[0] === 'r' && k.length === 2) d.r[+k[1]] = num * Math.PI / 180;
-    else if (k[0] === 'l') d.launch[+k[1]] = num;
+    else if (k[0] === 'l' && k.length === 2) { d.launch[+k[1]] = num; rebuildMarker(o); }
+    else if (k === 'pstr' || k === 'ptilt' || k === 'pyaw') {
+      // recompose launch from strength / tilt-from-vertical / compass yaw
+      const lv = new THREE.Vector3(d.launch[0], d.launch[1], d.launch[2]);
+      let str = lv.length() || 16;
+      let tilt = str > 0.01 ? Math.acos(SKY.U.clamp(lv.y / str, -1, 1)) : 0;
+      let pyaw = Math.atan2(lv.x, lv.z);
+      if (k === 'pstr') str = Math.max(1, num);
+      if (k === 'ptilt') tilt = SKY.U.clamp(num, 0, 90) * Math.PI / 180;
+      if (k === 'pyaw') pyaw = num * Math.PI / 180;
+      d.launch = [
+        +(Math.sin(pyaw) * Math.sin(tilt) * str).toFixed(2),
+        +(Math.cos(tilt) * str).toFixed(2),
+        +(Math.cos(pyaw) * Math.sin(tilt) * str).toFixed(2),
+      ];
+      rebuildMarker(o);
+    }
     else if (k === 'yaw') { d.yaw = num * Math.PI / 180; rebuildMarker(o); }
     else if (k === 'pr1') { d.r = d.r || [0, 0, 0]; d.r[1] = num * Math.PI / 180; }
     else if (k === 'pscale') d.scale = Math.max(0.05, num);
@@ -664,6 +694,13 @@ SKY.Editor = (function () {
     else if (k === 'color') { d.color = e.target.value; if (!d.pal && !d.tex && !d.ptex) o.mesh.material = blockMaterial(d); }
     else if (k === 'rep') { d.rep = Math.max(0, Math.round(num)) || null; o.mesh.material = blockMaterial(d); }
     else if (k === 'crumble') d.crumble = e.target.checked;
+    else if (k === 'shape') {
+      d.shape = e.target.value === 'box' ? null : e.target.value;
+      // round shapes use Width as diameter — keep the collision box square
+      if (d.shape && d.shape !== 'box') d.s[2] = d.s[0];
+      if (d.shape === 'sphere') d.s[1] = d.s[0];
+      syncInspector();
+    }
     else if (k === 'movertype') {
       const t = e.target.value;
       d.mover = t ? (t === 'elevator' ? { type: t, amp: 4, period: 6 }

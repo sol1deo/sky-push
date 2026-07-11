@@ -26,9 +26,9 @@ SKY.GFX = (function () {
     scatter:   { file: 'g', len: 0.50 },
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
-    magnum:    { file: 'a', len: 0.42, flip: true },
+    magnum:    { file: 'a', len: 0.42 },
     mega:      { file: 'f', len: 0.60 },
-    lobber:    { file: 'm', len: 0.46, flip: true },
+    lobber:    { file: 'm', len: 0.46 },
     hookgun:   { file: 'n', len: 0.38 },   // pronged front = hook launcher, native -Z
     burst:     { file: 'p', len: 0.54 },
     boomstick: { file: 'q', len: 0.50 },
@@ -39,7 +39,8 @@ SKY.GFX = (function () {
     grenade2:  { file: 'grenade2', len: 0.16 },
   };
   const TEX_NAMES = ['concrete', 'metal', 'panel', 'hazard', 'grass', 'dirt', 'sand',
-    'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid'];
+    'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid',
+    'crane', 'plywood', 'leather', 'balloon', 'marble', 'carpet', 'circuit', 'camo'];
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];

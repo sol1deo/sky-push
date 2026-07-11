@@ -92,15 +92,25 @@ SKY.Locker = (function () {
     const inst = SKY.GFX.charInstance(0, key);
     if (!inst) return;
     pv.key = key;
-    // tint like in-game: the local player color is gold
-    const col = new THREE.Color('#ffd34d');
+    // mirror the in-game look: outfit pick (or gold player color) + skin pick
+    const P = SKY.Profile;
+    const col = new THREE.Color(P.data.outfit || '#ffd34d');
+    const name = (SKY.Settings.data.nickname || 'YOU');
+    let hh = 0;
+    for (let i = 0; i < name.length; i++) hh = (hh * 31 + name.charCodeAt(i)) | 0;
+    const SK = SKY.Characters.SKINS;
+    const skinCol = P.data.skin !== null && P.data.skin !== undefined
+      ? SK[P.data.skin % SK.length] : SK[Math.abs(hh) % SK.length];
     inst.root.traverse((o) => {
       if (!o.isMesh || !o.material) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
-        if ((m.name || '') === inst.tint) {
+        const n = m.name || '';
+        if (n === inst.tint) {
           m.color.copy(col).multiplyScalar(0.92);
           m.emissive = col.clone().multiplyScalar(0.1);
+        } else if (n === 'Skin') {
+          m.color.set(skinCol);
         }
       }
     });
@@ -188,6 +198,18 @@ SKY.Locker = (function () {
       ${ready ? '' : '<div class="lk-note">character previews load with the asset pack…</div>'}
       <h4 class="lk-h">CHARACTER</h4>
       <div class="lk-grid">${randomCard}${charCards}</div>
+      <h4 class="lk-h">SKIN TONE</h4>
+      <div class="lk-dots">
+        <span class="lk-dot lk-auto ${P.data.skin === null ? 'sel' : ''}" data-skin="auto">A</span>
+        ${SKY.Characters.SKINS.map((c, i) =>
+          `<span class="lk-dot ${P.data.skin === i ? 'sel' : ''}" data-skin="${i}" style="background:${c}"></span>`).join('')}
+      </div>
+      <h4 class="lk-h">OUTFIT COLOR <small>A = your player color</small></h4>
+      <div class="lk-dots">
+        <span class="lk-dot lk-auto ${P.data.outfit === null ? 'sel' : ''}" data-outfit="auto">A</span>
+        ${P.OUTFIT_COLORS.map((c) =>
+          `<span class="lk-dot ${P.data.outfit === c ? 'sel' : ''}" data-outfit="${c}" style="background:${c}"></span>`).join('')}
+      </div>
       <h4 class="lk-h">WEAPON PAINT JOBS</h4>
       <div class="lk-wrow">${wpnBtns}</div>
       <div class="lk-grid">${finCards}</div>
@@ -197,6 +219,20 @@ SKY.Locker = (function () {
       if (e.target.id === 'lk-dev') {
         SKY.Profile.addCoins(1000);
         SKY.SFX.init(); SKY.SFX.cash();
+        return;
+      }
+      const skinDot = e.target.closest('[data-skin]');
+      if (skinDot) {
+        const v = skinDot.dataset.skin;
+        SKY.Profile.setSkin(v === 'auto' ? null : parseInt(v, 10));
+        renderPanel(); rebuildPreview();
+        return;
+      }
+      const outfitDot = e.target.closest('[data-outfit]');
+      if (outfitDot) {
+        const v = outfitDot.dataset.outfit;
+        SKY.Profile.setOutfit(v === 'auto' ? null : v);
+        renderPanel(); rebuildPreview();
         return;
       }
       const cCard = e.target.closest('[data-char]');

@@ -31,12 +31,22 @@ SKY.Profile = (function () {
     { id: 'toxic',    name: 'TOXIC',    price: 300, tint: '#8dff70', mult: 1.15 },
     { id: 'gold',     name: 'GOLD',     price: 450, tint: '#ffd970', mult: 1.35 },
     { id: 'midnight', name: 'MIDNIGHT', price: 450, tint: '#5a6488', mult: 0.95, glow: 0.22 },
+    { id: 'pulse',    name: 'PULSE',    price: 550, fx: 'pulse' },      // breathing glow
     { id: 'neon',     name: 'NEON',     price: 650, tint: '#3a4266', mult: 0.85, glow: 0.55 },
+    { id: 'galaxy',   name: 'GALAXY',   price: 700, fx: 'galaxy' },     // starfield paint
+    { id: 'fade',     name: 'FADE',     price: 800, fx: 'fade' },       // cyan→pink→gold
+    { id: 'spectrum', name: 'SPECTRUM', price: 1000, fx: 'spectrum' },  // animated hue cycle
   ];
+
+  /* free cosmetic palettes (no purchase — just identity options) */
+  const OUTFIT_COLORS = ['#ffd34d', '#40c8ff', '#ff5db1', '#7dff9e', '#a48aff',
+    '#ffb85a', '#ff5a5a', '#2ee6c8', '#f2f4f6', '#2a2f3a'];
 
   const DEFAULTS = {
     coins: 300,
     char: null,             // null = surprise me (name-hash pick)
+    skin: null,             // index into Characters.SKINS | null = auto
+    outfit: null,           // outfit hex | null = your player color
     ownedChars: [],         // ids bought (price-0 chars are implicitly owned)
     ownedFinishes: [],      // finish ids bought ('stock' implicit)
     finishes: {},           // weapon kind -> finish id (missing = stock)
@@ -58,10 +68,58 @@ SKY.Profile = (function () {
   function charDef(id) { return CHARS.find(c => c.id === id) || null; }
   function finishDef(id) { return FINISHES.find(f => f.id === id) || FINISHES[0]; }
 
+  /* per-vertex paint along the gun: FADE = smooth tri-color gradient,
+     GALAXY = deep-space wash with star sparkles. Geometry is cloned so the
+     shared template stays untouched. */
+  function paintVertexFx(group, fx) {
+    group.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(group);
+    const span = Math.max(0.001, box.max.z - box.min.z);
+    const v = new THREE.Vector3();
+    const c = new THREE.Color();
+    const A = new THREE.Color('#40c8ff'), B = new THREE.Color('#ff5db1'), C = new THREE.Color('#ffd34d');
+    const G0 = new THREE.Color('#241a4a'), G1 = new THREE.Color('#5a2a8a');
+    group.traverse((o) => {
+      if (!o.isMesh || o.name === 'tierglow') return;
+      const g = o.geometry = o.geometry.clone();
+      const pos = g.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        const t = Math.min(1, Math.max(0, (v.z - box.min.z) / span));
+        if (fx === 'fade') {
+          if (t < 0.5) c.copy(C).lerp(B, t * 2);       // gold at the muzzle...
+          else c.copy(B).lerp(A, (t - 0.5) * 2);       // ...cyan at the stock
+        } else {
+          c.copy(G0).lerp(G1, t * 0.6 + Math.random() * 0.35);
+          if (Math.random() < 0.05) c.set(Math.random() < 0.5 ? '#ffffff' : '#7dd8ff');
+        }
+        colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      o.material = o.material.clone();
+      o.material.vertexColors = true;
+      o.material.map = null;
+      o.material.color.set('#ffffff');
+      if (fx === 'galaxy') o.material.emissive = new THREE.Color('#2a1a55').multiplyScalar(0.5);
+    });
+  }
+
   const api = {
-    CHARS, FINISHES,
+    CHARS, FINISHES, OUTFIT_COLORS,
     get data() { return data; },
     coins() { return data.coins; },
+
+    setSkin(i) {            // index | null = auto
+      data.skin = i;
+      save();
+      if (api.onChange) api.onChange();
+    },
+    setOutfit(hex) {        // hex | null = player color
+      data.outfit = hex;
+      save();
+      if (api.onChange) api.onChange();
+    },
 
     addCoins(n) {
       data.coins = Math.max(0, Math.round(data.coins + n));
@@ -131,7 +189,20 @@ SKY.Profile = (function () {
     /* paint a weapon mesh group in a finish (viewmodel/avatar/thumbs) */
     applyFinish(group, finishId, accentHex) {
       const f = finishDef(finishId);
-      if (!f || !f.tint) return;
+      if (!f) return;
+      if (f.fx === 'fade' || f.fx === 'galaxy') { paintVertexFx(group, f.fx); return; }
+      if (f.fx === 'pulse' || f.fx === 'spectrum') {
+        group.traverse((o) => {
+          if (!o.isMesh || !o.material || o.name === 'tierglow') return;
+          o.material = o.material.clone();
+          o.material.color.multiplyScalar(f.fx === 'spectrum' ? 0.55 : 0.85);
+          o.material.userData.animFx = f.fx;
+          o.material.userData.accent = accentHex || '#7dd8ff';
+          if (SKY.Effects && SKY.Effects.registerAnimMat) SKY.Effects.registerAnimMat(o.material);
+        });
+        return;
+      }
+      if (!f.tint) return;
       const tint = new THREE.Color(f.tint).multiplyScalar(f.mult || 1);
       const glow = f.glow ? new THREE.Color(accentHex || '#7dd8ff').multiplyScalar(f.glow) : null;
       group.traverse((o) => {

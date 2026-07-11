@@ -110,6 +110,14 @@
   .lk-wbtn.sel { border-color:var(--wc, #fff); color:var(--txt);
     box-shadow:inset 0 0 0 1px var(--wc, #fff); }
   .lk-note { font-size:10px; color:var(--faint); letter-spacing:.06em; margin-top:14px; }
+  .lk-dots { display:flex; flex-wrap:wrap; gap:8px; }
+  .lk-dot { width:26px; height:26px; border-radius:50%; border:1px solid var(--line);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:800; color:var(--dim); transition:transform .1s; }
+  .lk-dot:hover { transform:scale(1.15); }
+  .lk-dot.sel { border-color:#fff; box-shadow:0 0 0 2px #fff; }
+  .lk-auto { background:var(--bg2); }
+  .lk-h small { font-weight:500; letter-spacing:.08em; text-transform:none; opacity:.6; }
 
   /* live character preview to the right of the menu card */
   #menu-char-wrap { position:absolute; right:5vw; top:50%; transform:translateY(-50%);
@@ -581,10 +589,19 @@
     border-radius:5px; font-size:10px; font-weight:700; color:var(--dim);
     cursor:ew-resize; user-select:none; background:rgba(255,255,255,.03); }
   .ed-face:hover { color:var(--txt); border-color:rgba(255,255,255,.35); }
-  .ed-swatches { flex-wrap:wrap; gap:4px !important; }
-  .ed-swatch { width:26px; height:26px; border-radius:5px; border:1px solid var(--line2);
-    background-size:cover; cursor:pointer; display:flex; align-items:center;
-    justify-content:center; font-size:10px; color:var(--faint); }
+  .ed-swatches { display:grid !important; grid-template-columns:repeat(4, 1fr);
+    gap:6px !important; max-height:210px; overflow-y:auto; padding-right:4px; }
+  .ed-swatches::-webkit-scrollbar { width:5px; }
+  .ed-swatches::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:3px; }
+  .ed-swatch { width:100%; aspect-ratio:1; min-height:44px; border-radius:7px;
+    border:1px solid var(--line2); background-size:cover; cursor:pointer;
+    display:flex; align-items:flex-end; justify-content:center;
+    font-size:10px; color:var(--faint); position:relative; }
+  .ed-swatch::after { content:attr(title); position:absolute; left:0; right:0; bottom:0;
+    font-size:8px; letter-spacing:.04em; text-align:center; color:#fff;
+    background:rgba(10,12,16,.55); border-radius:0 0 6px 6px; padding:1px 0;
+    opacity:0; transition:opacity .1s; pointer-events:none; }
+  .ed-swatch:hover::after { opacity:1; }
   .ed-swatch:hover { border-color:rgba(255,255,255,.5); }
   .ed-swatch.sel { border-color:#ffd34d; box-shadow:0 0 0 1px #ffd34d; }
   .map-edit { margin-left:8px; opacity:.45; font-weight:400; }
@@ -760,7 +777,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 30</div>
+    <div class="rail-foot">prototype · build 31</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -993,36 +1010,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=30"></script>
-<script src="js/profile.js?v=30"></script>
-<script src="js/utils.js?v=30"></script>
-<script src="js/gfx.js?v=30"></script>
-<script src="js/mapdata.js?v=30"></script>
-<script src="js/audio.js?v=30"></script>
-<script src="js/settings.js?v=30"></script>
-<script src="js/input.js?v=30"></script>
-<script src="js/world.js?v=30"></script>
-<script src="js/effects.js?v=30"></script>
-<script src="js/map.js?v=30"></script>
-<script src="js/characters.js?v=30"></script>
-<script src="js/pawn.js?v=30"></script>
-<script src="js/weapons.js?v=30"></script>
-<script src="js/loot.js?v=30"></script>
-<script src="js/pickups.js?v=30"></script>
-<script src="js/sparks.js?v=30"></script>
-<script src="js/grenades.js?v=30"></script>
-<script src="js/grapple.js?v=30"></script>
-<script src="js/bots.js?v=30"></script>
-<script src="js/hud.js?v=30"></script>
-<script src="js/game.js?v=30"></script>
-<script src="js/attract.js?v=30"></script>
-<script src="js/net.js?v=30"></script>
-<script src="js/dof.js?v=30"></script>
-<script src="js/replay.js?v=30"></script>
-<script src="js/demos.js?v=30"></script>
-<script src="js/locker.js?v=30"></script>
-<script src="js/assets.js?v=30"></script>
-<script src="js/editor.js?v=30"></script>
-<script src="js/main.js?v=30"></script>
+<script src="js/config.js?v=31"></script>
+<script src="js/profile.js?v=31"></script>
+<script src="js/utils.js?v=31"></script>
+<script src="js/gfx.js?v=31"></script>
+<script src="js/mapdata.js?v=31"></script>
+<script src="js/audio.js?v=31"></script>
+<script src="js/settings.js?v=31"></script>
+<script src="js/input.js?v=31"></script>
+<script src="js/world.js?v=31"></script>
+<script src="js/effects.js?v=31"></script>
+<script src="js/map.js?v=31"></script>
+<script src="js/characters.js?v=31"></script>
+<script src="js/pawn.js?v=31"></script>
+<script src="js/weapons.js?v=31"></script>
+<script src="js/loot.js?v=31"></script>
+<script src="js/pickups.js?v=31"></script>
+<script src="js/sparks.js?v=31"></script>
+<script src="js/grenades.js?v=31"></script>
+<script src="js/grapple.js?v=31"></script>
+<script src="js/bots.js?v=31"></script>
+<script src="js/hud.js?v=31"></script>
+<script src="js/game.js?v=31"></script>
+<script src="js/attract.js?v=31"></script>
+<script src="js/net.js?v=31"></script>
+<script src="js/dof.js?v=31"></script>
+<script src="js/replay.js?v=31"></script>
+<script src="js/demos.js?v=31"></script>
+<script src="js/locker.js?v=31"></script>
+<script src="js/assets.js?v=31"></script>
+<script src="js/editor.js?v=31"></script>
+<script src="js/main.js?v=31"></script>
 </body>
 </html>

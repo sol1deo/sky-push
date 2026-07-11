@@ -267,6 +267,27 @@ SKY.Effects = (function () {
   /* --------------------- weapon thumbnails (UI) ---------------------
    * Renders the actual 3D weapon model to a small transparent canvas —
    * used by the death-reward cards so a weapon reads at a glance. */
+  /* animated weapon-finish materials (PULSE / SPECTRUM) — updated per frame,
+     ring-buffered so discarded weapons age out naturally */
+  const animMats = [];
+  function registerAnimMat(mat) {
+    animMats.push(mat);
+    if (animMats.length > 60) animMats.shift();
+  }
+  function tickAnimMats() {
+    if (!animMats.length) return;
+    const t = performance.now() * 0.001;
+    for (const m of animMats) {
+      if (!m.emissive) continue;
+      if (m.userData.animFx === 'pulse') {
+        const k = 0.5 + 0.5 * Math.sin(t * 3.2);
+        m.emissive.set(m.userData.accent).multiplyScalar(0.12 + 0.5 * k);
+      } else if (m.userData.animFx === 'spectrum') {
+        m.emissive.setHSL((t * 0.13) % 1, 0.85, 0.3);
+      }
+    }
+  }
+
   const thumbCache = {};
   let thumbRig = null;
   function thumbKey(kind, finish) {
@@ -600,6 +621,7 @@ SKY.Effects = (function () {
     },
 
     tick(dt) {
+      tickAnimMats();   // PULSE / SPECTRUM weapon finishes
       // particles
       for (const p of parts) {
         if (p.life <= 0) continue;
@@ -739,7 +761,7 @@ SKY.Effects = (function () {
     shake(amp) { shakeAmp = Math.min(shakeAmp + amp, 3); },
     getFovKick() { return fovKick; },
     ring(pos, color, size, life) { ring(pos, color, size, life); },
-    burst, blastBoom,
+    burst, blastBoom, registerAnimMat,
 
     /* ---------------- gameplay-facing effect recipes ---------------- */
     muzzle(pos, tierColor, isLocal, kick) {
