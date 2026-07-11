@@ -13,6 +13,12 @@ because these creators are great:
   baked animation set; repacked from glTF-embedded to binary GLB.
 - **Environment props** (`models/props/`) — "Sci-Fi Essentials Kit" (free/Standard tier)
   by **Quaternius** (https://quaternius.com), CC0.
+- **Editor extras** (`models/kit/`) — crates/targets from Kenney's "Blaster Kit" and cars
+  from **Quaternius**' "Realistic Car Pack" (OBJ converted to GLB), both CC0.
+- **Building pieces** (`models/build/`) — "Building Kit" by **Kenney**
+  (https://kenney.nl/assets/building-kit), CC0.
+- **City buildings** (`models/city/`) — "City Kit (Commercial)" by **Kenney**
+  (https://kenney.nl/assets/city-kit-commercial), CC0.
 
 ## Audio
 

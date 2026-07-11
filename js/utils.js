@@ -373,6 +373,30 @@ SKY.U = {
     }
   },
 
+  /* --- soft wide light-shaft band (dreamy godrays, not thin lines) --- */
+  softShaftTexture() {
+    if (SKY.U._softShaft) return SKY.U._softShaft;
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 256;
+    const g = c.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 128, 0);
+    gr.addColorStop(0, 'rgba(255,255,255,0)');
+    gr.addColorStop(0.5, 'rgba(255,255,255,0.85)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 256);
+    // vertical fade: bright at the top, dissolves toward the ground
+    const gv = g.createLinearGradient(0, 0, 0, 256);
+    gv.addColorStop(0, 'rgba(0,0,0,0)');
+    gv.addColorStop(0.75, 'rgba(0,0,0,0.35)');
+    gv.addColorStop(1, 'rgba(0,0,0,1)');
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = gv; g.fillRect(0, 0, 128, 256);
+    g.globalCompositeOperation = 'source-over';
+    const tex = new THREE.CanvasTexture(c);
+    SKY.U._softShaft = tex;
+    return tex;
+  },
+
   /* --- soft radial blob texture, shared by all particles --- */
   blobTexture() {
     if (SKY.U._blob) return SKY.U._blob;

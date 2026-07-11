@@ -1254,7 +1254,14 @@ SKY.Map = (function () {
       skyDome(S[0], S[1], S[2], S[3]);
       if (M.clouds) cloudField(-10, 18, new THREE.Color(M.clouds).getHex(), 0.45);
     }
-    scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+    if (def.fog) {
+      // creator's global fog override (color + density dial)
+      const fd = def.fog.density || 0.3;
+      scene.fog = new THREE.Fog(new THREE.Color(def.fog.color).getHex(),
+        SKY.U.lerp(100, 8, fd), SKY.U.lerp(340, 55, fd));
+    } else {
+      scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+    }
 
     for (const b of def.blocks) {
       plat(b.p[0], b.p[1], b.p[2], b.s[0], b.s[1], b.s[2], {
@@ -1286,6 +1293,8 @@ SKY.Map = (function () {
       const g = group;
       SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
         if (!obj || group !== g) return;   // map changed while parsing
+        // light-entity gizmo markers are editor-only
+        obj.traverse((c) => { if (c.name === 'edmarker') c.visible = false; });
         obj.position.set(pr.p[0], pr.p[1], pr.p[2]);
         const rot = pr.r || [0, 0, 0];
         obj.rotation.set(rot[0], rot[1], rot[2]);
@@ -1300,7 +1309,7 @@ SKY.Map = (function () {
             SKY.World.addSolid({ x: c.x, y: c.y, z: c.z, sx: s.x, sy: s.y, sz: s.z });
           }
         }
-      });
+      }, pr.fx);
     }
     // bots: auto roam/anchor points — big static block tops + spawns
     for (const b of def.blocks) {

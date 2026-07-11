@@ -104,74 +104,134 @@ SKY.Assets = (function () {
   }
 
   /* built-in LIGHT / ATMOSPHERE decor — code-built groups referenced as
-     'fx:<name>'. Real lights included, so maps can be moody. */
+     'fx:<name>'. Real lights (Unity/UE-style entities), dreamy godrays and
+     animated fog. Each instance is configurable via the prop's `fx` object
+     (color / intensity / size…), edited in the prop inspector. */
   const FX_DEFS = [
-    { id: 'fx:lamp',      name: 'street lamp' },
-    { id: 'fx:spotlight', name: 'spotlight' },
-    { id: 'fx:neonbar',   name: 'neon bar' },
-    { id: 'fx:godray',    name: 'godray' },
-    { id: 'fx:haze',      name: 'haze' },
+    { id: 'fx:pointlight', name: 'point light' },
+    { id: 'fx:spot',       name: 'spot light' },
+    { id: 'fx:lamp',       name: 'street lamp' },
+    { id: 'fx:neonbar',    name: 'neon bar' },
+    { id: 'fx:godray',     name: 'godray' },
+    { id: 'fx:groundfog',  name: 'ground fog' },
+    { id: 'fx:haze',       name: 'haze' },
   ];
-  function buildFx(name) {
+  /* per-type option defaults (merged with the prop's fx settings) */
+  const FX_OPTS = {
+    pointlight: { color: '#ffd9a0', power: 1.3, range: 15 },
+    spot:       { color: '#fff2cc', power: 1.8, range: 20 },
+    lamp:       { color: '#ffe0b0', power: 1.15, range: 13 },
+    neonbar:    { color: '#40c8ff', power: 0.9, range: 10 },
+    godray:     { color: '#fff2cc', alpha: 0.16, width: 3.5, height: 12 },
+    groundfog:  { color: '#cfd8e6', alpha: 0.16, size: 10 },
+    haze:       { color: '#dde6f2', alpha: 0.1, size: 9 },
+  };
+
+  function buildFx(name, fx) {
+    const o = { ...(FX_OPTS[name] || {}), ...(fx || {}) };
+    const col = new THREE.Color(o.color || '#ffffff');
     const g = new THREE.Group();
-    const lam = (c, e) => new THREE.MeshLambertMaterial({
-      color: c, emissive: e || 0x000000,
-    });
-    if (name === 'lamp') {
+    const lam = (c, e) => new THREE.MeshLambertMaterial({ color: c, emissive: e || 0x000000 });
+    /* editor-only gizmo marker — hidden when the map is played */
+    const marker = (geom, c) => {
+      const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({
+        color: c, wireframe: true, transparent: true, opacity: 0.7,
+      }));
+      m.name = 'edmarker';
+      return m;
+    };
+
+    if (name === 'pointlight') {
+      const light = new THREE.PointLight(col, o.power, o.range);
+      light.position.y = 0.5;
+      const mk = marker(new THREE.SphereGeometry(0.3, 8, 6), col);
+      mk.position.y = 0.5;
+      g.add(light, mk);
+    } else if (name === 'spot') {
+      // aims down its local -Y: rotate the prop to steer the beam
+      const light = new THREE.SpotLight(col, o.power, o.range, 0.55, 0.6);
+      light.position.y = 0.4;
+      const tgt = new THREE.Object3D();
+      tgt.position.set(0, -4, 0);
+      light.target = tgt;
+      const mk = marker(new THREE.ConeGeometry(0.35, 0.7, 8), col);
+      mk.position.y = 0.4;
+      g.add(light, tgt, mk);
+    } else if (name === 'lamp') {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 3.2, 8), lam(0x2c3140));
       pole.position.y = 1.6;
       const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.12), lam(0x2c3140));
       arm.position.set(0.38, 3.2, 0);
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8),
-        lam(0xfff2cc, 0xffdf9e));
+        lam(col, col.clone().multiplyScalar(0.85)));
       bulb.position.set(0.75, 3.1, 0);
-      const light = new THREE.PointLight(0xffe0b0, 1.15, 13);
+      const light = new THREE.PointLight(col, o.power, o.range);
       light.position.copy(bulb.position);
       g.add(pole, arm, bulb, light);
-    } else if (name === 'spotlight') {
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.18, 10), lam(0x2c3140));
-      base.position.y = 0.09;
-      const head = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 0.45, 10),
-        lam(0x3b486b, 0x201808));
-      head.rotation.x = -Math.PI / 4;
-      head.position.y = 0.42;
-      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.15, 10), lam(0xffffff, 0xfff2cc));
-      lens.position.set(0, 0.58, 0.16);
-      lens.rotation.x = -Math.PI / 4;
-      const light = new THREE.PointLight(0xfff2cc, 1.5, 17);
-      light.position.set(0, 1.4, 1.2);
-      g.add(base, head, lens, light);
     } else if (name === 'neonbar') {
       const bar = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.09, 0.09),
-        lam(0x40c8ff, 0x2f9ecf));
+        lam(col, col.clone().multiplyScalar(0.75)));
       bar.position.y = 0.05;
-      const light = new THREE.PointLight(0x40c8ff, 0.9, 10);
+      const light = new THREE.PointLight(col, o.power, o.range);
       light.position.y = 0.4;
       g.add(bar, light);
     } else if (name === 'godray') {
-      for (let i = 0; i < 2; i++) {
-        const plane = new THREE.Mesh(
-          new THREE.PlaneGeometry(3.2, 11),
-          new THREE.MeshBasicMaterial({
-            map: SKY.U.shaftTexture(), color: 0xfff2cc, transparent: true,
-            opacity: 0.08, blending: THREE.AdditiveBlending,
-            depthWrite: false, side: THREE.DoubleSide, fog: false,
-          }));
-        plane.position.y = 5;
-        plane.rotation.z = 0.28;
-        plane.rotation.y = i * Math.PI / 2;
+      // dreamy volumetric fake: soft cone + crossed WIDE soft planes + pool
+      const w = o.width, h = o.height;
+      const coneMat = new THREE.MeshBasicMaterial({
+        map: SKY.U.softShaftTexture(), color: col, transparent: true,
+        opacity: o.alpha, blending: THREE.AdditiveBlending,
+        depthWrite: false, side: THREE.DoubleSide, fog: false,
+      });
+      const cone = new THREE.Mesh(
+        new THREE.CylinderGeometry(w * 0.22, w * 0.75, h, 14, 1, true), coneMat);
+      cone.position.y = h / 2;
+      g.add(cone);
+      for (let i = 0; i < 3; i++) {
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(w * 1.5, h), coneMat.clone());
+        plane.material.opacity = o.alpha * 0.7;
+        plane.position.y = h / 2;
+        plane.rotation.y = i * Math.PI / 3;
         g.add(plane);
       }
-    } else if (name === 'haze') {
-      for (let i = 0; i < 3; i++) {
-        const s = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: SKY.U.blobTexture(), color: 0xdde6f2, transparent: true,
-          opacity: 0.09, depthWrite: false,
+      const pool = new THREE.Mesh(new THREE.CircleGeometry(w * 0.9, 18),
+        new THREE.MeshBasicMaterial({
+          map: SKY.U.blobTexture(), color: col, transparent: true,
+          opacity: o.alpha * 1.2, blending: THREE.AdditiveBlending,
+          depthWrite: false, fog: false,
         }));
-        s.position.set(SKY.U.rand(-2, 2), SKY.U.rand(0.5, 2.2), SKY.U.rand(-2, 2));
-        const sc = SKY.U.rand(7, 11);
-        s.scale.set(sc, sc * 0.55, 1);
-        g.add(s);
+      pool.rotation.x = -Math.PI / 2;
+      pool.position.y = 0.06;
+      g.add(pool);
+    } else if (name === 'groundfog' || name === 'haze') {
+      // HORIZONTAL soft planes (billboards clipped through floors = ugly
+      // hard lines); ground fog drifts on its own via onBeforeRender
+      const size = o.size;
+      const animated = name === 'groundfog';
+      const n = animated ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(size, size),
+          new THREE.MeshBasicMaterial({
+            map: SKY.U.blobTexture(), color: col, transparent: true,
+            opacity: o.alpha * (1 - i / (n + 2)), depthWrite: false,
+          }));
+        plane.rotation.x = -Math.PI / 2;
+        plane.rotation.z = Math.random() * Math.PI;
+        const y0 = animated ? 0.25 + i * 0.28 : 0.6 + i * 0.7;
+        plane.position.set(SKY.U.rand(-1.5, 1.5), y0, SKY.U.rand(-1.5, 1.5));
+        if (animated) {
+          const phase = Math.random() * Math.PI * 2;
+          const rad = SKY.U.rand(0.8, 2);
+          const bx = plane.position.x, bz = plane.position.z;
+          plane.onBeforeRender = () => {
+            const t = performance.now() * 0.00012 + phase;
+            plane.position.x = bx + Math.cos(t) * rad;
+            plane.position.z = bz + Math.sin(t * 0.8) * rad;
+            plane.rotation.z += 0.00012;
+          };
+        }
+        g.add(plane);
       }
     }
     return g;
@@ -273,7 +333,7 @@ SKY.Assets = (function () {
     },
 
     /* instantiate a model asset (from the library OR a map def's embedded copy) */
-    instantiate(idOrEmbed, cb) {
+    instantiate(idOrEmbed, cb, fx) {
       if (typeof idOrEmbed === 'string') {
         // built-ins are deferred: callers add their placeholder to the scene
         // right after this call and their callbacks guard on holder.parent
@@ -282,7 +342,7 @@ SKY.Assets = (function () {
           return;
         }
         if (idOrEmbed.startsWith('fx:')) {
-          setTimeout(() => cb(buildFx(idOrEmbed.slice(3))), 0);
+          setTimeout(() => cb(buildFx(idOrEmbed.slice(3), fx)), 0);
           return;
         }
         const a = api.get(idOrEmbed);
@@ -302,6 +362,9 @@ SKY.Assets = (function () {
         def.assets[id] = { id, name: a.name, type: a.type, data: a.data };
       }
     },
+
+    /* default fx settings for the editor's inspector */
+    fxDefaults(id) { return { ...(FX_OPTS[(id || '').slice(3)] || {}) }; },
 
     init() { openDb(() => loadAll(() => { if (api.onChange) api.onChange(); })); },
   };

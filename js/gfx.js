@@ -48,6 +48,16 @@ SKY.GFX = (function () {
   const KIT_NAMES = ['crate-small', 'crate-medium', 'crate-wide',
     'target-small', 'target-large', 'target-detail', 'smoke',
     'car-taxi', 'car-sports', 'car-suv', 'car-police'];
+  // Kenney Building Kit — walls / windows / doors / stairs (folder: build/)
+  const BUILD_NAMES = ['wall', 'wall-window-square-detailed', 'wall-window-round-detailed',
+    'wall-window-wide-square-detailed', 'wall-doorway-square', 'wall-doorway-wide-round',
+    'door-rotate-square-a', 'door-rotate-round-a', 'barricade-window-a', 'barricade-doorway-a',
+    'stairs-open', 'stairs-closed', 'column', 'column-wide', 'floor', 'roof-flat-square',
+    'detail-pipe'];
+  // Kenney City Kit Commercial — whole buildings + street details (folder: city/)
+  const CITY_NAMES = ['building-a', 'building-c', 'building-e', 'building-g',
+    'building-skyscraper-a', 'building-skyscraper-c', 'detail-awning-wide',
+    'detail-parasol-a', 'detail-overhang'];
 
   /* toy-style character cast (Quaternius UACP) — each GLB carries its own
      17 animation clips. tint = the "main outfit" material recolored to the
@@ -163,11 +173,21 @@ SKY.GFX = (function () {
   }
 
   function loadProps() {
-    let pending = PROP_NAMES.length + KIT_NAMES.length;
+    let pending = PROP_NAMES.length + KIT_NAMES.length + BUILD_NAMES.length + CITY_NAMES.length;
     const settle = () => { if (--pending === 0) groupDone(); };
     const store = (name) => (g) => {
       const root = g.scene || g.scenes[0];
-      root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true;
+        // guard against metallic-black imports (no env map in this renderer)
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (m && m.metalness !== undefined && m.metalness > 0.3) {
+            m.metalness = 0.1; m.roughness = Math.max(m.roughness || 0, 0.7);
+          }
+        }
+      });
       props[name] = root;
       settle();
     };
@@ -176,6 +196,12 @@ SKY.GFX = (function () {
     }
     for (const name of KIT_NAMES) {
       gl().load('assets/models/kit/' + name + '.glb', store(name), undefined, settle);
+    }
+    for (const name of BUILD_NAMES) {
+      gl().load('assets/models/build/' + name + '.glb', store(name), undefined, settle);
+    }
+    for (const name of CITY_NAMES) {
+      gl().load('assets/models/city/' + name + '.glb', store(name), undefined, settle);
     }
   }
 
@@ -271,7 +297,7 @@ SKY.GFX = (function () {
       const t = props[name];
       return t ? t.clone(true) : null;
     },
-    propNames() { return PROP_NAMES.concat(KIT_NAMES); },
+    propNames() { return PROP_NAMES.concat(KIT_NAMES, BUILD_NAMES, CITY_NAMES); },
   };
   return api;
 })();

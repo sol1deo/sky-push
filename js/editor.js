@@ -123,7 +123,7 @@ SKY.Editor = (function () {
         holder.add(obj);
         if (entry && objects[sel] === entry && selBox) selBox.update();
         refreshOutliner();
-      });
+      }, pr.fx);
     }
     return holder;
   }
@@ -170,7 +170,13 @@ SKY.Editor = (function () {
     }
     lights.push(hemi, sun);
     scene.add(hemi, sun);
-    scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+    if (def.fog) {
+      const d = def.fog.density || 0.3;
+      scene.fog = new THREE.Fog(new THREE.Color(def.fog.color).getHex(),
+        SKY.U.lerp(100, 8, d), SKY.U.lerp(340, 55, d));
+    } else {
+      scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+    }
     // FULL environment preview — same dome / sun / moon / shafts as in-game
     env = new THREE.Group();
     scene.add(env);
@@ -559,6 +565,11 @@ SKY.Editor = (function () {
           `<option value="${s}"${s === def.sky ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
         ${numRow('Kill height', def.killY, 'killY', 1)}
         ${numRow('Light %', Math.round((def.light !== undefined ? def.light : 1) * 100), 'light', 10)}
+        <div class="ed-row"><span>Fog override</span>
+          <input type="checkbox" data-k="fogOn" ${def.fog ? 'checked' : ''}></div>` +
+        (def.fog ? `
+        <div class="ed-row"><span>Fog color</span><input type="color" data-k="fogCol" value="${def.fog.color}"></div>
+        ${numRow('Fog density %', Math.round((def.fog.density || 0.3) * 100), 'fogDen', 5)}` : '') + `
         <div class="ed-row"><span>Custom sky</span>
           <input type="checkbox" data-k="skycOn" ${def.skyc ? 'checked' : ''}></div>` +
         (def.skyc ? `
@@ -646,6 +657,25 @@ SKY.Editor = (function () {
       h += numRow('Rot Y°', (d.r ? d.r[1] : 0) * 180 / Math.PI, 'pr1', 5);
       h += numRow('Scale', d.scale || 1, 'pscale', 0.1);
       h += `<div class="ed-row"><span>Solid</span><input type="checkbox" data-k="psolid"${d.solid !== false ? ' checked' : ''}></div>`;
+      // light / atmosphere entities expose their look settings
+      if ((d.asset || '').startsWith('fx:')) {
+        const fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
+        h += `<div class="ed-row"><span>Color</span><input type="color" data-k="fxcolor" value="${fx.color}"></div>`;
+        if (fx.power !== undefined) {
+          h += numRow('Intensity', fx.power, 'fxpower', 0.1)
+            + numRow('Range', fx.range, 'fxrange', 1);
+        }
+        if (fx.alpha !== undefined) h += numRow('Haze', fx.alpha, 'fxalpha', 0.02);
+        if (fx.width !== undefined) {
+          h += numRow('Width', fx.width, 'fxwidth', 0.5) + numRow('Height', fx.height, 'fxheight', 1);
+        }
+        if (fx.size !== undefined) h += numRow('Size', fx.size, 'fxsize', 1);
+        // tip: Rot X/Z steer spot lights — rotate via the raw fields
+        if (d.asset === 'fx:spot') {
+          h += numRow('Tilt X°', (d.r ? d.r[0] : 0) * 180 / Math.PI, 'pr0', 5)
+            + numRow('Tilt Z°', (d.r ? d.r[2] : 0) * 180 / Math.PI, 'pr2', 5);
+        }
+      }
     }
     ui.ins.innerHTML = h;
   }
@@ -666,6 +696,16 @@ SKY.Editor = (function () {
       else if (k === 'killY') def.killY = parseFloat(e.target.value) || -22;
       else if (k === 'light') {
         def.light = SKY.U.clamp((parseFloat(e.target.value) || 100) / 100, 0.05, 2);
+        applyMood();
+      }
+      else if (k === 'fogOn') {
+        def.fog = e.target.checked ? { color: '#a8bede', density: 0.3 } : null;
+        applyMood();
+        syncInspector();
+      }
+      else if (k === 'fogCol' && def.fog) { def.fog.color = e.target.value; applyMood(); }
+      else if (k === 'fogDen' && def.fog) {
+        def.fog.density = SKY.U.clamp((parseFloat(e.target.value) || 30) / 100, 0.02, 1);
         applyMood();
       }
       else if (k === 'skycOn') {
@@ -721,8 +761,23 @@ SKY.Editor = (function () {
     }
     else if (k === 'yaw') { d.yaw = num * Math.PI / 180; rebuildMarker(o); }
     else if (k === 'pr1') { d.r = d.r || [0, 0, 0]; d.r[1] = num * Math.PI / 180; }
+    else if (k === 'pr0') { d.r = d.r || [0, 0, 0]; d.r[0] = num * Math.PI / 180; }
+    else if (k === 'pr2') { d.r = d.r || [0, 0, 0]; d.r[2] = num * Math.PI / 180; }
     else if (k === 'pscale') d.scale = Math.max(0.05, num);
     else if (k === 'psolid') d.solid = e.target.checked;
+    else if (k.indexOf('fx') === 0 && o.kind === 'prop') {
+      d.fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
+      if (k === 'fxcolor') d.fx.color = e.target.value;
+      else if (k === 'fxpower') d.fx.power = Math.max(0, num);
+      else if (k === 'fxrange') d.fx.range = Math.max(1, num);
+      else if (k === 'fxalpha') d.fx.alpha = SKY.U.clamp(num, 0.01, 0.6);
+      else if (k === 'fxwidth') d.fx.width = Math.max(0.5, num);
+      else if (k === 'fxheight') d.fx.height = Math.max(1, num);
+      else if (k === 'fxsize') d.fx.size = Math.max(1, num);
+      markDirty();
+      rebuildProp(o);
+      return;
+    }
     else if (k === 'pal') { d.pal = e.target.value || null; if (d.pal) d.ptex = null; o.mesh.material = blockMaterial(d); syncInspector(); }
     else if (k === 'color') { d.color = e.target.value; if (!d.pal && !d.tex && !d.ptex) o.mesh.material = blockMaterial(d); }
     else if (k === 'rep') { d.rep = Math.max(0, Math.round(num)) || null; o.mesh.material = blockMaterial(d); }
@@ -749,6 +804,21 @@ SKY.Editor = (function () {
     markDirty();
     syncMeshFromData(o);
     refreshOutliner();
+  }
+
+  /* rebuild ONE prop mesh in place (fx settings changed) */
+  function rebuildProp(o) {
+    if (o.kind !== 'prop') return;
+    const i = objects.indexOf(o);
+    group.remove(o.mesh);
+    o.mesh = buildPropMesh(o.data, o);
+    group.add(o.mesh);
+    if (i === sel) {
+      if (selBox) group.remove(selBox);
+      selBox = new THREE.BoxHelper(o.mesh, 0xffd34d);
+      group.add(selBox);
+      if (gizmo) gizmo.attach(o.mesh);
+    }
   }
 
   function rebuildMarker(o) {
