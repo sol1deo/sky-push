@@ -40,7 +40,7 @@ SKY.Profile = (function () {
 
   /* free cosmetic palettes (no purchase — just identity options) */
   const OUTFIT_COLORS = ['#ffd34d', '#40c8ff', '#ff5db1', '#7dff9e', '#a48aff',
-    '#ffb85a', '#ff5a5a', '#2ee6c8', '#f2f4f6', '#2a2f3a'];
+    '#ffb85a', '#e63946', '#2ee6c8', '#f2f4f6', '#3a4150', '#0a0a0d'];
 
   const DEFAULTS = {
     coins: 300,
@@ -203,7 +203,7 @@ SKY.Profile = (function () {
         return;
       }
       if (!f.tint) return;
-      const tint = new THREE.Color(f.tint).multiplyScalar(f.mult || 1);
+      const tint = new THREE.Color(f.tint).convertSRGBToLinear().multiplyScalar(f.mult || 1);
       const glow = f.glow ? new THREE.Color(accentHex || '#7dd8ff').multiplyScalar(f.glow) : null;
       group.traverse((o) => {
         if (!o.isMesh || !o.material || o.name === 'tierglow') return;

@@ -103,6 +103,80 @@ SKY.Assets = (function () {
     } catch (e) { return null; }
   }
 
+  /* built-in LIGHT / ATMOSPHERE decor — code-built groups referenced as
+     'fx:<name>'. Real lights included, so maps can be moody. */
+  const FX_DEFS = [
+    { id: 'fx:lamp',      name: 'street lamp' },
+    { id: 'fx:spotlight', name: 'spotlight' },
+    { id: 'fx:neonbar',   name: 'neon bar' },
+    { id: 'fx:godray',    name: 'godray' },
+    { id: 'fx:haze',      name: 'haze' },
+  ];
+  function buildFx(name) {
+    const g = new THREE.Group();
+    const lam = (c, e) => new THREE.MeshLambertMaterial({
+      color: c, emissive: e || 0x000000,
+    });
+    if (name === 'lamp') {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 3.2, 8), lam(0x2c3140));
+      pole.position.y = 1.6;
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.08, 0.12), lam(0x2c3140));
+      arm.position.set(0.38, 3.2, 0);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 8),
+        lam(0xfff2cc, 0xffdf9e));
+      bulb.position.set(0.75, 3.1, 0);
+      const light = new THREE.PointLight(0xffe0b0, 1.15, 13);
+      light.position.copy(bulb.position);
+      g.add(pole, arm, bulb, light);
+    } else if (name === 'spotlight') {
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 0.18, 10), lam(0x2c3140));
+      base.position.y = 0.09;
+      const head = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 0.45, 10),
+        lam(0x3b486b, 0x201808));
+      head.rotation.x = -Math.PI / 4;
+      head.position.y = 0.42;
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.15, 10), lam(0xffffff, 0xfff2cc));
+      lens.position.set(0, 0.58, 0.16);
+      lens.rotation.x = -Math.PI / 4;
+      const light = new THREE.PointLight(0xfff2cc, 1.5, 17);
+      light.position.set(0, 1.4, 1.2);
+      g.add(base, head, lens, light);
+    } else if (name === 'neonbar') {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.09, 0.09),
+        lam(0x40c8ff, 0x2f9ecf));
+      bar.position.y = 0.05;
+      const light = new THREE.PointLight(0x40c8ff, 0.9, 10);
+      light.position.y = 0.4;
+      g.add(bar, light);
+    } else if (name === 'godray') {
+      for (let i = 0; i < 2; i++) {
+        const plane = new THREE.Mesh(
+          new THREE.PlaneGeometry(3.2, 11),
+          new THREE.MeshBasicMaterial({
+            map: SKY.U.shaftTexture(), color: 0xfff2cc, transparent: true,
+            opacity: 0.08, blending: THREE.AdditiveBlending,
+            depthWrite: false, side: THREE.DoubleSide, fog: false,
+          }));
+        plane.position.y = 5;
+        plane.rotation.z = 0.28;
+        plane.rotation.y = i * Math.PI / 2;
+        g.add(plane);
+      }
+    } else if (name === 'haze') {
+      for (let i = 0; i < 3; i++) {
+        const s = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: SKY.U.blobTexture(), color: 0xdde6f2, transparent: true,
+          opacity: 0.09, depthWrite: false,
+        }));
+        s.position.set(SKY.U.rand(-2, 2), SKY.U.rand(0.5, 2.2), SKY.U.rand(-2, 2));
+        const sc = SKY.U.rand(7, 11);
+        s.scale.set(sc, sc * 0.55, 1);
+        g.add(s);
+      }
+    }
+    return g;
+  }
+
   /* built-in "pack" folder: read-only props from the shipped asset pack
      (SKY.GFX). Maps reference them as 'gfx:<name>' — nothing to embed,
      every https client resolves them locally. */
@@ -126,6 +200,17 @@ SKY.Assets = (function () {
       }
       out.push(it);
     }
+    // light & atmosphere decor lives in its own folder
+    for (const def of FX_DEFS) {
+      let it = packCache[def.id];
+      if (!it) {
+        it = { id: def.id, folder: 'lights', type: 'model', builtin: true,
+               thumb: null, name: def.name };
+        packCache[def.id] = it;
+      }
+      if (!it.thumb) it.thumb = thumbFromObject(buildFx(def.id.slice(3)));
+      out.push(it);
+    }
     return out;
   }
 
@@ -133,13 +218,15 @@ SKY.Assets = (function () {
     onChange: null,
     list() { return items.concat(packItems()); },
     get(id) {
+      if (!id) return undefined;
       return items.find(a => a.id === id) ||
-        (id && id.startsWith('gfx:') ? packCache[id.slice(4)] : undefined);
+        (id.startsWith('gfx:') ? packCache[id.slice(4)] : undefined) ||
+        (id.startsWith('fx:') ? packCache[id] : undefined);
     },
     folders() {
       const f = new Set(items.map(a => a.folder || 'assets'));
       f.add('assets');
-      if (packItems().length) f.add('pack');
+      if (packItems().length) { f.add('pack'); f.add('lights'); }
       return [...f].sort();
     },
 
@@ -188,8 +275,14 @@ SKY.Assets = (function () {
     /* instantiate a model asset (from the library OR a map def's embedded copy) */
     instantiate(idOrEmbed, cb) {
       if (typeof idOrEmbed === 'string') {
-        if (idOrEmbed.startsWith('gfx:')) {   // built-in pack prop
-          cb(SKY.GFX ? SKY.GFX.prop(idOrEmbed.slice(4)) : null);
+        // built-ins are deferred: callers add their placeholder to the scene
+        // right after this call and their callbacks guard on holder.parent
+        if (idOrEmbed.startsWith('gfx:')) {
+          setTimeout(() => cb(SKY.GFX ? SKY.GFX.prop(idOrEmbed.slice(4)) : null), 0);
+          return;
+        }
+        if (idOrEmbed.startsWith('fx:')) {
+          setTimeout(() => cb(buildFx(idOrEmbed.slice(3))), 0);
           return;
         }
         const a = api.get(idOrEmbed);
@@ -201,9 +294,9 @@ SKY.Assets = (function () {
     },
 
     /* copy an asset's payload into a map def so the map is self-contained
-       (built-in 'gfx:' props ship with the game — nothing to embed) */
+       (built-in 'gfx:'/'fx:' items ship with the game — nothing to embed) */
     embed(def, id) {
-      if (id && id.startsWith('gfx:')) return;
+      if (id && (id.startsWith('gfx:') || id.startsWith('fx:'))) return;
       const a = api.get(id);
       if (a && !def.assets[id]) {
         def.assets[id] = { id, name: a.name, type: a.type, data: a.data };

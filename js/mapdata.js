@@ -108,6 +108,8 @@ SKY.MapData = (function () {
       items: [],
       props: [],
       assets: {},
+      light: 1,        // global lighting dial (0.05 dark .. 2 blown out)
+      skyc: null,      // custom sky {top, mid, hor, stars, clouds, cloudCol}
     };
   }
 
@@ -120,6 +122,8 @@ SKY.MapData = (function () {
     def.assets = def.assets || {};   // embedded asset payloads (id -> {name,type,data})
     def.mood = MOODS[def.mood] ? def.mood : 'golden';
     def.sky = SKIES[def.sky] ? def.sky : 'golden';
+    if (typeof def.light !== 'number') def.light = 1;
+    if (def.skyc && typeof def.skyc !== 'object') def.skyc = null;
     if (typeof def.killY !== 'number') def.killY = -22;
     if (!def.crown) def.crown = [0, 1, 0];
     if (!def.name) def.name = 'CUSTOM MAP';

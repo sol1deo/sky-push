@@ -51,22 +51,22 @@ SKY.Pickups = (function () {
     }
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: SKY.U.blobTexture(), color: rcolor, transparent: true,
-      opacity: 0.35 + 0.3 * strong,
+      opacity: 0.2 + 0.18 * strong,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
-    const gs = 2.2 + 1.4 * strong;
+    const gs = 1.9 + 1.0 * strong;
     glow.scale.set(gs, gs, 1);
     glow.position.y = 1.0;
     grp.add(glow);
-    // rare/epic drops get a light pillar you can spot across the map
+    // rare/epic drops get a subtle light pillar you can spot across the map
     if (strong > 0.5) {
       const beam = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.14, 0.2, 6, 8, 1, true),
+        new THREE.CylinderGeometry(0.12, 0.17, 5, 8, 1, true),
         new THREE.MeshBasicMaterial({
-          color: rcolor, transparent: true, opacity: 0.14 + 0.14 * strong,
+          color: rcolor, transparent: true, opacity: 0.07 + 0.08 * strong,
           blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
         }));
-      beam.position.y = 3.4;
+      beam.position.y = 2.9;
       grp.add(beam);
     }
     scene.add(grp);

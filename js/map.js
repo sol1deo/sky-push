@@ -1234,18 +1234,27 @@ SKY.Map = (function () {
     SKY.World.killY = def.killY;
     SKY.World.crownHome = new THREE.Vector3(def.crown[0], def.crown[1], def.crown[2]);
     const M = D.MOODS[def.mood];
+    const LM = def.light !== undefined ? def.light : 1;   // global light dial
     mood({
-      sunColor: M.sun[0], sunInt: M.sun[1], sunPos: new THREE.Vector3(...M.sun[2]),
-      hemiSky: M.hemi[0], hemiGround: M.hemi[1], hemiInt: M.hemi[2],
-      fillColor: M.fill[0], fillInt: M.fill[1],
+      sunColor: M.sun[0], sunInt: M.sun[1] * LM, sunPos: new THREE.Vector3(...M.sun[2]),
+      hemiSky: M.hemi[0], hemiGround: M.hemi[1], hemiInt: M.hemi[2] * LM,
+      fillColor: M.fill[0], fillInt: (M.fill[1] || 0.3) * LM,
       fillPos: M.fill[2] ? new THREE.Vector3(...M.fill[2]) : undefined,
       shafts: !!M.shafts, disc: M.disc || null,
       discSize: M.discSize, discColor: M.discColor,
     });
-    const S = D.SKIES[def.sky];
-    skyDome(S[0], S[1], S[2], S[3]);
+    // fully custom sky (colors/stars/clouds) beats the preset when present
+    if (def.skyc) {
+      skyDome(def.skyc.top, def.skyc.mid, def.skyc.hor, !!def.skyc.stars);
+      if (def.skyc.clouds) {
+        cloudField(-10, 18, new THREE.Color(def.skyc.cloudCol || '#ffffff').getHex(), 0.45);
+      }
+    } else {
+      const S = D.SKIES[def.sky];
+      skyDome(S[0], S[1], S[2], S[3]);
+      if (M.clouds) cloudField(-10, 18, new THREE.Color(M.clouds).getHex(), 0.45);
+    }
     scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
-    if (M.clouds) cloudField(-10, 18, new THREE.Color(M.clouds).getHex(), 0.45);
 
     for (const b of def.blocks) {
       plat(b.p[0], b.p[1], b.p[2], b.s[0], b.s[1], b.s[2], {
@@ -1270,7 +1279,8 @@ SKY.Map = (function () {
     // 3D asset props — embedded GLB payloads, or built-in pack props
     // referenced as 'gfx:<name>' (shipped with the game, nothing embedded)
     for (const pr of def.props || []) {
-      const isPack = (pr.asset || '').startsWith('gfx:');
+      const a = pr.asset || '';
+      const isPack = a.startsWith('gfx:') || a.startsWith('fx:');
       const embed = (def.assets || {})[pr.asset];
       if ((!embed && !isPack) || !SKY.Assets) continue;
       const g = group;

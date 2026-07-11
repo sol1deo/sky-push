@@ -44,9 +44,10 @@ SKY.GFX = (function () {
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];
-  // extra Blaster-Kit set for the editor's built-in library (self-contained GLBs)
+  // extra built-in library models: Blaster-Kit crates/targets + Quaternius cars
   const KIT_NAMES = ['crate-small', 'crate-medium', 'crate-wide',
-    'target-small', 'target-large', 'target-detail', 'smoke'];
+    'target-small', 'target-large', 'target-detail', 'smoke',
+    'car-taxi', 'car-sports', 'car-suv', 'car-police'];
 
   /* toy-style character cast (Quaternius UACP) — each GLB carries its own
      17 animation clips. tint = the "main outfit" material recolored to the

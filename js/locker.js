@@ -94,13 +94,13 @@ SKY.Locker = (function () {
     pv.key = key;
     // mirror the in-game look: outfit pick (or gold player color) + skin pick
     const P = SKY.Profile;
-    const col = new THREE.Color(P.data.outfit || '#ffd34d');
+    const col = new THREE.Color(P.data.outfit || '#ffd34d').convertSRGBToLinear();
     const name = (SKY.Settings.data.nickname || 'YOU');
     let hh = 0;
     for (let i = 0; i < name.length; i++) hh = (hh * 31 + name.charCodeAt(i)) | 0;
     const SK = SKY.Characters.SKINS;
-    const skinCol = P.data.skin !== null && P.data.skin !== undefined
-      ? SK[P.data.skin % SK.length] : SK[Math.abs(hh) % SK.length];
+    const skinCol = new THREE.Color(P.data.skin !== null && P.data.skin !== undefined
+      ? SK[P.data.skin % SK.length] : SK[Math.abs(hh) % SK.length]).convertSRGBToLinear();
     inst.root.traverse((o) => {
       if (!o.isMesh || !o.material) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -110,7 +110,7 @@ SKY.Locker = (function () {
           m.color.copy(col).multiplyScalar(0.92);
           m.emissive = col.clone().multiplyScalar(0.1);
         } else if (n === 'Skin') {
-          m.color.set(skinCol);
+          m.color.copy(skinCol);
         }
       }
     });

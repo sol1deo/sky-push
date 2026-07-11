@@ -114,7 +114,7 @@ SKY.Editor = (function () {
     const ph = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1),
       new THREE.MeshLambertMaterial({ color: 0x8a5aff, wireframe: true }));
     holder.add(ph);
-    const isPack = (pr.asset || '').startsWith('gfx:');
+    const isPack = (pr.asset || '').startsWith('gfx:') || (pr.asset || '').startsWith('fx:');
     const embed = def.assets[pr.asset];
     if (embed || isPack) {
       SKY.Assets.instantiate(isPack ? pr.asset : embed, (obj) => {
@@ -152,8 +152,9 @@ SKY.Editor = (function () {
     lights = [];
     if (env) { scene.remove(env); env = null; }
     const M = SKY.MapData.MOODS[def.mood];
-    const hemi = new THREE.HemisphereLight(M.hemi[0], M.hemi[1], M.hemi[2]);
-    const sun = new THREE.DirectionalLight(M.sun[0], M.sun[1]);
+    const LM = def.light !== undefined ? def.light : 1;   // global light dial
+    const hemi = new THREE.HemisphereLight(M.hemi[0], M.hemi[1], M.hemi[2] * LM);
+    const sun = new THREE.DirectionalLight(M.sun[0], M.sun[1] * LM);
     sun.position.set(M.sun[2][0], M.sun[2][1], M.sun[2][2]);
     sun.castShadow = true;                       // the preview matches the game
     sun.shadow.mapSize.set(1024, 1024);
@@ -162,7 +163,7 @@ SKY.Editor = (function () {
     sun.shadow.camera.far = 240;
     sun.shadow.bias = -0.0004;
     if (M.fill[0]) {
-      const fill = new THREE.DirectionalLight(M.fill[0], M.fill[1]);
+      const fill = new THREE.DirectionalLight(M.fill[0], M.fill[1] * LM);
       fill.position.set(...(M.fill[2] || [-40, 30, -35]));
       lights.push(fill);
       scene.add(fill);
@@ -174,7 +175,9 @@ SKY.Editor = (function () {
     env = new THREE.Group();
     scene.add(env);
     scene.background = null;
-    const S = SKY.MapData.SKIES[def.sky];
+    const S = def.skyc
+      ? [def.skyc.top, def.skyc.mid, def.skyc.hor, !!def.skyc.stars]
+      : SKY.MapData.SKIES[def.sky];
     env.add(makeDome(S[0], S[1], S[2], S[3]));
     const sunPos = new THREE.Vector3(...M.sun[2]);
     if (M.disc) {
@@ -251,7 +254,7 @@ SKY.Editor = (function () {
     if (o.kind === 'pad') return 'Jump pad';
     if (o.kind === 'spawn') return 'Spawn';
     if (o.kind === 'item') return 'Item point';
-    const a = def.assets[o.data.asset];
+    const a = def.assets[o.data.asset] || SKY.Assets.get(o.data.asset);
     return 'Prop · ' + (a ? a.name : '?');
   }
 
@@ -555,6 +558,16 @@ SKY.Editor = (function () {
         <div class="ed-row"><span>Sky</span><select data-k="sky">${Object.keys(SKY.MapData.SKIES).map(s =>
           `<option value="${s}"${s === def.sky ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
         ${numRow('Kill height', def.killY, 'killY', 1)}
+        ${numRow('Light %', Math.round((def.light !== undefined ? def.light : 1) * 100), 'light', 10)}
+        <div class="ed-row"><span>Custom sky</span>
+          <input type="checkbox" data-k="skycOn" ${def.skyc ? 'checked' : ''}></div>` +
+        (def.skyc ? `
+        <div class="ed-row"><span>Sky top</span><input type="color" data-k="skycTop" value="${def.skyc.top}"></div>
+        <div class="ed-row"><span>Sky mid</span><input type="color" data-k="skycMid" value="${def.skyc.mid}"></div>
+        <div class="ed-row"><span>Horizon</span><input type="color" data-k="skycHor" value="${def.skyc.hor}"></div>
+        <div class="ed-row"><span>Stars</span><input type="checkbox" data-k="skycStars" ${def.skyc.stars ? 'checked' : ''}></div>
+        <div class="ed-row"><span>Clouds</span><input type="checkbox" data-k="skycClouds" ${def.skyc.clouds ? 'checked' : ''}></div>
+        <div class="ed-row"><span>Cloud color</span><input type="color" data-k="skycCloudCol" value="${def.skyc.cloudCol || '#ffffff'}"></div>` : '') + `
         <div class="ed-row"><span>Layout</span><button class="ed-mini" data-k="centermap">center map XZ</button></div>` +
         (backups.length ? `
         <div class="ed-row"><span>Backups</span><select data-k="restorebackup">
@@ -651,6 +664,26 @@ SKY.Editor = (function () {
       }
       else if (k === 'sky') { def.sky = e.target.value; applyMood(); }
       else if (k === 'killY') def.killY = parseFloat(e.target.value) || -22;
+      else if (k === 'light') {
+        def.light = SKY.U.clamp((parseFloat(e.target.value) || 100) / 100, 0.05, 2);
+        applyMood();
+      }
+      else if (k === 'skycOn') {
+        def.skyc = e.target.checked
+          ? { top: '#2f5da8', mid: '#7ba4d8', hor: '#ffd9a4', stars: false, clouds: true, cloudCol: '#ffffff' }
+          : null;
+        applyMood();
+        syncInspector();
+      }
+      else if (k.indexOf('skyc') === 0 && def.skyc) {
+        if (k === 'skycTop') def.skyc.top = e.target.value;
+        else if (k === 'skycMid') def.skyc.mid = e.target.value;
+        else if (k === 'skycHor') def.skyc.hor = e.target.value;
+        else if (k === 'skycStars') def.skyc.stars = e.target.checked;
+        else if (k === 'skycClouds') def.skyc.clouds = e.target.checked;
+        else if (k === 'skycCloudCol') def.skyc.cloudCol = e.target.value;
+        applyMood();
+      }
       else if (k === 'restorebackup') {
         const b = SKY.MapData.backupsOf(def.id)[parseInt(e.target.value, 10)];
         if (b) {
@@ -761,10 +794,11 @@ SKY.Editor = (function () {
       status('textured with ' + a.name);
       return;
     }
-    // model → a solid prop
+    // model → a prop (light/atmosphere decor defaults to non-solid)
     push();
     SKY.Assets.embed(def, assetId);
-    const pr = { asset: assetId, p: [+_v.x.toFixed(2), +_v.y.toFixed(2), +_v.z.toFixed(2)], r: [0, 0, 0], scale: 1, solid: true };
+    const pr = { asset: assetId, p: [+_v.x.toFixed(2), +_v.y.toFixed(2), +_v.z.toFixed(2)],
+      r: [0, 0, 0], scale: 1, solid: !assetId.startsWith('fx:') };
     def.props.push(pr);
     rebuild();
     select(objects.findIndex(o => o.data === pr));

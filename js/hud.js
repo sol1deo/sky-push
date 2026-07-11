@@ -437,13 +437,20 @@ SKY.HUD = (function () {
     }
   }
 
-  /* one weapon slot: side icon if we can render one, text fallback otherwise */
+  /* one weapon slot: minimalist rarity-tinted wireframe (CS:GO style),
+     text fallback otherwise */
+  const RARITY_GLOW = { starter: '#c6cdd9', common: '#c6cdd9', rare: '#40c8ff', epic: '#ff5db1' };
   function setSlotVisual(slotEl, weaponId) {
     const img = slotEl.querySelector('.si');
     const sn = slotEl.querySelector('.sn');
-    const icon = weaponId ? SKY.Effects.weaponSideIcon(weaponId) : null;
+    const rar = weaponId ? RARITY_GLOW[SKY.TUNING.weapons[weaponId].rarity] || '#c6cdd9' : null;
+    const icon = weaponId ? SKY.Effects.weaponWireIcon(weaponId, rar) : null;
     if (icon) {
-      if (img.src !== icon) img.src = icon;
+      if (img.src !== icon) {
+        img.src = icon;
+        // soft rarity glow around the wireframe
+        img.style.filter = `drop-shadow(0 0 5px ${rar}66)`;
+      }
       img.classList.remove('hidden');
       sn.classList.add('hidden');
     } else {

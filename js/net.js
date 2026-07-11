@@ -997,9 +997,20 @@ SKY.Net = (function () {
     const t = p.netTarget;
     if (!t) return;
     t.age += dt;
-    _v.set(t.x + t.vx * t.age, t.y + t.vy * t.age, t.z + t.vz * t.age);
-    if (p.pos.distanceTo(_v) > 5) p.pos.copy(_v);
-    else p.pos.lerp(_v, Math.min(1, 14 * dt));
+    // cap extrapolation: stale packets used to project the pawn ever further
+    // along its last velocity, then snap back = the "teleports half the map"
+    const age = Math.min(t.age, 0.22);
+    _v.set(t.x + t.vx * age, t.y + t.vy * age, t.z + t.vz * age);
+    const err = p.pos.distanceTo(_v);
+    const ragged = !!p.ragdoll;
+    // graded correction: gentle when close, fast catch-up when far, hard snap
+    // only for true teleports — and never mid-ragdoll (looks awful)
+    const snapAt = ragged ? 26 : 13;
+    if (err > snapAt) p.pos.copy(_v);
+    else {
+      const rate = err > 4 ? 9 + err * 1.6 : 12;
+      p.pos.lerp(_v, Math.min(1, rate * dt));
+    }
     p.vel.set(t.vx, t.vy, t.vz);
     p.yaw += SKY.U.angDelta(p.yaw, t.yaw) * Math.min(1, 14 * dt);
     p.pitch = t.pitch;
@@ -1012,7 +1023,11 @@ SKY.Net = (function () {
     p._acting = !!(t.flags & 32);
     const rag = !!(t.flags & 4);
     if (rag && !p.ragdoll) p.ragdoll = { mode: 'air', t: 0 };
-    else if (!rag && p.ragdoll) p.ragdoll = null;
+    else if (!rag && p.ragdoll) {
+      // keep a locally-PREDICTED ragdoll (we just hit them) alive briefly —
+      // the victim's own rag flag arrives a round-trip later
+      if (!(p._predRagT && performance.now() - p._predRagT < 500)) p.ragdoll = null;
+    }
   }
 
   /* ===================== send helpers ===================== */

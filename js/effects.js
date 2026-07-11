@@ -331,6 +331,39 @@ SKY.Effects = (function () {
     } catch (e) { return null; }   // headless / no-GL fallback
   }
 
+  /* minimalist WIREFRAME side icon (CS:GO-style loadout HUD) — tinted by
+     the weapon's rarity so what you're holding reads at a glance */
+  const wireCache = {};
+  function weaponWireIcon(kind, colorHex) {
+    const key = thumbKey(kind) + '|' + colorHex;
+    if (wireCache[key]) return wireCache[key];
+    try {
+      weaponThumb(kind);                      // ensures thumbRig exists
+      if (!thumbRig) return null;
+      const mesh = buildWeaponMesh(kind);
+      const wmat = new THREE.MeshBasicMaterial({
+        color: colorHex || '#dfe7f2', wireframe: true,
+        transparent: true, opacity: 0.9,
+      });
+      mesh.traverse((o) => { if (o.isMesh) o.material = wmat; });
+      const box = new THREE.Box3().setFromObject(mesh);
+      const c = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length();
+      mesh.position.sub(c);
+      const grp = new THREE.Group();
+      grp.add(mesh);
+      grp.rotation.y = -Math.PI / 2;          // pure side view, barrel right
+      thumbRig.sc.add(grp);
+      thumbRig.cam.position.set(0, 0.02, size * 1.15);
+      thumbRig.cam.lookAt(0, 0, 0);
+      thumbRig.r.render(thumbRig.sc, thumbRig.cam);
+      const url = thumbRig.r.domElement.toDataURL();
+      thumbRig.sc.remove(grp);
+      wireCache[key] = url;
+      return url;
+    } catch (e) { return null; }
+  }
+
   /* flat SIDE-PROFILE render (PUBG-style inventory icon) */
   const sideCache = {};
   function weaponSideIcon(kind) {
@@ -790,7 +823,7 @@ SKY.Effects = (function () {
         spawn({ pos, vel: v, life: SKY.U.rand(0.15, 0.3), size: 0.22, color: '#ffd9a0', gravity: 10, drag: 2 });
       }
     },
-    tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon,
+    tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon, weaponWireIcon,
     makeTracer, poseTracer, resetTracer,
     cannonBlast(pos, dir) {
       for (let i = 0; i < 14; i++) {

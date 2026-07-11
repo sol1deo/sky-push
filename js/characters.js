@@ -11,7 +11,8 @@
 window.SKY = window.SKY || {};
 
 SKY.Characters = (function () {
-  const SKINS = ['#f2c49b', '#8d5a3a', '#e8b08c', '#6b4630', '#f7d7b0', '#a06a42'];
+  const SKINS = ['#f2c49b', '#8d5a3a', '#e8b08c', '#6b4630', '#f7d7b0', '#a06a42',
+                 '#3a2a20', '#141414'];   // deep brown + toy-black
   const PANTS = ['#2c3654', '#3a3140', '#274236', '#40303c', '#2d3a52'];
   const _v = new THREE.Vector3();
   const _v2 = new THREE.Vector3();
@@ -218,9 +219,11 @@ SKY.Characters = (function () {
       const localP = this.pawn.isLocal && SKY.Profile ? SKY.Profile.data : null;
       const outfitPick = cos ? cos.outfit : (localP ? localP.outfit : null);
       const skinPick = cos ? cos.skin : (localP ? localP.skin : null);
-      const col = new THREE.Color(outfitPick || this.pawn.color);
-      const skinCol = (skinPick !== null && skinPick !== undefined)
-        ? SKINS[skinPick % SKINS.length] : SKINS[h % SKINS.length];
+      // convertSRGBToLinear: hex swatches are sRGB — without the conversion
+      // the renderer washes them out (red reads pink, dark tones lift)
+      const col = new THREE.Color(outfitPick || this.pawn.color).convertSRGBToLinear();
+      const skinCol = new THREE.Color((skinPick !== null && skinPick !== undefined)
+        ? SKINS[skinPick % SKINS.length] : SKINS[h % SKINS.length]).convertSRGBToLinear();
       inst.root.traverse((o) => {
         if (!o.isMesh || !o.material) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -230,7 +233,7 @@ SKY.Characters = (function () {
             m.color.copy(col).multiplyScalar(0.92);
             m.emissive = col.clone().multiplyScalar(0.1);
           } else if (n === 'Skin') {
-            m.color.set(skinCol);
+            m.color.copy(skinCol);
           }
         }
       });

@@ -333,8 +333,14 @@ SKY.Weapons = (function () {
           _imp.y += force * b.up * (res.head ? 1.25 : 1);
 
           if (victim.isRemote) {
-            // another player's pawn: report the hit, their client applies it
+            // another player's pawn: report the hit, their client applies it.
+            // PREDICT the ragdoll locally so the reaction is instant instead
+            // of arriving a round-trip later (their state stream corrects us).
             SKY.Net.sendHit(victim.netId, [+_imp.x.toFixed(2), +_imp.y.toFixed(2), +_imp.z.toFixed(2)], res.head);
+            if (res.head || wasAirborne || force > 13) {
+              victim._predRagT = performance.now();
+              victim.enterRagdoll(res.head && victim.grounded ? 'head' : 'air', _imp);
+            }
           } else {
             victim.applyKnockback(_imp, b.owner);
             if (res.head) victim.enterRagdoll(victim.grounded ? 'head' : 'air', _imp);
@@ -398,6 +404,10 @@ SKY.Weapons = (function () {
       }
       if (p.isRemote) {
         SKY.Net.sendHit(p.netId, [+_imp.x.toFixed(2), +_imp.y.toFixed(2), +_imp.z.toFixed(2)], false);
+        if (force * k > 13) {   // predict the blast ragdoll locally too
+          p._predRagT = performance.now();
+          p.enterRagdoll('air', _imp);
+        }
       } else {
         const wasAir = !p.grounded;
         p.applyKnockback(_imp, owner === p ? null : owner);
