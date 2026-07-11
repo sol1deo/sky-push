@@ -47,7 +47,13 @@ SKY.Characters = (function () {
       this.ragActive = false;
       this.standupT = 0;
 
-      this._buildPuppet();
+      // rigged GLTF character (Quaternius) when the asset pack has loaded;
+      // the primitive FK puppet below remains the file:// fallback
+      this.isGltf = false;
+      if (SKY.GFX && SKY.GFX.charReady()) {
+        try { this._buildGltfPuppet(h); this.isGltf = true; } catch (e) {}
+      }
+      if (!this.isGltf) this._buildPuppet();
       this._buildRagdollProxy();
 
       this.root.visible = !pawn.isLocal;
@@ -183,13 +189,128 @@ SKY.Characters = (function () {
       };
     }
 
+    /* ==================== rigged GLTF puppet ==================== */
+    _buildGltfPuppet(h) {
+      const inst = SKY.GFX.charInstance(h);
+      if (!inst) throw new Error('char not ready');
+      const root = new THREE.Group();
+      root.rotation.order = 'YXZ';
+      this.scene.add(root);
+      this.root = root;
+
+      const model = new THREE.Group();
+      model.add(inst.root);
+      // UE-style rig faces +Z after the glTF export; game forward is -Z
+      model.rotation.y = Math.PI;
+      const k = 1.78 / inst.height;
+      model.scale.setScalar(k);
+      root.add(model);
+      this.model = model;
+
+      // player-color identity: tint the suit, leave hair/eyes natural
+      const col = new THREE.Color(this.pawn.color);
+      inst.root.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        const n = (o.material.name || '').toLowerCase();
+        if (n.includes('superhero') || n.includes('main') || n.includes('suit')) {
+          o.material.color.lerp(col, 0.92);
+          o.material.emissive = col.clone().multiplyScalar(0.18);
+        }
+      });
+
+      const bone = (name) => inst.root.getObjectByName(name);
+      this.bSpine = bone('spine_02');
+      this.bChest = bone('spine_03');
+      this.bHead = bone('Head');
+      this.bPelvis = bone('pelvis');
+      this.bHandR = bone('hand_r');
+
+      // third-person gun in the right hand
+      this.gunHolder = new THREE.Group();
+      // measured on the UE-style rig: barrel (-Z) along hand +Y, gun-up along
+      // hand +Z — a plain +90° X rotation
+      this.gunHolder.rotation.set(Math.PI / 2, 0, 0);
+      this.gunHolder.position.set(0, 0.05, 0.03);
+      this.gunHolder.scale.setScalar(1 / k);   // undo model scale so guns keep world size
+      if (this.bHandR) this.bHandR.add(this.gunHolder);
+
+      // ragdoll seed markers = actual bones
+      this.markers = {
+        head: this.bHead || root, chest: this.bChest || root, pelvis: this.bPelvis || root,
+        elbL: bone('lowerarm_l') || root, handL: bone('hand_l') || root,
+        elbR: bone('lowerarm_r') || root, handR: this.bHandR || root,
+        kneL: bone('calf_l') || root, footL: bone('foot_l') || root,
+        kneR: bone('calf_r') || root, footR: bone('foot_r') || root,
+      };
+
+      // animation set — clips come from the Universal Animation Library
+      this.mixer = new THREE.AnimationMixer(inst.root);
+      const act = (clipName, once) => {
+        const clip = SKY.GFX.clip(clipName);
+        if (!clip) return null;
+        const a = this.mixer.clipAction(clip);
+        if (once) { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = false; }
+        else { a.play(); a.setEffectiveWeight(0); }
+        return a;
+      };
+      this.acts = {
+        idle: act('Idle_Loop'),
+        jog: act('Jog_Fwd_Loop'),
+        sprint: act('Sprint_Loop'),
+        air: act('Jump_Loop'),
+        slide: act('Crouch_Idle_Loop'),
+        dance: act('Dance_Loop'),
+      };
+      if (this.acts.idle) this.acts.idle.setEffectiveWeight(1);
+      this.actLand = act('Jump_Land', true);
+      this.wasGrounded = true;
+    }
+
+    _animGltf(dt) {
+      const p = this.pawn;
+      const spd = p.speedH();
+      const A = this.acts;
+
+      // one-shot landing accent
+      if (p.grounded && !this.wasGrounded && this.actLand) {
+        this.actLand.reset().setEffectiveWeight(0.9).play();
+      }
+      this.wasGrounded = p.grounded;
+
+      // pick the dominant locomotion state
+      let want = 'idle';
+      if (this.emoteT > 0) { this.emoteT -= dt; want = 'dance'; }
+      else if (p.sliding) want = 'slide';
+      else if (!p.grounded) want = 'air';
+      else if (spd > 8.5) want = 'sprint';
+      else if (spd > 0.6) want = 'jog';
+
+      for (const key in A) {
+        const a = A[key];
+        if (!a) continue;
+        const target = key === want ? 1 : 0;
+        const w = a.getEffectiveWeight();
+        a.setEffectiveWeight(w + (target - w) * Math.min(1, 10 * dt));
+      }
+      // stride speed follows actual velocity
+      if (A.jog) A.jog.timeScale = SKY.U.clamp(spd / 4.2, 0.7, 1.7);
+      if (A.sprint) A.sprint.timeScale = SKY.U.clamp(spd / 9.5, 0.8, 1.5);
+
+      this.mixer.update(dt);
+
+      // aim pitch layered on top of whatever the mixer posed
+      const pitch = SKY.U.clamp(p.pitch, -1.2, 1.2);
+      if (this.bSpine) this.bSpine.rotation.x += pitch * 0.35;
+      if (this.bHead) this.bHead.rotation.x += pitch * 0.4;
+    }
+
     setWeapon(kind) {
       if (this.gunKind === kind) return;
       this.gunKind = kind;
       while (this.gunHolder.children.length) this.gunHolder.remove(this.gunHolder.children[0]);
       while (this.proxyGunHolder.children.length) this.proxyGunHolder.remove(this.proxyGunHolder.children[0]);
       const g1 = SKY.Effects.buildWeaponMesh(kind);
-      g1.scale.setScalar(1.25);
+      g1.scale.setScalar(this.isGltf ? 1.05 : 1.25);
       this.gunHolder.add(g1);
       const g2 = SKY.Effects.buildWeaponMesh(kind);
       g2.scale.setScalar(1.25);
@@ -392,9 +513,10 @@ SKY.Characters = (function () {
       const root = this.root;
       root.position.copy(p.pos);
 
-      // stand-up rise + crouch squash
+      // stand-up rise + crouch squash (the rigged model has a real slide
+      // pose, so it only uses the scale for the stand-up rise)
       this.standupT = Math.max(0, this.standupT - dt);
-      const squash = p.height / SKY.TUNING.move.standHeight;
+      const squash = this.isGltf ? 1 : p.height / SKY.TUNING.move.standHeight;
       root.scale.y = SKY.U.damp(root.scale.y, squash, this.standupT > 0 ? 6 : 14, dt);
 
       const spd = p.speedH();
@@ -412,6 +534,8 @@ SKY.Characters = (function () {
         root.rotation.x = SKY.U.damp(root.rotation.x, 0, 10, dt);
         root.rotation.z = SKY.U.damp(root.rotation.z, 0, 10, dt);
       }
+
+      if (this.isGltf) { this._animGltf(dt); return; }
 
       // torso lean into motion + aim pitch on the head
       // (+rotation.x on a limb hanging along -Y swings it FORWARD, toward -Z)

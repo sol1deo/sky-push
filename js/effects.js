@@ -87,6 +87,23 @@ SKY.Effects = (function () {
 
   function buildWeaponMesh(kind) {
     const W = SKY.TUNING.weapons[kind] || SKY.TUNING.weapons.blaster;
+    // real model (Kenney Blaster Kit GLB) when the asset pack has loaded —
+    // procedural primitives below stay as the file:// / slow-net fallback
+    if (SKY.GFX && SKY.GFX.hasWeapon(kind)) {
+      const grp = SKY.GFX.weapon(kind);
+      const tip = grp.getObjectByName('tip');
+      if (tip && kind !== 'hookgun') {
+        // glow strip under the barrel keeps the weapon-tier color readable
+        const glow = new THREE.Mesh(
+          new THREE.BoxGeometry(0.014, 0.014, Math.abs(tip.position.z) * 0.5),
+          new THREE.MeshLambertMaterial({
+            color: W.color, emissive: new THREE.Color(W.color).multiplyScalar(0.65),
+          }));
+        glow.position.set(0, tip.position.y - 0.045, tip.position.z * 0.4);
+        grp.add(glow);
+      }
+      return grp;
+    }
     const M = wmats();
     const accent = new THREE.MeshLambertMaterial({
       color: W.color, emissive: new THREE.Color(W.color).multiplyScalar(0.6),
@@ -248,8 +265,12 @@ SKY.Effects = (function () {
    * used by the death-reward cards so a weapon reads at a glance. */
   const thumbCache = {};
   let thumbRig = null;
+  function thumbKey(kind) {
+    // thumbs re-render once the real GLB arrives (asset pack loads async)
+    return kind + (SKY.GFX && SKY.GFX.hasWeapon(kind) ? '+glb' : '');
+  }
   function weaponThumb(kind) {
-    if (thumbCache[kind]) return thumbCache[kind];
+    if (thumbCache[thumbKey(kind)]) return thumbCache[thumbKey(kind)];
     try {
       if (!thumbRig) {
         const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -279,7 +300,7 @@ SKY.Effects = (function () {
       thumbRig.r.render(thumbRig.sc, thumbRig.cam);
       const url = thumbRig.r.domElement.toDataURL();
       thumbRig.sc.remove(grp);
-      thumbCache[kind] = url;
+      thumbCache[thumbKey(kind)] = url;
       return url;
     } catch (e) { return null; }   // headless / no-GL fallback
   }
@@ -287,7 +308,7 @@ SKY.Effects = (function () {
   /* flat SIDE-PROFILE render (PUBG-style inventory icon) */
   const sideCache = {};
   function weaponSideIcon(kind) {
-    if (sideCache[kind]) return sideCache[kind];
+    if (sideCache[thumbKey(kind)]) return sideCache[thumbKey(kind)];
     try {
       weaponThumb(kind);                      // ensures thumbRig exists
       if (!thumbRig) return null;
@@ -305,7 +326,7 @@ SKY.Effects = (function () {
       thumbRig.r.render(thumbRig.sc, thumbRig.cam);
       const url = thumbRig.r.domElement.toDataURL();
       thumbRig.sc.remove(grp);
-      sideCache[kind] = url;
+      sideCache[thumbKey(kind)] = url;
       return url;
     } catch (e) { return null; }
   }

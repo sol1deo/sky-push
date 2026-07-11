@@ -275,7 +275,15 @@ and a replay-editor smoke test: `replayFrames`/`replayOk`) into
 ## Asset credits
 
 **Inter** font (SIL OFL, embedded) · three.js r147 (MIT) · PeerJS (MIT).
-Everything else — characters, weapons, maps, sounds — is generated in code.
+
+Build 26 ships a real CC0 asset pack (see `assets/CREDITS.md`): characters +
+animations by **Quaternius** (Universal Base Characters + Universal Animation
+Library), weapons by **Kenney** (Blaster Kit), environment props by
+**Quaternius** (Sci-Fi Essentials), sound effects from **Kenney** audio packs,
+music by **Joth** and **cynicmusic** (OpenGameArt, CC0), stylized tileable
+map textures generated for this project. `js/gfx.js` loads the pack on the
+hosted (https) builds; from `file://` everything silently falls back to the
+original code-built placeholder look, so `open index.html` still works.
 
 ## Roadmap
 

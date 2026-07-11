@@ -203,10 +203,42 @@ SKY.U = {
         g.shadowBlur = 0;
         speck(g, s, 10, ['rgba(255,154,64,0.35)'], 3, 9);
       },
+      concrete(g, s) {
+        g.fillStyle = '#ccd2dc'; g.fillRect(0, 0, s, s);
+        speck(g, s, 90, ['rgba(0,0,0,0.05)', 'rgba(255,255,255,0.07)'], 1, 3);
+        g.strokeStyle = 'rgba(90,100,120,0.35)'; g.lineWidth = 2;
+        for (let i = 0; i <= 2; i++) {
+          g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, s); g.stroke();
+          g.beginPath(); g.moveTo(0, i * 64); g.lineTo(s, i * 64); g.stroke();
+        }
+      },
+      panel(g, s) {
+        g.fillStyle = '#eef1f5'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(130,142,160,0.4)'; g.lineWidth = 2;
+        for (let i = 0; i <= 2; i++) {
+          g.beginPath(); g.moveTo(0, i * 64); g.lineTo(s, i * 64); g.stroke();
+        }
+        g.strokeStyle = 'rgba(64,200,255,0.55)'; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(0, 96); g.lineTo(s, 96); g.stroke();
+      },
+      grid(g, s) {
+        g.fillStyle = '#1b2336'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(64,200,255,0.5)'; g.lineWidth = 2;
+        for (let i = 0; i <= 4; i++) {
+          g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32, s); g.stroke();
+          g.beginPath(); g.moveTo(0, i * 32); g.lineTo(s, i * 32); g.stroke();
+        }
+      },
     };
   })(),
 
   procTexture(id, repeat) {
+    // real stylized tileable (assets/tex) when the asset pack has loaded;
+    // hand-drawn canvas below remains the file:// fallback
+    if (SKY.GFX) {
+      const real = SKY.GFX.texture(id, repeat || 1);
+      if (real) return real;
+    }
     SKY.U._proc = SKY.U._proc || {};
     const key = id + '|' + (repeat || 1);
     if (SKY.U._proc[key]) return SKY.U._proc[key];
@@ -227,6 +259,7 @@ SKY.U = {
     return tex;
   },
   procThumb(id) {
+    if (SKY.GFX && SKY.GFX.texImage(id)) return 'assets/tex/' + id + '.jpg';
     SKY.U._procThumbs = SKY.U._procThumbs || {};
     if (!SKY.U._procThumbs[id]) {
       SKY.U.procTexture(id, 1);   // ensures the canvas exists

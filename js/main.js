@@ -66,6 +66,15 @@
 
   SKY.Settings.init();
   SKY.Input.init(canvas);
+  SKY.GFX.init();          // real models/textures (async; https hosts only)
+  // once the asset pack lands, rebuild the menu backdrop with the real look
+  SKY.GFX.onReady = () => {
+    if (SKY.Game && SKY.Game.state === 'menu' &&
+        !(SKY.Editor && SKY.Editor.active) && !(SKY.Replay && SKY.Replay.active)) {
+      SKY.Map.load(scene, (SKY.HUD && SKY.HUD.mapSel) || 'sky');
+      SKY.Attract.reset();
+    }
+  };
   SKY.Characters.init();
   SKY.Map.load(scene, 'sky');
   SKY.Effects.init(scene, camera);
@@ -157,8 +166,17 @@
       SKY.MapData.register(d);
       testMap = 'edtest';
     }
-    SKY.Game.startMatch(3, testMap, modeM ? modeM[1] : 'lbs');
-    SKY.Input.locked = true;        // pretend pointer lock
+    // wait (briefly) for the real asset pack so screenshots show final art
+    const beginTest = () => {
+      SKY.Game.startMatch(3, testMap, modeM ? modeM[1] : 'lbs');
+      SKY.Input.locked = true;      // pretend pointer lock
+    };
+    if (SKY.GFX.canLoad && !SKY.GFX.ready) {
+      let waited = 0;
+      const gate = setInterval(() => {
+        if (SKY.GFX.ready || (waited += 100) > 6000) { clearInterval(gate); beginTest(); }
+      }, 100);
+    } else beginTest();
     const m = location.search.match(/autotest=([\d.]+)/);
     const duration = m ? parseFloat(m[1]) : 9.5;
     let t = 0, fired = 0, done = false;

@@ -39,12 +39,45 @@ SKY.Map = (function () {
   };
 
   /* ====================== shared helpers ====================== */
+  /* checker palette -> real tileable texture (+tint), keyed by colorA.
+     White tint = texture as authored; others multiply for palette variety. */
+  const PAL_TEX = {
+    '#dde4ef': ['concrete', '#ffffff'],   // pearl
+    '#c9f0dd': ['tiles', '#bfeed9'],      // mint
+    '#f6d4e3': ['tiles', '#f6d4e3'],      // rose
+    '#f5e9c4': ['sand', '#ffffff'],       // sand
+    '#cfdef6': ['concrete', '#dae4f6'],   // sky (pale blue panels)
+    '#ffe3a9': ['sand', '#ffd9a0'],       // amber
+    '#b6c2d6': ['metal', '#ffffff'],      // wall
+    '#4a4149': ['stone', '#ffffff'],      // stone
+    '#3a3238': ['stone', '#b8b0bc'],      // coal (darker)
+    '#3f4552': ['metal', '#7a8494'],      // roof (dark metal)
+    '#262b38': ['stone', '#8a90a5'],      // slate
+    '#8a7a68': ['dirt', '#c8bcac'],       // dune
+    '#6a5d50': ['dirt', '#b8a290'],       // clay
+    '#f2f4f6': ['panel', '#ffffff'],      // hull
+    '#d8c49e': ['planks', '#ffffff'],     // teak
+    '#3a4250': ['grid', '#ffffff'],       // navy (glow grid)
+    '#c8ccd4': ['concrete', '#e8ecf2'],   // concrete
+    '#e8c85a': ['hazard', '#ffffff'],     // hazard
+  };
   const _matCache = {};   // shared materials — fewer GL programs/binds
   function mat(colorHex, repeat) {
-    const key = 'c' + colorHex[0] + colorHex[1] + (repeat || 4);
+    const rep = repeat || 4;
+    const px = PAL_TEX[colorHex[0]];
+    if (px && SKY.GFX && SKY.GFX.texImage(px[0])) {
+      const key = 't' + colorHex[0] + rep;
+      if (_matCache[key]) return _matCache[key];
+      const m = new THREE.MeshLambertMaterial({ color: px[1] });
+      // real tiles read bigger than the old 2x2 checker — halve the repeat
+      m.map = SKY.GFX.texture(px[0], Math.max(1, Math.round(rep / 2)));
+      _matCache[key] = m;
+      return m;
+    }
+    const key = 'c' + colorHex[0] + colorHex[1] + rep;
     if (_matCache[key]) return _matCache[key];
     const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    m.map = SKY.U.checkerTexture(colorHex[0], colorHex[1], repeat || 4);
+    m.map = SKY.U.checkerTexture(colorHex[0], colorHex[1], rep);
     _matCache[key] = m;
     return m;
   }
@@ -90,6 +123,27 @@ SKY.Map = (function () {
     group.add(m);
     SKY.World.addPad(x, y + 0.25, z, 1.5, launch);
     decor.push({ mesh: m, pulse: Math.random() * 6 });
+  }
+
+  /* decorative props from the asset pack (https builds only). Placed flush
+     against existing cover so lanes stay identical; solid=true adds a
+     matching collision box. Silently skipped when the pack isn't loaded. */
+  function propAt(name, x, y, z, rotY, scale, solid) {
+    if (!SKY.GFX) return;
+    const obj = SKY.GFX.prop(name);
+    if (!obj) return;
+    obj.rotation.y = rotY || 0;
+    obj.scale.setScalar(scale || 1);
+    obj.position.set(x, y, z);
+    group.add(obj);
+    if (solid) {
+      obj.updateMatrixWorld(true);
+      const b = new THREE.Box3().setFromObject(obj);
+      const c = b.getCenter(new THREE.Vector3()), s = b.getSize(new THREE.Vector3());
+      if (isFinite(s.x) && s.x > 0.1) {
+        SKY.World.addSolid({ x: c.x, y: c.y, z: c.z, sx: s.x, sy: s.y, sz: s.z });
+      }
+    }
   }
 
   function anchor(x, y, z) { SKY.World.recoveryAnchors.push(new THREE.Vector3(x, y, z)); }
@@ -1098,6 +1152,15 @@ SKY.Map = (function () {
     plat(-1.5, 6.2, 0, 26, 0.5, 1.6, { pal: YEL, rotY: 0 });     // crane beam, top 6.45
     box(-13, 3, 0, 1.4, 6, 1.4, 0x8a919e);
     box(11, 3, 0, 1.4, 6, 1.4, 0x8a919e);
+    // cargo dressing (flush against the containers — lanes unchanged)
+    propAt('Prop_Crate_Large', -7, 0, 7.4, 0.35, 1, true);
+    propAt('Prop_Crate', -5.2, 0, 6.6, 0.9, 1, true);
+    propAt('Prop_Barrel1', 22.5, 0, -2, 0, 1, true);
+    propAt('Prop_Barrel2_Closed', 23.5, 0, -1.6, 0.6, 1, true);
+    propAt('Prop_Locker', -29.5, 0, 6.4, Math.PI, 0.85, true);
+    propAt('Prop_SatelliteDish', 30, 2.62, 12, -0.7, 0.6, false);
+    propAt('Prop_Ammo_Closed', 5.2, 0, 3.2, -0.4, 1, true);
+    propAt('Prop_Crate_Tarp', -25, 0.7, -10, 1.2, 1, true);
     jumpPad(-22, 0, 8, new THREE.Vector3(4, 15, -4), 0xe8c85a);
     jumpPad(22, 0, -8, new THREE.Vector3(-4, 15, 4), 0xe8c85a);
 

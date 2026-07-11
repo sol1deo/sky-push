@@ -21,11 +21,21 @@ SKY.Grenades = (function () {
 
   function makeNadeMesh(color) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8),
-      new THREE.MeshLambertMaterial({ color: 0x2c3140 }));
-    const band = new THREE.Mesh(new THREE.SphereGeometry(0.135, 8, 4, 0, Math.PI * 2, 1.1, 0.5),
-      new THREE.MeshBasicMaterial({ color }));
-    g.add(body, band);
+    // real grenade model (Kenney) when the asset pack has loaded
+    const glb = SKY.GFX && SKY.GFX.weapon('grenade1');
+    if (glb) {
+      g.add(glb);
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.018, 6, 14),
+        new THREE.MeshBasicMaterial({ color }));   // type-colored band
+      ring.rotation.x = Math.PI / 2;
+      g.add(ring);
+    } else {
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8),
+        new THREE.MeshLambertMaterial({ color: 0x2c3140 }));
+      const band = new THREE.Mesh(new THREE.SphereGeometry(0.135, 8, 4, 0, Math.PI * 2, 1.1, 0.5),
+        new THREE.MeshBasicMaterial({ color }));
+      g.add(body, band);
+    }
     scene.add(g);
     return g;
   }

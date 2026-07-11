@@ -61,6 +61,7 @@ SKY.Game = (function () {
       SKY.Attract.init(sc);
       SKY.HUD.onPlay = () => {
         SKY.SFX.init();
+        SKY.SFX.music('game');
         api.startMatch(SKY.HUD.botCount, SKY.HUD.mapSel, SKY.HUD.modeSel, {
           rounds: SKY.HUD.roundsSel, lives: SKY.HUD.livesSel, crown: SKY.HUD.crownSel,
           sparks: SKY.HUD.sparkSel,
@@ -205,6 +206,7 @@ SKY.Game = (function () {
       api.winner = null;
       api.roundTime = 0;
       api.state = 'countdown';
+      SKY.SFX.music('game');   // idempotent across rounds; covers net clients too
       api.countdownT = SKY.TUNING.game.countdown + 0.99;
       lastCdNum = -1;
       SKY.HUD.showRespawn(null);
@@ -299,6 +301,7 @@ SKY.Game = (function () {
       SKY.HUD.hideLoot();
       SKY.HUD.setPause(false);
       SKY.HUD.showMenu();
+      SKY.SFX.music('menu');
       if (document.pointerLockElement) document.exitPointerLock();
       // leaving a map-editor TEST match drops you back into the editor
       if (SKY.Editor && SKY.Editor.pendingReturn) setTimeout(() => SKY.Editor.resume(), 0);
