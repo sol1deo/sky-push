@@ -925,6 +925,7 @@ SKY.Replay = (function () {
       tickDarts(sdt);
       SKY.Effects.tick(rdt);
       cameraTick(rdt);
+      SKY.Map.skyFollow(camera.position);
       autoFocusTick(rdt);
       // grapple ropes replayed from the snapshots (must run after the camera)
       if (api._stubList && api._stubList.length) {

@@ -756,9 +756,14 @@ SKY.Net = (function () {
         pawn.alive = false;
         pawn.lives = m.lives;
         pawn.eliminated = !!m.elim;
+        pawn.md = (pawn.md || 0) + 1;         // match stats mirror the host
         if (m.killer) {
           const k = G.pawns.find(p => p.netId === m.killer);
-          if (k) k.koCount = m.killerKos;
+          if (k) { k.koCount = m.killerKos; k.mk = (k.mk || 0) + 1; }
+        }
+        if (m.assist) {
+          const a = G.pawns.find(p => p.netId === m.assist);
+          if (a) a.ma = (a.ma || 0) + 1;
         }
         SKY.HUD.killFeed(m.line);
         SKY.SFX.ko(pawn.isLocal);
@@ -798,6 +803,15 @@ SKY.Net = (function () {
           send({ t: 'pick', id: api.myId, item: item.id });
           G.lootChoices = null; G.lootOpen = false;
           SKY.HUD.hideLoot(i);
+          SKY.Input.requestLock();
+        }, () => {
+          // SKIP: tell the host we're done (no item) so respawn unblocks
+          if (picked) return;
+          picked = true;
+          lastPick = { seq, item: '__skip' };
+          send({ t: 'pick', id: api.myId, item: '__skip' });
+          G.lootChoices = null; G.lootOpen = false;
+          SKY.HUD.hideLoot();
           SKY.Input.requestLock();
         });
         if (document.pointerLockElement) document.exitPointerLock();
@@ -1347,10 +1361,11 @@ SKY.Net = (function () {
     sendPickupSpawn(d) { if (api.role === 'host') broadcast({ t: 'pkspawn', ...d }); },
     sendPickupTake(id, by) { if (api.role === 'host') broadcast({ t: 'pktake', id, by }); },
     sendMapEvent(params) { if (api.role === 'host') broadcast({ t: 'mapevent', params }); },
-    hostKo(pawn, line, killer) {
+    hostKo(pawn, line, killer, assist) {
       broadcast({
         t: 'ko', id: pawn.netId, lives: pawn.lives, elim: pawn.eliminated, line,
         killer: killer ? killer.netId : null, killerKos: killer ? killer.koCount : 0,
+        assist: assist ? assist.netId : null,
       });
       if (SKY.Game.mode !== 'spark' && SKY.Game.mode !== 'dm' && pawn.isRemote && !pawn.eliminated) {
         const choices = SKY.Loot.roll(pawn).map(it => it.id);

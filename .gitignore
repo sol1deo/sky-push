@@ -2,3 +2,7 @@
 /15
 *.log
 .netlify/
+
+# raw sound libraries — curated picks are copied into assets/audio/sfx
+assets/audio/400 Sounds Pack/
+assets/audio/Rust & Blood - SFX Library v1.1d/

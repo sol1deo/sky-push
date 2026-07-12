@@ -27,6 +27,8 @@ SKY.Map = (function () {
   let overtime = false;
   let eventT = 0, eventCfg = null;
   let starLayer = null, meteor = null, meteorT = 6;   // night-sky animation
+  let skyGroup = null;   // dome/stars/sun ride the CAMERA — leaving the dome
+                         // sphere used to paint a growing black circle
   const doors = [];               // interactable doors (E toggles, net-synced)
   const _v = new THREE.Vector3();
 
@@ -199,7 +201,7 @@ SKY.Map = (function () {
       // huge sprites at the far plane pop out of the frustum test while
       // their glow should still be on screen — never cull them
       glow.frustumCulled = core.frustumCulled = false;
-      group.add(glow, core);
+      skyGroup.add(glow, core);
     } else {
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({
         map: SKY.U.blobTexture(), color: o.discColor || '#e8f0ff', transparent: true,
@@ -214,7 +216,7 @@ SKY.Map = (function () {
       moon.position.copy(pos);
       moon.scale.set(size, size, 1);
       halo.frustumCulled = moon.frustumCulled = false;
-      group.add(halo, moon);
+      skyGroup.add(halo, moon);
     }
   }
 
@@ -257,7 +259,7 @@ SKY.Map = (function () {
       new THREE.SphereGeometry(380, 24, 14),
       new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, fog: !!fogged, depthWrite: false })
     );
-    group.add(dome);
+    skyGroup.add(dome);
     if (stars) {
       // crisp glowing points, varied size/warmth — no more stretched blobs
       const paint = (n, big) => {
@@ -291,7 +293,7 @@ SKY.Map = (function () {
         new THREE.SphereGeometry(368, 32, 18),
         new THREE.MeshBasicMaterial({ map: paint(50, true), side: THREE.BackSide, transparent: true, fog: !!fogged, depthWrite: false }));
       base.frustumCulled = bright.frustumCulled = false;
-      group.add(base, bright);
+      skyGroup.add(base, bright);
       starLayer = bright;      // twinkles + enables shooting stars in tick()
     }
   }
@@ -2109,6 +2111,8 @@ SKY.Map = (function () {
     if (group) scene.remove(group);
     group = new THREE.Group();
     scene.add(group);
+    skyGroup = new THREE.Group();
+    group.add(skyGroup);
     decor.length = 0; clouds.length = 0; crumbleList.length = 0;
     tickers.length = 0; fallingMeshes.length = 0; shaking = null;
     overtime = false; dirty = false;
@@ -2269,8 +2273,13 @@ SKY.Map = (function () {
     }
   }
 
+  /* keep the sky centered on the viewer — call once per rendered frame */
+  function skyFollow(camPos) {
+    if (skyGroup) skyGroup.position.copy(camPos);
+  }
+
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
-           setDoor, tryInteract, propCollisionLocal,
+           setDoor, tryInteract, propCollisionLocal, skyFollow,
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; } };
 })();

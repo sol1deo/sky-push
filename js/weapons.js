@@ -89,6 +89,15 @@ SKY.Weapons = (function () {
     if ((pawn.pbCd > 0 && !opts.burstShot) || !pawn.alive || pawn.tauntT > 0 || pawn.ragdoll || pawn.reloadT > 0) return false;
     if (pawn.grapple || pawn.drawT > 0) return false;   // hook arm out / mid-draw
     if (SKY.Game.roundTime < 0.75) return false;   // no spawn-cheese at GO!
+    // IT: runners carry NO primary; the seeker can't fire during the hide phase
+    if (SKY.Game.mode === 'it') {
+      if (!pawn.isSeeker) {
+        // runners are unarmed — a dry CLICK says "no gun for you" out loud
+        if (pawn.isLocal && pawn.pbCd <= 0) { SKY.SFX.dry(); pawn.pbCd = 0.5; }
+        return false;
+      }
+      if (SKY.Game.roundTime < SKY.TUNING.it.hideTime) return false;
+    }
     // charge weapons fired without a charge (bots, autotest): decent mid-charge
     if (W.charge && opts.chargeMul === undefined) {
       opts.chargeMul = 1 + 0.55 * ((W.chargeMult || 2) - 1);
@@ -485,6 +494,9 @@ SKY.Weapons = (function () {
       if (pawn.isLocal) SKY.SFX.jammed();
       return false;
     }
+    // IT hide phase: the frozen seeker can't cannon-launch out of the freeze
+    if (SKY.Game.mode === 'it' && pawn.isSeeker &&
+        SKY.Game.roundTime < SKY.TUNING.it.hideTime) return false;
     if (SKY.Game.roundTime < 0.75) return false;
     pawn.acCd = C.cooldown * pawn.mods.cdMult;
     pendingCannon.push({ pawn, t: C.fireDelay || 0 });

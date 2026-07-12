@@ -22,6 +22,7 @@ SKY.Grapple = (function () {
   const _b = new THREE.Vector3();
   const _ptRay = new THREE.Vector3();
   const _ptSeg = new THREE.Vector3();
+  const _losPt = new THREE.Vector3();
   const _ray = new THREE.Ray();
   const _start = new THREE.Vector3();
   const _ctrl = new THREE.Vector3();
@@ -97,6 +98,9 @@ SKY.Grapple = (function () {
       pawn.exitRagdoll();
     }
     if (pawn.grappleCd > 0) { if (pawn.isLocal) SKY.SFX.grapMiss(); return false; }
+    // IT hide phase: the frozen seeker can't rope-pull out of the freeze
+    if (SKY.Game.mode === 'it' && pawn.isSeeker &&
+        SKY.Game.roundTime < SKY.TUNING.it.hideTime) return false;
 
     SKY.U.dirFromYawPitch(pawn.yaw, pawn.pitch, _dir);
     pawn.eyePos(_eye);
@@ -197,9 +201,6 @@ SKY.Grapple = (function () {
     if (g.solid.isMover) g.point.copy(g.solid.c).add(g.local);
     g.t += dt;
 
-    // reel in while held
-    g.len = Math.max(G.breakDist + 0.3, g.len - G.reelSpeed * dt);
-
     pawn.midPos(_mid);
     _to.copy(g.point).sub(_mid);
     const dist = _to.length();
@@ -211,6 +212,24 @@ SKY.Grapple = (function () {
     }
     _to.multiplyScalar(1 / dist);
 
+    // rope SNAPS when geometry gets between you and the hook point — hooking
+    // a floor from underneath no longer drags you up through the slab
+    if (dist > 1.5) {
+      _losPt.copy(g.point).addScaledVector(_to, -0.35);
+      if (!SKY.World.los(_mid, _losPt)) {
+        release(pawn);
+        if (pawn.isLocal) SKY.SFX.grapMiss();
+        return;
+      }
+    }
+
+    // momentum reel: a near-vertical rope barely winches — climb by SWINGING
+    // (tangential speed restores the full rate); dead-hanging goes nowhere
+    const rm = Math.max(G.hangReelMin,
+      SKY.U.clamp01(1.15 - _to.y),
+      SKY.U.clamp01(pawn.vel.length() / G.swingSpeedFull));
+    g.len = Math.max(G.breakDist + 0.3, g.len - G.reelSpeed * rm * dt);
+
     // pendulum constraint: outside the rope length, pull back in and kill
     // outward velocity (this is what makes it swing instead of drag)
     if (dist > g.len) {
@@ -221,7 +240,7 @@ SKY.Grapple = (function () {
       pawn.grounded = false;
     }
     // gentle assist toward the point so short reels still feel powerful
-    pawn.vel.addScaledVector(_to, G.pullAccel * 0.35 * dt);
+    pawn.vel.addScaledVector(_to, G.pullAccel * 0.35 * rm * dt);
   }
 
   /* rope mesh: fixed-topology tube whose vertices are rewritten in place

@@ -106,19 +106,28 @@ SKY.Game = (function () {
 
     /* match rules chosen in the menu / lobby (rounds & points to win) */
     applyRules(rules, mode) {
-      if (!rules) return;
+      rules = rules || {};
       if (rules.rounds) SKY.TUNING.game.roundsToWin = rules.rounds;
       if (mode === 'spark' || mode === 'dm') SKY.TUNING.game.roundsToWin = 1; // one long round
       if (rules.lives) SKY.TUNING.game.lives = rules.lives;
       if (rules.crown) SKY.TUNING.crown.holdToWin = rules.crown;
       if (rules.sparks) SKY.TUNING.spark.target = rules.sparks;
       if (rules.dmMin) SKY.TUNING.dm.timeLimit = rules.dmMin * 60;
-      // optional hard round cap for lbs/crown (0 = classic, no limit)
+      // optional hard round cap for lbs/crown/it (0 = classic, no limit)
       SKY.TUNING.game.timeLimit = rules.time !== undefined ? rules.time : 0;
+      // IT always runs on a clock — surviving it is the runners' win condition
+      if (mode === 'it' && !SKY.TUNING.game.timeLimit) {
+        SKY.TUNING.game.timeLimit = SKY.TUNING.it.roundTime;
+      }
     },
 
     /* round-limit buzzer: best-placed player takes the round */
     timeoutWinner() {
+      // IT: the clock ran out = the runners survived — a live runner wins it
+      if (api.mode === 'it') {
+        const runners = api.pawns.filter(p => !p.isSeeker && !p.eliminated && p.alive);
+        return runners[0] || null;
+      }
       const alive = api.pawns.filter(p => !p.eliminated);
       if (!alive.length) return null;
       const best = alive.slice().sort((a, b) => api.mode === 'crown'
@@ -252,6 +261,27 @@ SKY.Game = (function () {
           else p.giveWeapon(SKY.U.pick(DM_WEAPONS));
         }
       }
+      // IT: rotate the seeker deterministically (same roster order everywhere)
+      api._itReleased = false;
+      if (api.mode === 'it') {
+        const seekIdx = (api.roundNum - 1) % api.pawns.length;
+        api.pawns.forEach((p, i) => {
+          p.isSeeker = i === seekIdx;
+          if (p.isSeeker) {
+            if (!p.isRemote) p.giveWeapon('seeker');
+          } else {
+            p.lives = 1;                      // runners: one life, no rewards
+          }
+          p.nades = { type: 'he', count: 0 }; // hook + cannon only
+        });
+        const seeker = api.pawns[seekIdx];
+        SKY.HUD.subMsg((seeker.isLocal ? 'YOU are the SEEKER — ' : seeker.name + ' is the SEEKER — ') +
+          'runners scatter!', 3.5);
+      } else {
+        api.pawns.forEach(p => { p.isSeeker = false; });
+      }
+      // spectator state resets with the round
+      api._specIdx = 0; api._specOrbit = false;
       // returning from an unlocked state (e.g. reward picker was open):
       // offline re-pauses; online NEVER pops a menu — just a click-to-play hint
       if (!fromMenu && !SKY.Input.locked) {
@@ -341,12 +371,24 @@ SKY.Game = (function () {
       SKY.HUD.hideLoot();
       SKY.HUD.hideLoadout();
       SKY.HUD.roundBanner(null);
+      SKY.HUD.hideMatchEnd();
+      SKY.HUD.spectate(null);
       SKY.HUD.setPause(false);
       SKY.HUD.showMenu();
       SKY.SFX.music('menu');
       if (document.pointerLockElement) document.exitPointerLock();
       // leaving a map-editor TEST match drops you back into the editor
       if (SKY.Editor && SKY.Editor.pendingReturn) setTimeout(() => SKY.Editor.resume(), 0);
+    },
+
+    /* skip the death reward entirely — respawn unblocked, nothing gained */
+    skipLoot() {
+      if (!api.lootChoices) return;
+      api.lootChoices = null;
+      api.lootOpen = false;
+      api.lootT = undefined;
+      SKY.HUD.hideLoot();
+      SKY.Input.requestLock();
     },
 
     /* ---------------- reward picking ---------------- */
@@ -421,9 +463,9 @@ SKY.Game = (function () {
       if (api.state === 'playing') api.roundTime += dt;   // clock freezes at round end
       if (api.mode === 'spark' && api.state === 'playing') this.tickSpark(dt);
       if (api.mode === 'dm' && api.state === 'playing') this.tickDm(dt);
-      // optional round limit (lbs/crown): buzzer ends the round for the leader
+      // optional round limit: buzzer ends the round for the leader/survivors
       if (SKY.Net.authority && api.state === 'playing' &&
-          (api.mode === 'lbs' || api.mode === 'crown') &&
+          (api.mode === 'lbs' || api.mode === 'crown' || api.mode === 'it') &&
           (SKY.TUNING.game.timeLimit || 0) > 0 &&
           api.roundTime >= SKY.TUNING.game.timeLimit) {
         this.endRound(this.timeoutWinner());
@@ -451,6 +493,8 @@ SKY.Game = (function () {
 
       this.buildPlayerCmd();
       for (const b of api.bots) b.tick(dt, api.pawns, api.time);
+      // AFTER cmd building so the hide-phase seeker freeze actually sticks
+      if (api.mode === 'it' && api.state === 'playing') this.tickIt(dt);
 
       for (const p of api.pawns) {
         if (!p.alive) continue;
@@ -562,6 +606,41 @@ SKY.Game = (function () {
       }
     },
 
+    /* ---------------- IT (tag) ----------------
+     * The seeker freezes for hideTime while runners scatter, then hunts with
+     * the tag cannon. Runners have hook + cannon only. All runners out =
+     * seeker wins; the generic round-limit buzzer = runners survive.
+     * ------------------------------------------ */
+    tickIt(dt) {
+      const T = SKY.TUNING.it;
+      // hide phase: freeze every locally-simulated seeker
+      if (api.roundTime < T.hideTime) {
+        for (const p of api.pawns) {
+          if (!p.isSeeker || p.isRemote) continue;
+          p.cmd.mx = 0; p.cmd.mz = 0;
+          p.cmd.jumpHeld = false; p.cmd.jumpPressed = false;
+          p.vel.x = 0; p.vel.z = 0;
+        }
+        const left = Math.ceil(T.hideTime - api.roundTime);
+        if (api._itCd !== left) {
+          api._itCd = left;
+          SKY.HUD.centerMsg('HIDE — ' + left, 0.9, 44);
+        }
+      } else if (!api._itReleased) {
+        api._itReleased = true;
+        SKY.HUD.centerMsg('THE SEEKER IS LOOSE', 1.6, 44);
+        SKY.SFX.overtime();
+      }
+      // all runners down -> the seeker takes the round
+      if (SKY.Net.authority) {
+        const runnersLeft = api.pawns.filter(p => !p.isSeeker && !p.eliminated).length;
+        if (runnersLeft === 0) {
+          const seeker = api.pawns.find(p => p.isSeeker);
+          this.endRound(seeker || null);
+        }
+      }
+    },
+
     /* loadout menu (B in deathmatch): pick any weapon, keep it every spawn */
     pickLoadout(kind) {
       api.dmLoadout = kind;
@@ -658,7 +737,8 @@ SKY.Game = (function () {
     handleKO(pawn) {
       if (!pawn.alive) return;   // can't die twice without a respawn between
       pawn.deaths++;
-      if (api.mode !== 'crown' && api.mode !== 'spark' && api.mode !== 'dm') pawn.lives--;
+      if (api.mode !== 'crown' && api.mode !== 'spark' && api.mode !== 'dm' &&
+          api.mode !== 'it') pawn.lives--;
       pawn.alive = false;
       SKY.Grapple.release(pawn);
       SKY.Effects.koBurst(_v.set(pawn.pos.x, SKY.World.killY + 3, pawn.pos.z).clone(), pawn.color);
@@ -666,7 +746,20 @@ SKY.Game = (function () {
       const G = SKY.TUNING.game;
       const killer = (pawn.lastHitBy && !pawn.lastHitBy.eliminated &&
                       api.time - pawn.lastHitT < G.koCreditWindow) ? pawn.lastHitBy : null;
-      if (killer) killer.koCount++;
+      // match stats (mk/md/ma survive across rounds; koCount is per-round)
+      pawn.md = (pawn.md || 0) + 1;
+      if (killer) { killer.koCount++; killer.mk = (killer.mk || 0) + 1; }
+      // assist: the most recent OTHER hitter inside the credit window
+      let assist = null;
+      const rh = pawn.recentHits || [];
+      for (let i = rh.length - 1; i >= 0; i--) {
+        const h = rh[i];
+        if (h.by === killer || h.by.eliminated) continue;
+        if (api.time - h.t > G.koCreditWindow) break;
+        assist = h.by;
+        break;
+      }
+      if (assist) assist.ma = (assist.ma || 0) + 1;
       const line = killer
         ? SKY.U.pick(KO_LINES).replace('{k}', killer.name).replace('{v}', pawn.name)
         : SKY.U.pick(FALL_LINES).replace('{v}', pawn.name);
@@ -677,6 +770,20 @@ SKY.Game = (function () {
       // bots love rubbing it in
       if (killer && killer.isBot && killer.alive && killer.grounded && Math.random() < 0.45) {
         killer.tryTaunt();
+      }
+
+      // IT: tagged runners are OUT; the seeker just respawns if they fall
+      if (api.mode === 'it') {
+        if (pawn.isSeeker) {
+          pawn.deadT = G.respawnDelay;
+        } else {
+          pawn.eliminated = true;
+          SKY.HUD.killFeed('<b>' + pawn.name + '</b> is OUT');
+          if (pawn.isLocal) SKY.HUD.showRespawn('Tagged out — LMB: next player · SPACE: orbit');
+        }
+        if (pawn.recentHits) pawn.recentHits.length = 0;
+        if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer, assist);
+        return;
       }
 
       if (api.mode === 'dm') {
@@ -693,22 +800,16 @@ SKY.Game = (function () {
             SKY.HUD.killFeed('<b>' + killer.name + '</b> is on a ' + killer.dmStreak + '-streak +' + C.streakPts);
           }
           killer.sparks = (killer.sparks || 0) + pts;
-          // assist: the most recent OTHER hitter inside the credit window
-          const rh = pawn.recentHits || [];
-          for (let i = rh.length - 1; i >= 0; i--) {
-            const h = rh[i];
-            if (h.by === killer || h.by.eliminated) continue;
-            if (api.time - h.t > G.koCreditWindow) break;
-            h.by.sparks = (h.by.sparks || 0) + C.assistPts;
-            SKY.HUD.killFeed('<b>' + h.by.name + '</b> assist +' + C.assistPts);
-            break;
+          if (assist) {
+            assist.sparks = (assist.sparks || 0) + C.assistPts;
+            SKY.HUD.killFeed('<b>' + assist.name + '</b> assist +' + C.assistPts);
           }
         }
         pawn.dmStreak = 0;
         if (pawn.recentHits) pawn.recentHits.length = 0;
         pawn.deadT = C.respawnDelay;
         if (pawn.isLocal) SKY.HUD.showRespawn('Respawning…');
-        if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer);
+        if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer, assist);
         return;
       }
       if (api.mode === 'spark') {
@@ -722,7 +823,7 @@ SKY.Game = (function () {
         const at = pawn.lastGroundPos || SKY.World.roamPoints[0] || pawn.pos;
         SKY.Sparks.mint(mint, at);
         if (pawn.isLocal) SKY.HUD.showRespawn('Respawning…');
-        if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer);
+        if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer, assist);
         return;
       }
       if (api.mode === 'crown' || pawn.lives > 0) {
@@ -741,7 +842,7 @@ SKY.Game = (function () {
         if (pawn.isLocal) SKY.HUD.showRespawn('Eliminated — spectating');
       }
       // online: tell everyone (and send loot choices to a remote victim)
-      if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer);
+      if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer, assist);
     },
 
     respawn(pawn) {
@@ -787,13 +888,11 @@ SKY.Game = (function () {
       if (champion) {
         SKY.HUD.roundBanner(null);
         // LOCKER coins: participation + KOs + win bonus (local, cosmetic-only)
-        let payline = '';
+        let payout = 0;
         if (api.player && SKY.Profile) {
-          const payout = SKY.Profile.matchReward(winner === api.player, api.player.koCount || 0);
-          payline = ' · +' + payout + ' ⬡';
+          payout = SKY.Profile.matchReward(winner === api.player, api.player.koCount || 0);
         }
-        SKY.HUD.centerMsg(name + ' wins the match', 8, 40);
-        SKY.HUD.subMsg('Enter — back to menu' + rp + payline, 8);
+        SKY.HUD.showMatchEnd(winner, payout);
       } else {
         // CS:GO-style banner up top; the arena stays live underneath
         const stars = winner
@@ -810,6 +909,51 @@ SKY.Game = (function () {
       api.loadoutOpen = false;
       SKY.HUD.hideLoot();
       SKY.HUD.hideLoadout();
+    },
+
+    /* CS:GO-style spectate for eliminated players: shoulder follow-cam
+       behind the target (LMB next / RMB prev), SPACE toggles a free orbit.
+       Returns true when it drove the camera this frame. */
+    spectateCam(rdt) {
+      const p = api.player;
+      const live = p && p.eliminated &&
+        (api.state === 'playing' || api.state === 'roundend');
+      if (!live) { SKY.HUD.spectate(null); return false; }
+      const targets = api.pawns.filter(q => q !== p && q.alive && !q.eliminated);
+      if (!targets.length) { SKY.HUD.spectate(null); return false; }
+      if (SKY.Input.consumeClick(0)) api._specIdx = (api._specIdx | 0) + 1;
+      if (SKY.Input.consumeClick(2)) api._specIdx = (api._specIdx | 0) - 1;
+      if (SKY.Input.consumePressed('Space')) api._specOrbit = !api._specOrbit;
+      const n = targets.length;
+      const tgt = targets[(((api._specIdx | 0) % n) + n) % n];
+      const In = SKY.Input;
+      if (api._specOrbit) {
+        // free orbit around the target (mouse steers)
+        const yaw = In.yaw, pit = SKY.U.clamp(In.pitch, -1.2, 1.2);
+        _v.set(tgt.pos.x, tgt.pos.y + tgt.height * 0.6, tgt.pos.z);
+        camera.position.set(
+          _v.x + Math.sin(yaw) * Math.cos(pit) * 6,
+          _v.y - Math.sin(pit) * 6,
+          _v.z + Math.cos(yaw) * Math.cos(pit) * 6);
+        camera.lookAt(_v);
+      } else {
+        // shoulder cam: ride behind the target's aim
+        SKY.U.dirFromYawPitch(tgt.yaw, tgt.pitch * 0.6, _v);
+        const ex = tgt.pos.x - _v.x * 3.6;
+        const ey = tgt.pos.y + tgt.eyeHeight + 0.6 - _v.y * 3.6;
+        const ez = tgt.pos.z - _v.z * 3.6;
+        camera.position.set(
+          SKY.U.damp(camera.position.x, ex, 14, rdt),
+          SKY.U.damp(camera.position.y, ey, 14, rdt),
+          SKY.U.damp(camera.position.z, ez, 14, rdt));
+        camera.lookAt(
+          tgt.pos.x + _v.x * 5,
+          tgt.pos.y + tgt.eyeHeight + _v.y * 5,
+          tgt.pos.z + _v.z * 5);
+      }
+      camera.fov = SKY.U.damp(camera.fov, 72, 8, rdt);
+      SKY.HUD.spectate(tgt, api._specOrbit);
+      return true;
     },
 
     /* ---------------- per-render-frame: camera, HUD, audio ---------------- */
@@ -837,8 +981,9 @@ SKY.Game = (function () {
                          api.state === 'matchend' || (p && p.eliminated);
 
       if (spectating) {
-        // the LOBBY stage owns the camera while a lineup is up
-        if (!(SKY.Attract.lobbyCam && SKY.Attract.lobbyCam(camera, rdt))) {
+        // priority: lobby stage > live spectate (eliminated) > center orbit
+        if (!(SKY.Attract.lobbyCam && SKY.Attract.lobbyCam(camera, rdt)) &&
+            !this.spectateCam(rdt)) {
           orbitA += rdt * 0.12;
           // menus orbit closer/lower so the attract-mode cast reads well
           const rad = api.state === 'menu' ? 26 : 34;
@@ -893,7 +1038,24 @@ SKY.Game = (function () {
         SKY.SFX.setSlide(false);
       }
 
+      // footsteps — every pawn on a run cadence, distance-attenuated so you
+      // can HEAR someone closing in (matters a lot in IT)
+      if (api.state === 'playing' || api.state === 'roundend') {
+        for (const q of api.pawns) {
+          if (!q.alive || !q.grounded || q.ragdoll || q.sliding) { q._stepAcc = 0; continue; }
+          const sp = Math.hypot(q.vel.x, q.vel.z);
+          if (sp < 2.5) { q._stepAcc = 0; continue; }
+          q._stepAcc = (q._stepAcc || 0) + sp * rdt;
+          if (q._stepAcc >= 2.6) {
+            q._stepAcc = 0;
+            SKY.SFX.step(Math.min(1, sp / 11),
+              q.isLocal ? 0 : camera.position.distanceTo(q.pos));
+          }
+        }
+      }
+
       SKY.Grapple.updateVisuals(api.pawns, camera);
+      SKY.Map.skyFollow(camera.position);   // no black void when yeeted FAR
       SKY.HUD.scoreboard(api.state !== 'menu' && SKY.Input.action('scoreboard'));
       SKY.HUD.update(rdt);
     },

@@ -24,6 +24,7 @@ SKY.GFX = (function () {
     // user-facing symptom was "the rifle points at me".)
     blaster:   { file: 'd', len: 0.52 },
     scatter:   { file: 'g', len: 0.50 },
+    seeker:    { file: 'g', len: 0.55 },   // IT tag gun — chunky shotgun look
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
     magnum:    { file: 'a', len: 0.42 },

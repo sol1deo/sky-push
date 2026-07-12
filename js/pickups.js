@@ -229,6 +229,7 @@ SKY.Pickups = (function () {
     /* fixed tick — only the authority spawns and arbitrates grabs */
     tick(dt) {
       if (!SKY.Net.authority) return;
+      if (SKY.Game.mode === 'it') return;   // tag has no weapon pickups
       if (spawners === null) buildSpawners();
       if (spawners.length) {
         // dedicated spawners: each point runs its own respawn clock

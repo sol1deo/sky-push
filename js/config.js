@@ -198,6 +198,17 @@ SKY.TUNING = {
       baseKnockback: 7, speedMult: 0.5, airborneBonus: 1.3, slideBonus: 1.3,
       headshotMult: 1.0, upFactor: 0.3, maxKnockback: 26, selfRecoil: 3, kick: 2.3, kickPitch: 0.030,
     },
+    // IT mode only — the seeker's tag gun. Point blank = you FLY, no matter
+    // where it hits. Never appears in loot pools / lockers / DM lists.
+    seeker: {
+      label: 'TAG CANNON', short: 'TAG', icon: '👹', rarity: 'epic', color: '#ff4444',
+      desc: 'One tag and they fly. Close range only.',
+      cooldown: 0.9, auto: false, mag: 999, reloadTime: 0.5, range: 8,
+      projSpeed: 70, projGravity: 0,
+      pellets: 5, spreadDeg: 5, zoomSpreadDeg: 4, zoomFov: 74,
+      baseKnockback: 60, speedMult: 0, airborneBonus: 1, slideBonus: 1,
+      headshotMult: 1, upFactor: 0.5, maxKnockback: 95, selfRecoil: 0.5, kick: 1.8, kickPitch: 0.02,
+    },
     piston: {
       label: 'PISTON CANNON', short: 'PISTON', icon: '🔩', rarity: 'rare', color: '#ff8560',
       desc: 'Hold to compress. Release to launch someone — and yourself.',
@@ -289,8 +300,13 @@ SKY.TUNING = {
     heavyLockMin:   0.5,
     heavyLockMax:   2.4,
     reelSpeed:    5.5,    // m/s the rope winches in while held (slow = real swings)
+    // MOMENTUM reel: a near-vertical rope barely winches — dead-hanging under
+    // a ledge is not a free elevator. Swing speed restores the full rate, so
+    // saves are about building an arc, not holding a button.
+    hangReelMin:    0.15, // reel multiplier when dangling straight below the point
+    swingSpeedFull: 12.0, // moving this fast reels at full rate at any angle
     pullAccel:    26.0,   // assist acceleration toward the point (×0.35 applied)
-    maxDuration:  6.0,    // rope auto-releases after this long
+    maxDuration:  3.5,    // rope auto-releases after this long (was 6 — hang naps)
     breakDist:    1.4,    // rope releases when you get this close to the point
     cooldown:     1.2,    // brief regen — half the air-cannon's cooldown
     minCdFrac:    0.3,    // ...a quick tap only costs this fraction of it
@@ -370,6 +386,16 @@ SKY.TUNING = {
       [50, 38, 12],
       [25, 45, 30],
     ],
+  },
+
+  /* ------------------------------------------------------------------
+   * IT (tag) — one SEEKER hunts; everyone else runs with only hook +
+   * cannon. Seeker's tag gun insta-yeets. Runners out = seeker wins;
+   * survive the clock = runners win.
+   * ------------------------------------------------------------------ */
+  it: {
+    hideTime:  8,      // seconds the seeker is frozen while runners scatter
+    roundTime: 180,    // default round length when no rule is set
   },
 
   /* ------------------------------------------------------------------

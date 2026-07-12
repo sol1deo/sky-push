@@ -32,9 +32,16 @@ because these creators are great:
 
 ## Audio
 
-- **Sound effects** (`audio/sfx/`) — from Kenney's "Sci-Fi Sounds", "Impact Sounds",
-  "Interface Sounds" and "Music Jingles" packs (https://kenney.nl/assets?q=audio), CC0.
-  Files renamed to game event names (`fire_*`, `hit_*`, `cash_*`, …).
+- **Sound effects** (`audio/sfx/`) — files renamed to game event names
+  (`fire_*`, `hit_*`, `cash_*`, …). Sources:
+  - **Rust & Blood — SFX Library v1.1d** — suppressed gunshots, explosions,
+    body impacts, reloads, swings and footsteps (per the pack's own license;
+    only curated picks ship, the raw library is not in the repo).
+  - **400 Sounds Pack** — UI clicks/pops, coins, item pickups, air burst
+    (per the pack's own license; raw library not in the repo).
+  - **Kenney** "Sci-Fi Sounds" / "Impact Sounds" / "Interface Sounds" /
+    "Music Jingles" (https://kenney.nl/assets?q=audio), CC0 — landings,
+    jump pad, grapple, thunder, round jingles (`go`, `win`, `lose`, `ko`).
 
 ## Music
 

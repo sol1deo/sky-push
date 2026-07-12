@@ -15,7 +15,14 @@ SKY.HUD = (function () {
   let lootKeyHandler = null;
 
   /* ---- themed dropdowns: the native <select> stays (all .value/.disabled/
-     change wiring intact) but is hidden behind a styled trigger + popup ---- */
+     change wiring intact) but is hidden behind a styled trigger. The popup is
+     PORTALED to <body> with fixed positioning so scroll containers and card
+     edges can never clip it. ---- */
+  let ddPop = null, ddOwner = null;   // one shared popup for all dropdowns
+  function ddClose() {
+    if (ddPop) ddPop.classList.add('hidden');
+    ddOwner = null;
+  }
   function dressSelect(sel) {
     if (sel._dressed) return;
     sel._dressed = true;
@@ -27,9 +34,18 @@ SKY.HUD = (function () {
     trig.type = 'button';
     trig.className = 'dd-trig';
     wrap.appendChild(trig);
-    const pop = document.createElement('div');
-    pop.className = 'dd-pop hidden';
-    wrap.appendChild(pop);
+    if (!ddPop) {
+      ddPop = document.createElement('div');
+      ddPop.className = 'dd-pop hidden';
+      document.body.appendChild(ddPop);
+      ddPop.addEventListener('click', (e) => {
+        const o = e.target.closest('.dd-opt');
+        if (!o || !ddOwner) return;
+        ddOwner.value = o.dataset.v;
+        ddOwner.dispatchEvent(new Event('change', { bubbles: true }));
+        ddClose();
+      });
+    }
     const optHtml = (o) =>
       `<div class="dd-opt${o.value === sel.value ? ' sel' : ''}" data-v="${o.value}">${o.textContent}</div>`;
     const sync = () => {
@@ -37,7 +53,10 @@ SKY.HUD = (function () {
       trig.textContent = o ? o.textContent : '—';
       wrap.classList.toggle('locked', sel.disabled);
     };
-    const build = () => {
+    trig.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (sel.disabled) return;
+      if (ddOwner === sel) { ddClose(); return; }
       let h = '';
       for (const node of sel.children) {
         if (node.tagName === 'OPTGROUP') {
@@ -45,31 +64,27 @@ SKY.HUD = (function () {
           for (const o of node.children) h += optHtml(o);
         } else h += optHtml(node);
       }
-      pop.innerHTML = h;
-    };
-    trig.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (sel.disabled) return;
-      const wasOpen = !pop.classList.contains('hidden');
-      closeDropdowns();
-      if (!wasOpen) { build(); pop.classList.remove('hidden'); }
-    });
-    pop.addEventListener('click', (e) => {
-      const o = e.target.closest('.dd-opt');
-      if (!o) return;
-      sel.value = o.dataset.v;
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      sync();
-      pop.classList.add('hidden');
+      ddPop.innerHTML = h;
+      // fixed-position under the trigger; flip up if the bottom would clip
+      const r = trig.getBoundingClientRect();
+      ddPop.style.left = r.left + 'px';
+      ddPop.style.width = Math.max(r.width, 170) + 'px';
+      ddPop.classList.remove('hidden');
+      const ph = Math.min(ddPop.scrollHeight, 290);
+      if (r.bottom + ph + 10 > window.innerHeight && r.top - ph - 10 > 0) {
+        ddPop.style.top = (r.top - ph - 6) + 'px';
+      } else {
+        ddPop.style.top = (r.bottom + 5) + 'px';
+      }
+      ddOwner = sel;
     });
     sel.addEventListener('change', sync);
     sel._ddSync = sync;
     sync();
   }
-  function closeDropdowns() {
-    document.querySelectorAll('.dd-pop').forEach(p => p.classList.add('hidden'));
-  }
-  window.addEventListener('click', closeDropdowns);
+  window.addEventListener('click', ddClose);
+  window.addEventListener('resize', ddClose);
+  window.addEventListener('wheel', () => ddClose(), { passive: true });
 
   const api = {
     botCount: 3,
@@ -107,6 +122,7 @@ SKY.HUD = (function () {
         dm: 'One timed round: KOs score points, assists pay less, the rotating bonus weapon pays extra. Pick your loadout with B.',
         lbs: 'Limited lives, first to the round target wins the match. Fall off = lose a life.',
         crown: 'Grab the crown and HOLD it — total hold time wins. Dying drops it where the crown home is.',
+        it: 'One SEEKER hunts with a point-blank tag cannon that sends you FLYING. Runners get only hook + air cannon — dodge, hide, survive the clock.',
       };
       const wireSel = (id, set) => {
         const el = $(id);
@@ -143,6 +159,14 @@ SKY.HUD = (function () {
         SKY.Net.quickPlay();
       });
       $('nav-nick').addEventListener('click', () => SKY.Net.renameNick());
+      // soft UI tick on any interactive menu element (400 pack select_*)
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest) return;
+        if (e.target.closest('button, .dd, .dd-pop, .play-sub, .tab, .lk-tab, ' +
+            '.mode-card, .loot-card, input[type=checkbox], .seg-btn, .nav-item')) {
+          SKY.SFX.ui();
+        }
+      }, true);
       api.refreshNick();
       SKY.MapData.onListChange = () => api.refreshCustomMaps();
       api.refreshCustomMaps();
@@ -315,8 +339,8 @@ SKY.HUD = (function () {
       else { el.respawn.classList.remove('hidden'); el.respawn.textContent = text; }
     },
 
-    /* -------- death reward cards: click OR 1/2/3, unlimited time -------- */
-    showLoot(choices, onPick) {
+    /* -------- death reward cards: click OR 1/2/3 (or skip) -------- */
+    showLoot(choices, onPick, onSkip) {
       el.loot.querySelector('.loot-title').textContent = 'Choose a reward';
       el.loot.querySelector('.loot-sub').textContent = 'click · or press 1 / 2 / 3';
       el.lootCards.innerHTML = choices.map((it, i) => {
@@ -338,6 +362,15 @@ SKY.HUD = (function () {
       el.lootCards.querySelectorAll('.loot-card').forEach(card => {
         card.addEventListener('click', () => onPick(parseInt(card.dataset.i, 10)));
       });
+      // SKIP: respawn without taking anything
+      const oldSkip = el.loot.querySelector('#loot-skip');
+      if (oldSkip) oldSkip.remove();
+      const skip = document.createElement('button');
+      skip.className = 'btn small';
+      skip.id = 'loot-skip';
+      skip.textContent = 'Skip — no reward';
+      skip.addEventListener('click', () => (onSkip || (() => SKY.Game.skipLoot()))());
+      el.loot.appendChild(skip);
       // key picks handled here (inside the event = valid user gesture for
       // re-locking the pointer afterwards)
       lootKeyHandler = (e) => {
@@ -359,6 +392,67 @@ SKY.HUD = (function () {
     },
 
     scoreboard(show) { el.sb.classList.toggle('hidden', !show); },
+
+    /* spectate pill (eliminated players riding someone else's run) */
+    spectate(tgt, orbit) {
+      const elx = $('spec-ov');
+      if (!elx) return;
+      if (!tgt) {
+        if (!elx.classList.contains('hidden')) elx.classList.add('hidden');
+        elx._k = '';
+        return;
+      }
+      const k = tgt.name + (orbit ? 1 : 0);
+      if (elx._k !== k) {
+        elx._k = k;
+        elx.innerHTML = `<small>SPECTATING</small> <b style="color:${tgt.color}">${tgt.name}</b>
+          <span>LMB next · RMB prev · SPACE ${orbit ? 'follow' : 'orbit'}</span>`;
+        elx.classList.remove('hidden');
+      }
+    },
+
+    /* -------- end-of-match screen: winner, podium stats, the table -------- */
+    showMatchEnd(winner, payout) {
+      const G = SKY.Game;
+      const ov = $('match-ov');
+      if (!ov) return;
+      const rows = [...G.pawns].sort((a, b) =>
+        ((b.mk || 0) - (a.mk || 0)) || ((a.md || 0) - (b.md || 0)));
+      const kd = (p) => ((p.mk || 0) / Math.max(1, p.md || 0)).toFixed(1);
+      const top = (fn, label, unit) => {
+        const best = rows.slice().sort((a, b) => fn(b) - fn(a))[0];
+        return best && fn(best) > 0
+          ? `<div class="me-chip"><small>${label}</small><b style="color:${best.color}">${best.name}</b><span>${fn(best)}${unit || ''}</span></div>`
+          : '';
+      };
+      const me = G.player;
+      $('me-winner').innerHTML = winner
+        ? `<b style="color:${winner.color}">${winner.name}</b> WINS THE MATCH`
+        : 'MATCH OVER';
+      $('me-podium').innerHTML =
+        top(p => p.mk || 0, 'Most KOs', '') +
+        top(p => +kd(p), 'Best K/D', '') +
+        top(p => p.ma || 0, 'Most assists', '');
+      $('me-table').innerHTML =
+        `<tr><th></th><th>K</th><th>D</th><th>A</th><th>K/D</th></tr>` +
+        rows.map(p => `<tr class="${p.isLocal ? 'me' : ''}${p === winner ? ' win' : ''}">
+          <td style="color:${p.color}">${p.name}${p === winner ? ' 👑' : ''}</td>
+          <td>${p.mk || 0}</td><td>${p.md || 0}</td><td>${p.ma || 0}</td><td>${kd(p)}</td>
+        </tr>`).join('');
+      $('me-mystats').innerHTML = me
+        ? `<small>YOUR MATCH</small>
+           <div><b>${me.mk || 0}</b><span>knockouts</span></div>
+           <div><b>${me.md || 0}</b><span>knocked out</span></div>
+           <div><b>${me.ma || 0}</b><span>assists</span></div>
+           <div><b>${kd(me)}</b><span>k/d</span></div>` +
+          (payout ? `<div><b>+${payout}</b><span>⬡ earned</span></div>` : '')
+        : '';
+      ov.classList.remove('hidden');
+    },
+    hideMatchEnd() {
+      const ov = $('match-ov');
+      if (ov) ov.classList.add('hidden');
+    },
 
     /* -------- DEATHMATCH loadout picker (B) -------- */
     showLoadout(weapons, current, onPick) {
@@ -491,7 +585,20 @@ SKY.HUD = (function () {
       } else {
         el.sparks.classList.add('hidden');
       }
-      if (G.mode === 'crown') {
+      if (G.mode === 'it') {
+        el.lives.classList.add('hidden');
+        el.sparks.classList.add('hidden');
+        el.crownStatus.classList.remove('hidden');
+        el.alive.classList.remove('hidden');
+        const seeker = G.pawns.find(q => q.isSeeker);
+        const hideLeft = SKY.TUNING.it.hideTime - G.roundTime;
+        setText(el.crownStatus, seeker
+          ? (hideLeft > 0 ? '👹 ' + seeker.name + ' in ' + Math.ceil(hideLeft)
+             : '👹 ' + seeker.name)
+          : 'IT');
+        setText(el.alive,
+          G.pawns.filter(q => !q.isSeeker && !q.eliminated).length + ' runners');
+      } else if (G.mode === 'crown') {
         el.lives.classList.add('hidden');
         el.alive.classList.add('hidden');
         el.crownStatus.classList.remove('hidden');
@@ -601,20 +708,28 @@ SKY.HUD = (function () {
       const rows = [...G.pawns].sort((a, b) =>
         (G.mode === 'spark' || G.mode === 'dm')
           ? ((b.sparks || 0) - (a.sparks || 0)) || (b.koCount - a.koCount)
-          : (b.roundWins - a.roundWins) || (b.lives - a.lives) || (b.koCount - a.koCount));
+          : (b.roundWins - a.roundWins) || ((b.mk || 0) - (a.mk || 0)));
       el.sbBody.innerHTML = rows.map(p => {
         const cls = (p.isLocal ? 'me' : '') + (p.eliminated ? ' out' : '');
-        const status = p.eliminated ? 'Out' : (p.alive ? 'Alive' : 'Respawning');
-        const lives = G.mode === 'spark' ? '✦' + (p.sparks || 0)
+        const status = p.eliminated ? 'OUT'
+          : (G.mode === 'it' && p.isSeeker) ? '👹 SEEKER'
+          : (p.alive ? '' : 'respawning');
+        const score = G.mode === 'spark' ? '✦' + (p.sparks || 0)
           : G.mode === 'dm' ? '★' + (p.sparks || 0)
           : G.mode === 'crown' ? Math.floor(p.crownTime) + 's'
+          : G.mode === 'it' ? ''
           : '♥'.repeat(Math.max(0, p.lives));
+        const kd = ((p.mk || 0) / Math.max(1, p.md || 0)).toFixed(1);
         const ping = p.isBot ? 'bot'
           : !online ? '—'
           : p.netId === 'host' ? 'host'
           : (SKY.Net.pings[p.netId] !== undefined ? SKY.Net.pings[p.netId] + 'ms' : '…');
-        return `<tr class="${cls}"><td>${p.name}</td><td>${'★'.repeat(p.roundWins)}</td>` +
-               `<td>${lives}</td><td>${p.koCount}</td><td>${ping}</td><td>${status}</td></tr>`;
+        return `<tr class="${cls}">
+          <td class="sb-name" style="color:${p.color}">${p.name}${p.isLocal ? ' <i>you</i>' : ''}</td>
+          <td>${'★'.repeat(p.roundWins)}</td>
+          <td>${score}</td>
+          <td>${p.mk || 0}</td><td>${p.md || 0}</td><td>${p.ma || 0}</td><td>${kd}</td>
+          <td>${ping}</td><td class="sb-status">${status}</td></tr>`;
       }).join('');
     },
   };

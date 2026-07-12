@@ -66,10 +66,12 @@ window.SKY = window.SKY || {};
         }
       }
 
-      // roam retarget
+      // roam retarget (IT has its own hunt/hide targeting)
       this.retargetT -= B.thinkInterval;
       const distToTarget = Math.hypot(this.roamTarget.x - p.pos.x, this.roamTarget.z - p.pos.z);
-      if (this.retargetT <= 0 || distToTarget < 2) {
+      if (SKY.Game.mode === 'it') {
+        this.itThink(pawns);
+      } else if (this.retargetT <= 0 || distToTarget < 2) {
         this.retargetT = SKY.U.rand(B.retargetMin, B.retargetMax);
         const rides = SKY.World.rideSolids || [];
         const orb = SKY.Game.mode === 'spark' && Math.random() < 0.55
@@ -103,6 +105,41 @@ window.SKY = window.SKY || {};
         _v.set(p.pos.x + (p.vel.x / hs) * B.edgeLookahead, p.pos.y + 0.5, p.pos.z + (p.vel.z / hs) * B.edgeLookahead);
         if (!SKY.World.raycast(_v, _down, 7)) this.edgeDanger = true;
       }
+    }
+
+    /* IT brain: the seeker hunts the nearest live runner; runners keep a
+       STICKY nearby hiding spot away from the seeker (re-picking the global
+       farthest point every think marched whole packs off the map rim) */
+    itThink(pawns) {
+      const p = this.pawn;
+      this.enemy = null;
+      if (p.isSeeker) {
+        let bestD = Infinity, tgt = null;
+        for (const o of pawns) {
+          if (o === p || o.isSeeker || !o.alive || o.eliminated) continue;
+          const d = o.pos.distanceTo(p.pos);
+          if (d < bestD) { bestD = d; tgt = o; }
+        }
+        if (tgt) { this.enemy = tgt; this.roamTarget.copy(tgt.pos); }
+        return;
+      }
+      const seeker = pawns.find(o => o.isSeeker && o.alive);
+      if (!seeker) return;
+      const sd = seeker.pos.distanceTo(p.pos);
+      const spotBlown = sd < 16 && this.roamTarget.distanceTo(seeker.pos) < 14;
+      const arrived = Math.hypot(this.roamTarget.x - p.pos.x, this.roamTarget.z - p.pos.z) < 2;
+      if (this.retargetT <= 0 || spotBlown || arrived) {
+        this.retargetT = SKY.U.rand(2.2, 3.6);
+        let best = null, bestScore = -Infinity;
+        for (const rp of SKY.World.roamPoints) {
+          const dMe = rp.distanceTo(p.pos);
+          if (dMe > 34) continue;              // reachable spots only, no map-rim marches
+          const score = rp.distanceTo(seeker.pos) - dMe * 1.2;
+          if (score > bestScore) { bestScore = score; best = rp; }
+        }
+        if (best) this.roamTarget.copy(best);
+      }
+      if (sd < 7) this.enemy = seeker;         // point-blank: cannon them away
     }
 
     _nearestSafe() {
@@ -174,7 +211,9 @@ window.SKY = window.SKY || {};
       if (this.enemy && this.enemy.alive && !panicking) {
         const aligned = Math.abs(SKY.U.angDelta(this.aimYaw, wantYaw)) < B.fireAlignDeg * Math.PI / 180;
         const dist = this.enemy.pos.distanceTo(p.pos);
-        if (aligned && dist < B.fireRange && p.pbCd <= 0 && Math.random() < B.fireChance * dt * 4) {
+        // the tag cannon is point-blank — don't waste shots across the map
+        const fireR = (SKY.Game.mode === 'it' && p.isSeeker) ? 7 : B.fireRange;
+        if (aligned && dist < fireR && p.pbCd <= 0 && Math.random() < B.fireChance * dt * 4) {
           SKY.Weapons.tryFirePrimary(p);
         }
         if (dist < B.cannonRange && p.acCd <= 0 && Math.random() < 1.5 * dt) {
@@ -207,7 +246,10 @@ window.SKY = window.SKY || {};
       if (ml > 0.3) {
         mx /= ml; mz /= ml;
         if (this.edgeDanger && !panicking) {
-          if (p.speedH() > 9) {
+          // IT runners are cowards by design — with ONE life, never gamble
+          // a gap jump while fleeing; hug the platform instead
+          const daring = !(SKY.Game.mode === 'it' && !p.isSeeker);
+          if (daring && p.speedH() > 9) {
             cmd.jumpHeld = true; cmd.jumpPressed = true;       // commit to the gap
           } else {
             // hard turn to the nearest safe point, don't dribble off the edge

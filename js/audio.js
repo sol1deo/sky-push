@@ -24,10 +24,10 @@ SKY.SFX = (function () {
   /* ---------------- sample bank (https only) ---------------- */
   const canFetch = /^https?:$/.test(location.protocol);
   const MANIFEST = {
-    fire_light: 5, fire_med: 5, fire_heavy: 5, boom: 3, boom_low: 1, thunder_smp: 1,
-    hit: 3, headshot: 2, land: 3, step: 5, dash: 2, pad: 1, grapple: 1,
+    fire_light: 3, fire_med: 4, fire_heavy: 3, boom: 3, boom_low: 1, thunder_smp: 1,
+    hit: 2, headshot: 2, land: 3, step: 5, dash: 2, pad: 1, grapple: 1,
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
-    go: 1, ko: 1, aircannon: 1, win: 1, lose: 1,
+    go: 1, ko: 1, aircannon: 1, win: 1, lose: 1, uiclick: 4,
   };
   const FILE_FOR = { thunder_smp: 'thunder' };   // bank name -> file prefix
   const bank = {};          // name -> [AudioBuffer] (buffers survive rebuilds)
@@ -236,21 +236,24 @@ SKY.SFX = (function () {
     s.start(t0); s.stop(t0 + dur + 0.02);
   }
 
-  /* soft per-weapon "pew" table: [bank, rate, vol]. Everything is pitched
-     into toy-blaster territory — no bass-heavy samples on rapid fire. */
+  /* per-weapon shot table: [bank, rate, vol]. The banks are SUPPRESSED
+     samples (Rust & Blood) — already calm and thumpy, so rates stay close
+     to 1 and character comes from which bank a weapon draws:
+     light = suppressed pistol · med = suppressed SMG · heavy = shotgun/sniper */
   const FIRE_SND = {
-    pistol:    ['fire_med', 1.35, 0.20],
-    smg:       ['fire_light', 1.5, 0.13],
-    blaster:   ['fire_med', 1.12, 0.18],
-    burst:     ['fire_light', 1.3, 0.16],
-    scatter:   ['fire_med', 0.82, 0.28],
-    boomstick: ['fire_med', 0.65, 0.36],
-    longshot:  ['fire_heavy', 1.55, 0.26],
-    magnum:    ['fire_heavy', 1.65, 0.24],
-    mega:      ['fire_med', 1.0, 0.17],
-    bouncer:   ['fire_light', 1.15, 0.16],
-    piston:    ['fire_heavy', 1.3, 0.28],
-    lobber:    ['boom_low', 2.4, 0.3],     // "thoomp"
+    pistol:    ['fire_light', 1.05, 0.30],
+    smg:       ['fire_med', 1.10, 0.22],
+    blaster:   ['fire_med', 0.95, 0.26],
+    burst:     ['fire_light', 1.18, 0.24],
+    scatter:   ['fire_heavy', 1.05, 0.30],
+    boomstick: ['fire_heavy', 0.85, 0.36],
+    longshot:  ['fire_heavy', 1.0, 0.32],
+    magnum:    ['fire_light', 0.80, 0.34],
+    mega:      ['fire_med', 0.88, 0.26],
+    bouncer:   ['fire_light', 1.22, 0.22],
+    piston:    ['fire_heavy', 1.15, 0.30],
+    seeker:    ['fire_heavy', 0.70, 0.42],   // IT tag cannon: deep suppressed WHUMP
+    lobber:    ['boom_low', 2.4, 0.3],       // "thoomp"
     quad:      ['boom_low', 2.6, 0.26],
   };
 
@@ -331,6 +334,15 @@ SKY.SFX = (function () {
                 noise(0.5, 300, 0.5 * a); noise(0.08, 3000, 0.25 * a, 'highpass'); },
     beep()    { if (sample('beep', 0.3)) return;
                 tone(880, 880, 0.07, 'square', 0.15); },
+    /* menu/UI click — soft select tick (400 pack) */
+    ui()      { if (sample('uiclick', 0.22, SKY.U.rand(0.96, 1.06))) return;
+                tone(700, 700, 0.035, 'square', 0.07); },
+    /* footstep: v = 0..1 run intensity, dist for other players' feet */
+    step(v, dist) {
+      const a = att(dist === undefined ? 0 : dist);
+      if (a < 0.07) return;
+      sample('step', (0.13 + v * 0.13) * a, SKY.U.rand(0.92, 1.08));
+    },
     cash()    { if (sample('cash', 0.26, SKY.U.rand(1.0, 1.15))) return;
                 tone(1320, 1760, 0.07, 'square', 0.14); },
     crown()   { if (sample('crown', 0.36)) return;
