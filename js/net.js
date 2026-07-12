@@ -26,7 +26,8 @@ SKY.Net = (function () {
     code: null,
     isPublic: false,
     roster: [],            // [{id, name, color, bot}]
-    settings: { map: 'sky', mode: 'spark', fillBots: true, rounds: 2, lives: 3, crown: 25, sparks: 40, dmMin: 10 },
+    settings: { map: 'sky', mode: 'dm', fillBots: false, rounds: 2, lives: 3,
+      crown: 25, sparks: 40, dmMin: 10, time: 0 },
     inGame: false,
   };
 
@@ -897,7 +898,8 @@ SKY.Net = (function () {
     api.roster = roster;
     api.inGame = true;
     const rules = { rounds: api.settings.rounds, lives: api.settings.lives,
-      crown: api.settings.crown, sparks: api.settings.sparks, dmMin: api.settings.dmMin };
+      crown: api.settings.crown, sparks: api.settings.sparks, dmMin: api.settings.dmMin,
+      time: api.settings.time || 0 };
     // custom (editor) maps ride along in the start message — clients don't
     // need the map deployed anywhere, the def IS the map
     const mapDef = SKY.MapData.get(api.settings.map) || null;
@@ -1095,26 +1097,25 @@ SKY.Net = (function () {
         <span style="color:${r.color}">●</span> ${r.name}${r.id === 'host' ? ' (host)' : ''}${r.id === api.myId ? ' (you)' : ''}
       </div>`).join('');
     const isHost = api.role === 'host';
-    document.querySelectorAll('#mp-lobby .lmap-btn, #mp-lobby .lmode-btn, #mp-lobby .lrounds-btn, ' +
-      '#mp-lobby .llives-btn, #mp-lobby .lcrown-btn, #mp-lobby .lsparks-btn, #mp-lobby .ldm-btn, ' +
-      '#lobby-bots, #lobby-start')
+    const S = api.settings;
+    document.querySelectorAll('#lobby-side select, #lobby-bots, #lobby-start')
       .forEach(el => { el.disabled = !isHost; el.classList.toggle('locked', !isHost); });
-    document.querySelectorAll('#mp-lobby .lmap-btn').forEach(b =>
-      b.classList.toggle('sel', b.dataset.m === api.settings.map));
-    document.querySelectorAll('#mp-lobby .lmode-btn').forEach(b =>
-      b.classList.toggle('sel', b.dataset.m === api.settings.mode));
-    document.querySelectorAll('#mp-lobby .lrounds-btn').forEach(b =>
-      b.classList.toggle('sel', +b.dataset.v === (api.settings.rounds || 2)));
-    document.querySelectorAll('#mp-lobby .llives-btn').forEach(b =>
-      b.classList.toggle('sel', +b.dataset.v === (api.settings.lives || 3)));
-    document.querySelectorAll('#mp-lobby .lcrown-btn').forEach(b =>
-      b.classList.toggle('sel', +b.dataset.v === (api.settings.crown || 25)));
-    document.querySelectorAll('#mp-lobby .lsparks-btn').forEach(b =>
-      b.classList.toggle('sel', +b.dataset.v === (api.settings.sparks || 40)));
-    document.querySelectorAll('#mp-lobby .ldm-btn').forEach(b =>
-      b.classList.toggle('sel', +b.dataset.v === (api.settings.dmMin || 10)));
-    $('lobby-bots').checked = api.settings.fillBots;
+    const setVal = (id, v) => { const el = $(id); if (el) el.value = String(v); };
+    setVal('lmap-select', S.map);
+    setVal('lmode-select', S.mode === 'spark' ? 'dm' : S.mode);
+    setVal('ldm-select', S.dmMin || 10);
+    setVal('lrounds-select', S.rounds || 2);
+    setVal('llives-select', S.lives || 3);
+    setVal('lcrown-select', S.crown || 25);
+    setVal('ltime-select', S.time || 0);
+    // contextual rule rows follow the mode
+    const m = S.mode;
+    document.querySelectorAll('.lr-dm').forEach(e => e.classList.toggle('hidden', m !== 'dm'));
+    document.querySelectorAll('.lr-rl').forEach(e => e.classList.toggle('hidden', m === 'spark' || m === 'dm'));
+    document.querySelectorAll('.lr-crown').forEach(e => e.classList.toggle('hidden', m !== 'crown'));
+    $('lobby-bots').checked = S.fillBots;
     $('lobby-start').textContent = isHost ? 'START GAME' : 'waiting for host…';
+    if (SKY.HUD.syncSelects) SKY.HUD.syncSelects();   // themed dropdown labels
   }
 
   function hostSetSettings(patch) {
@@ -1210,8 +1211,9 @@ SKY.Net = (function () {
     $('srv-refresh').onclick = () => { if (!api._browsing) refreshServers(); };
     $('mp-nick').onclick = () => promptNickname();
     $('mp-quick').onclick = () => ensureNickname(() => quickJoin(1));
-    // ONE create button; the checkbox decides public (listed) vs private (code)
-    $('mp-create').onclick = () => ensureNickname(() => host(!$('mp-private').checked, 1));
+    // two honest buttons instead of the old create+private-checkbox combo
+    $('mp-create').onclick = () => ensureNickname(() => host(true, 1));
+    $('mp-create-priv').onclick = () => ensureNickname(() => host(false, 1));
     $('mp-join').onclick = () => ensureNickname(() => {
       const code = $('mp-code').value.trim().toUpperCase();
       if (code) join('priv-' + code);
@@ -1222,29 +1224,20 @@ SKY.Net = (function () {
       try { navigator.clipboard.writeText($('lobby-code').textContent); status('Code copied!'); } catch (e) {}
     };
     $('lobby-bots').onchange = (e) => { if (api.role === 'host') hostSetSettings({ fillBots: e.target.checked }); };
-    // delegated: custom-map buttons get added to this row dynamically
-    $('lmap-row').addEventListener('click', (e) => {
-      const b = e.target.closest('.lmap-btn');
-      if (b && api.role === 'host') hostSetSettings({ map: b.dataset.m });
-    });
-    document.querySelectorAll('#mp-lobby .lrounds-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ rounds: +b.dataset.v }); };
-    });
-    document.querySelectorAll('#mp-lobby .llives-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ lives: +b.dataset.v }); };
-    });
-    document.querySelectorAll('#mp-lobby .ldm-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ dmMin: +b.dataset.v }); };
-    });
-    document.querySelectorAll('#mp-lobby .lcrown-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ crown: +b.dataset.v }); };
-    });
-    document.querySelectorAll('#mp-lobby .lsparks-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ sparks: +b.dataset.v }); };
-    });
-    document.querySelectorAll('#mp-lobby .lmode-btn').forEach(b => {
-      b.onclick = () => { if (api.role === 'host') hostSetSettings({ mode: b.dataset.m }); };
-    });
+    // match-setup dropdowns (host only; renderLobby disables them for clients)
+    const lobbySel = (id, patch) => {
+      const el = $(id);
+      if (el) el.addEventListener('change', () => {
+        if (api.role === 'host') hostSetSettings(patch(el.value));
+      });
+    };
+    lobbySel('lmap-select', v => ({ map: v }));
+    lobbySel('lmode-select', v => ({ mode: v }));
+    lobbySel('ldm-select', v => ({ dmMin: +v }));
+    lobbySel('lrounds-select', v => ({ rounds: +v }));
+    lobbySel('llives-select', v => ({ lives: +v }));
+    lobbySel('lcrown-select', v => ({ crown: +v }));
+    lobbySel('ltime-select', v => ({ time: +v }));
   }
 
   return {
@@ -1256,6 +1249,7 @@ SKY.Net = (function () {
 
     get roster() { return api.roster; },
     get pings() { return pings; },
+    get settings() { return api.settings; },
     netTest, directHost, directComplete, directJoin,
     init() {
       initUI();

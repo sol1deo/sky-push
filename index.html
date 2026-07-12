@@ -67,6 +67,72 @@
     font-weight:700; }
   .btn.small:hover { color:var(--txt); border-color:rgba(255,255,255,.35); filter:none; }
 
+  /* ---------- themed form controls (dropdowns, checks, sliders) ---------- */
+  select { appearance:none; -webkit-appearance:none;
+    background:rgba(255,255,255,.06)
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23ffd34d' stroke-width='2' fill='none'/></svg>")
+      no-repeat right 12px center;
+    border:1px solid var(--line); border-radius:8px; color:var(--txt);
+    font-family:inherit; font-size:12px; font-weight:700; letter-spacing:.08em;
+    text-transform:uppercase; padding:9px 34px 9px 14px; cursor:pointer; outline:none;
+    transition:border-color .12s; }
+  select:hover { border-color:rgba(255,255,255,.35); }
+  select:focus { border-color:var(--brand); }
+  select:disabled { opacity:.45; cursor:default; }
+  select option { background:#12142a; color:var(--txt); text-transform:none;
+    font-weight:600; }
+  input[type=checkbox] { appearance:none; -webkit-appearance:none; width:21px; height:21px;
+    border:2px solid var(--line); border-radius:6px; background:rgba(255,255,255,.05);
+    cursor:pointer; position:relative; vertical-align:middle; flex:none;
+    transition:background .12s, border-color .12s; }
+  input[type=checkbox]:hover { border-color:rgba(255,255,255,.45); }
+  input[type=checkbox]:checked { background:var(--brand); border-color:var(--brand); }
+  input[type=checkbox]:checked::after { content:''; position:absolute; left:5px; top:1px;
+    width:5px; height:10px; border:solid var(--brand-ink); border-width:0 3px 3px 0;
+    transform:rotate(45deg); }
+  input[type=range] { accent-color:var(--brand); }
+  /* themed dropdown widget (.dd wraps + hides the native select) */
+  .dd { position:relative; display:inline-block; min-width:150px; }
+  .setup-grid .dd { width:100%; }
+  .dd select { display:none; }
+  .dd-trig { width:100%; text-align:left; appearance:none; border:1px solid var(--line);
+    border-radius:8px; color:var(--txt); font-family:inherit; font-size:12px;
+    font-weight:800; font-style:italic; letter-spacing:.08em; text-transform:uppercase;
+    padding:10px 36px 10px 14px; cursor:pointer; outline:none;
+    background:var(--bg2)
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23ffd34d' stroke-width='2' fill='none'/></svg>")
+      no-repeat right 13px center;
+    transition:border-color .12s, transform .12s; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; }
+  .dd-trig:hover { border-color:var(--brand); }
+  .dd.locked .dd-trig { opacity:.45; cursor:default; }
+  .dd.locked .dd-trig:hover { border-color:var(--line); }
+  .dd-pop { position:absolute; left:0; right:0; top:calc(100% + 5px); z-index:60;
+    background:rgba(13,15,28,.97); border:1px solid var(--line); border-radius:10px;
+    padding:5px; max-height:290px; overflow-y:auto;
+    box-shadow:0 14px 40px rgba(0,0,0,.55); animation:ddin .14s ease-out; }
+  @keyframes ddin { from { opacity:0; transform:translateY(-5px); } }
+  .dd-pop::-webkit-scrollbar { width:5px; }
+  .dd-pop::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:3px; }
+  .dd-opt { padding:9px 12px; border-radius:7px; font-size:11.5px; font-weight:700;
+    letter-spacing:.06em; color:var(--dim); cursor:pointer; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; }
+  .dd-opt:hover { background:var(--brand); color:var(--brand-ink); }
+  .dd-opt.sel { color:var(--txt); box-shadow:inset 3px 0 0 var(--brand); }
+  .dd-opt.sel:hover { color:var(--brand-ink); }
+  .dd-group { padding:9px 12px 4px; font-size:9px; font-weight:900; font-style:italic;
+    letter-spacing:.24em; color:var(--faint); text-transform:uppercase; }
+  /* label + control rows used by every setup panel */
+  .setup-grid { display:grid; grid-template-columns:auto 1fr; gap:11px 16px;
+    align-items:center; margin-top:16px; text-align:left; }
+  .setup-grid label { font-size:10px; font-weight:800; letter-spacing:.2em;
+    color:var(--faint); text-transform:uppercase; text-align:right; white-space:nowrap; }
+  .setup-grid select { width:100%; }
+  .setup-grid .sg-pair { display:flex; gap:10px; align-items:center; }
+  .setup-grid .sg-pair select { flex:1; }
+  .setup-grid .sg-check { display:flex; align-items:center; gap:10px; font-size:11px;
+    font-weight:700; letter-spacing:.1em; color:var(--dim); text-transform:uppercase; }
+
   /* ---------- top navigation (Fortnite-style tab bar) ---------- */
   #topnav { position:absolute; top:0; left:0; right:0; height:62px; z-index:22;
     display:flex; align-items:center; gap:2px; padding:0 30px;
@@ -159,6 +225,25 @@
   .lk-card.locked img, .lk-card.locked .lk-ph { opacity:.55; }
   .lk-card.lk-poor { animation:lkpoor .3s; border-color:var(--danger); }
   @keyframes lkpoor { 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
+  /* locker sub-tabs + the weapon picker grid */
+  .lk-tabs { display:flex; gap:6px; margin:10px 0 16px; }
+  .lk-tab { flex:1; padding:11px 0; border-radius:8px; border:1px solid var(--line2);
+    background:var(--bg2); color:var(--dim); font-family:inherit; font-size:11px;
+    font-weight:800; font-style:italic; letter-spacing:.18em; text-transform:uppercase;
+    cursor:pointer; transition:all .12s; }
+  .lk-tab:hover { color:var(--txt); border-color:var(--line); }
+  .lk-tab.sel { background:var(--brand); color:var(--brand-ink); border-color:transparent; }
+  .lk-wgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(88px, 1fr));
+    gap:8px; margin-bottom:16px; }
+  .lk-wcard { position:relative; border:1px solid var(--line2); border-radius:9px;
+    padding:7px 4px 6px; text-align:center; cursor:pointer; background:var(--bg2);
+    transition:transform .1s, border-color .1s; }
+  .lk-wcard:hover { transform:translateY(-2px); border-color:var(--line); }
+  .lk-wcard.sel { border-color:var(--brand); box-shadow:0 0 12px rgba(255,211,77,.2); }
+  .lk-wcard img { width:100%; height:32px; object-fit:contain; pointer-events:none; }
+  .lk-wcard .lk-name { font-size:8.5px; }
+  .lk-wdot { position:absolute; top:5px; right:6px; width:7px; height:7px;
+    border-radius:50%; background:var(--brand); }
   .lk-wrow { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
   .lk-wbtn { background:none; border:1px solid var(--line2); border-radius:999px; padding:5px 10px;
     color:var(--dim); font-family:inherit; font-size:9px; font-weight:700; letter-spacing:.14em;
@@ -200,7 +285,15 @@
   .srv-row .sel-btn { border:1px solid var(--line); }
   .srv-empty { padding:18px 4px; font-size:12px; color:var(--faint); }
 
-  .mp-priv { color:var(--dim); font-size:11px; display:flex; gap:5px; align-items:center; }
+  /* lobby-creation rows: two clear choices, no mystery toggles */
+  .mph-row { display:flex; gap:10px; justify-content:center; align-items:center;
+    margin-top:12px; }
+  .mph-big { flex:1; max-width:230px; padding:13px 14px !important; line-height:1.4; }
+  .mph-big small { display:block; font-size:9px; font-weight:600; letter-spacing:.06em;
+    color:var(--faint); text-transform:none; margin-top:3px; }
+  .mph-big:hover small { color:var(--dim); }
+  .mph-or { font-size:10px; font-weight:800; letter-spacing:.2em; color:var(--faint);
+    text-transform:uppercase; }
 
   /* match history (demos) */
   .demo-row { position:relative; padding:12px 92px 12px 4px; border-bottom:1px solid var(--line2); }
@@ -567,7 +660,7 @@
   .settings-body { flex:1; overflow-y:auto; padding-right:8px; }
   .settings-body::-webkit-scrollbar { width:5px; }
   .settings-body::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:3px; }
-  .settings-body h4 { font-size:10px; font-weight:700; letter-spacing:.28em;
+  .settings-body h4 { font-style:italic; font-size:11px; font-weight:900; letter-spacing:.28em;
     text-transform:uppercase; color:var(--dim); margin:22px 0 10px; padding-bottom:7px;
     border-bottom:1px solid var(--line); }
   .settings-body h4 small { color:var(--faint); font-weight:400; letter-spacing:.05em;
@@ -576,10 +669,8 @@
     color:var(--dim); }
   .set-row span { flex:1; }
   .set-row small { color:var(--faint); font-size:10px; }
-  .set-row input[type=range] { width:180px; accent-color:#fff; }
-  .set-row input[type=checkbox] { accent-color:#fff; width:15px; height:15px; }
-  .set-row select { background:rgba(255,255,255,.05); color:var(--txt); border:1px solid var(--line);
-    border-radius:6px; padding:5px 10px; font-family:inherit; font-size:12px; outline:none; }
+  .set-row input[type=range] { width:180px; }
+  /* selects + checks use the global theme (yellow chevron / brand checks) */
   .set-val { width:52px; text-align:right; color:var(--txt); font-weight:600;
     font-variant-numeric:tabular-nums; font-size:12px; }
   .bind-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px 28px; }
@@ -960,7 +1051,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 41</div>
+  <div id="build-foot" class="rail-foot">prototype · build 42</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -981,78 +1072,82 @@
 
       <!-- ..... vs bots ..... -->
       <div id="play-bots">
-        <div class="sel-row" style="margin-top:16px"><span class="lbl">Bots</span>
-          <button class="sel-btn bot-btn" data-n="1">1</button><button class="sel-btn bot-btn" data-n="2">2</button>
-          <button class="sel-btn bot-btn sel" data-n="3">3</button><button class="sel-btn bot-btn" data-n="4">4</button>
-          <button class="sel-btn bot-btn" data-n="5">5</button><button class="sel-btn bot-btn" data-n="7">7</button>
-          <button class="sel-btn bot-btn" data-n="9">9</button>
-        </div>
-        <div class="sel-row" id="map-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
-          <button class="sel-btn map-btn sel" data-m="sky">Sky</button>
-          <button class="sel-btn map-btn" data-m="yacht">Yacht</button>
-          <button class="sel-btn map-btn" data-m="convoy">Convoy</button>
-          <button class="sel-btn map-btn" data-m="foundry">Foundry</button>
-          <button class="sel-btn map-btn" data-m="rooftop">Rooftops</button>
-          <button class="sel-btn map-btn" data-m="temple">Temple</button>
-          <button class="sel-btn map-btn" data-m="terminal">Terminal</button>
-        </div>
-        <div class="sel-row"><span class="lbl">Mode</span>
-          <button class="sel-btn mode-btn sel" data-m="spark">Spark Rush</button>
-          <button class="sel-btn mode-btn" data-m="dm">Deathmatch</button>
-          <button class="sel-btn mode-btn" data-m="lbs">Last Standing</button>
-          <button class="sel-btn mode-btn" data-m="crown">Crown Rush</button>
-        </div>
-        <div class="sel-row hidden" id="dm-row"><span class="lbl">Minutes</span>
-          <button class="sel-btn dmmin-btn" data-v="5">5</button>
-          <button class="sel-btn dmmin-btn sel" data-v="10">10</button>
-          <button class="sel-btn dmmin-btn" data-v="15">15</button>
-        </div>
-        <div class="sel-row" id="spark-row"><span class="lbl">Sparks</span>
-          <button class="sel-btn spark-btn" data-v="25">25</button>
-          <button class="sel-btn spark-btn sel" data-v="40">40</button>
-          <button class="sel-btn spark-btn" data-v="60">60</button>
-        </div>
-        <div class="sel-row hidden" id="rl-row"><span class="lbl">First to</span>
-          <button class="sel-btn rounds-btn" data-v="1">1</button>
-          <button class="sel-btn rounds-btn sel" data-v="2">2</button>
-          <button class="sel-btn rounds-btn" data-v="3">3</button>
-          <button class="sel-btn rounds-btn" data-v="5">5</button>
-          <span class="lbl" style="width:auto;margin-left:10px">Lives</span>
-          <button class="sel-btn lives-btn" data-v="1">1</button>
-          <button class="sel-btn lives-btn sel" data-v="3">3</button>
-          <button class="sel-btn lives-btn" data-v="5">5</button>
-        </div>
-        <div class="sel-row hidden" id="crown-row"><span class="lbl">Crown</span>
-          <button class="sel-btn crown-btn" data-v="15">15s</button>
-          <button class="sel-btn crown-btn sel" data-v="25">25s</button>
-          <button class="sel-btn crown-btn" data-v="40">40s</button>
+        <div class="panel-title" style="margin-top:6px">Vs bots</div>
+        <div class="setup-grid">
+          <label>Map</label>
+          <select id="map-select"></select>
+          <label>Mode</label>
+          <select id="mode-select">
+            <option value="dm" selected>Deathmatch — most points wins</option>
+            <option value="lbs">Last Standing — limited lives</option>
+            <option value="crown">Crown Rush — hold the crown</option>
+          </select>
+          <label>Bots</label>
+          <select id="bots-select">
+            <option value="1">1 bot</option><option value="2">2 bots</option>
+            <option value="3" selected>3 bots</option><option value="4">4 bots</option>
+            <option value="5">5 bots</option><option value="7">7 bots</option>
+            <option value="9">9 bots</option>
+          </select>
+          <label class="r-dm">Time limit</label>
+          <select id="dm-select" class="r-dm">
+            <option value="5">5 minutes</option><option value="10" selected>10 minutes</option>
+            <option value="15">15 minutes</option>
+          </select>
+          <label class="r-rl hidden">Rounds &amp; lives</label>
+          <div class="sg-pair r-rl hidden">
+            <select id="rounds-select">
+              <option value="1">First to 1</option><option value="2" selected>First to 2</option>
+              <option value="3">First to 3</option><option value="5">First to 5</option>
+            </select>
+            <select id="lives-select">
+              <option value="1">1 life</option><option value="3" selected>3 lives</option>
+              <option value="5">5 lives</option>
+            </select>
+          </div>
+          <label class="r-rl hidden">Round limit</label>
+          <select id="time-select" class="r-rl hidden">
+            <option value="0" selected>No time limit</option>
+            <option value="120">2 minutes</option>
+            <option value="180">3 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+          <label class="r-crown hidden">Crown hold</label>
+          <select id="crown-select" class="r-crown hidden">
+            <option value="15">15 seconds</option><option value="25" selected>25 seconds</option>
+            <option value="40">40 seconds</option>
+          </select>
         </div>
         <button class="btn" id="play-btn">Play</button>
-        <div class="hint" style="margin-left:auto;margin-right:auto">Knock rivals off — they burst into
-          sparks. Bank sparks to score and level up. Go fast: speed = power = a bigger loot magnet.</div>
+        <div class="hint" style="margin-left:auto;margin-right:auto" id="mode-hint">Knock rivals off — they
+          burst into sparks. Bank sparks to score and level up. Go fast: speed = power = a bigger loot magnet.</div>
       </div>
 
       <!-- ..... online: the server menu ..... -->
       <div id="play-online" class="hidden">
         <div id="mp-home">
-          <div class="sel-row" style="margin-top:16px"><span class="lbl">Name</span>
-            <button class="sel-btn" id="mp-nick">(pick a nickname)</button>
+          <div class="panel-title" style="margin-top:6px">Play with a friend</div>
+          <div class="mph-row">
+            <button class="btn small mph-big" id="mp-create">Create a lobby
+              <small>public — shows in the server list</small></button>
+            <button class="btn small mph-big" id="mp-create-priv">Create private
+              <small>only your 4-letter code joins</small></button>
           </div>
-          <div class="sel-row" style="margin-top:14px">
-            <button class="btn small" id="mp-quick" style="margin-top:0">Quick join</button>
-            <button class="btn small" id="mp-create" style="margin-top:0">+ Create server</button>
-            <label class="mp-priv"><input type="checkbox" id="mp-private"> private</label>
-          </div>
-          <div class="sel-row">
+          <div class="mph-row" style="margin-top:10px">
             <input id="mp-code" class="code-input" maxlength="4" placeholder="CODE">
-            <button class="sel-btn" id="mp-join">Join code</button>
+            <button class="btn small" id="mp-join" style="margin-top:0">Join code</button>
+            <span class="mph-or">or</span>
+            <button class="btn small" id="mp-quick" style="margin-top:0">⚡ Quick join</button>
           </div>
-          <div class="panel-title" style="margin-top:22px; display:flex; align-items:center; justify-content:space-between">
-            <span>Servers</span>
+          <div class="panel-title" style="margin-top:24px; display:flex; align-items:center; justify-content:space-between">
+            <span>Open servers</span>
             <button class="ed-mini" id="srv-refresh">refresh</button>
           </div>
           <div id="srv-list" style="margin-top:8px; text-align:left; min-width:440px;">
             <div class="srv-empty">Scanning…</div>
+          </div>
+          <div class="sel-row" style="margin-top:14px"><span class="lbl">Name</span>
+            <button class="sel-btn" id="mp-nick" style="border:1px solid var(--line)">(pick a nickname)</button>
           </div>
         </div>
         <div id="mp-status"></div>
@@ -1070,45 +1165,45 @@
       <button class="btn small" id="lobby-leave">← Leave</button>
       <div id="lobby-side" class="card">
         <div class="panel-title">Match setup</div>
-        <div class="sel-row" id="lmap-row" style="flex-wrap:wrap;"><span class="lbl">Map</span>
-          <button class="sel-btn lmap-btn" data-m="sky">Sky</button>
-          <button class="sel-btn lmap-btn" data-m="yacht">Yacht</button>
-          <button class="sel-btn lmap-btn" data-m="convoy">Convoy</button>
-          <button class="sel-btn lmap-btn" data-m="foundry">Foundry</button>
-          <button class="sel-btn lmap-btn" data-m="rooftop">Rooftops</button>
-          <button class="sel-btn lmap-btn" data-m="temple">Temple</button>
-          <button class="sel-btn lmap-btn" data-m="terminal">Terminal</button>
-        </div>
-        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">Mode</span>
-          <button class="sel-btn lmode-btn" data-m="spark">Spark Rush</button>
-          <button class="sel-btn lmode-btn" data-m="dm">Deathmatch</button>
-          <button class="sel-btn lmode-btn" data-m="lbs">Last Standing</button>
-          <button class="sel-btn lmode-btn" data-m="crown">Crown Rush</button>
-        </div>
-        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">DM min</span>
-          <button class="sel-btn ldm-btn" data-v="5">5</button>
-          <button class="sel-btn ldm-btn" data-v="10">10</button>
-          <button class="sel-btn ldm-btn" data-v="15">15</button>
-          <span class="lbl" style="width:auto;margin-left:10px">First to</span>
-          <button class="sel-btn lrounds-btn" data-v="1">1</button>
-          <button class="sel-btn lrounds-btn" data-v="2">2</button>
-          <button class="sel-btn lrounds-btn" data-v="3">3</button>
-          <button class="sel-btn lrounds-btn" data-v="5">5</button>
-        </div>
-        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">Lives</span>
-          <button class="sel-btn llives-btn" data-v="1">1</button>
-          <button class="sel-btn llives-btn" data-v="3">3</button>
-          <button class="sel-btn llives-btn" data-v="5">5</button>
-          <span class="lbl" style="width:auto;margin-left:10px">Crown</span>
-          <button class="sel-btn lcrown-btn" data-v="15">15s</button>
-          <button class="sel-btn lcrown-btn" data-v="25">25s</button>
-          <button class="sel-btn lcrown-btn" data-v="40">40s</button>
-        </div>
-        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">Sparks</span>
-          <button class="sel-btn lsparks-btn" data-v="25">25</button>
-          <button class="sel-btn lsparks-btn" data-v="40">40</button>
-          <button class="sel-btn lsparks-btn" data-v="60">60</button>
-          <label style="color:var(--dim);font-size:11px;margin-left:12px"><input type="checkbox" id="lobby-bots" checked> fill with bots</label>
+        <div class="setup-grid">
+          <label>Map</label>
+          <select id="lmap-select"></select>
+          <label>Mode</label>
+          <select id="lmode-select">
+            <option value="dm">Deathmatch — most points wins</option>
+            <option value="lbs">Last Standing — limited lives</option>
+            <option value="crown">Crown Rush — hold the crown</option>
+          </select>
+          <label class="lr-dm hidden">Time limit</label>
+          <select id="ldm-select" class="lr-dm hidden">
+            <option value="5">5 minutes</option><option value="10">10 minutes</option>
+            <option value="15">15 minutes</option>
+          </select>
+          <label class="lr-rl hidden">Rounds &amp; lives</label>
+          <div class="sg-pair lr-rl hidden">
+            <select id="lrounds-select">
+              <option value="1">First to 1</option><option value="2">First to 2</option>
+              <option value="3">First to 3</option><option value="5">First to 5</option>
+            </select>
+            <select id="llives-select">
+              <option value="1">1 life</option><option value="3">3 lives</option>
+              <option value="5">5 lives</option>
+            </select>
+          </div>
+          <label class="lr-rl hidden">Round limit</label>
+          <select id="ltime-select" class="lr-rl hidden">
+            <option value="0">No time limit</option>
+            <option value="120">2 minutes</option>
+            <option value="180">3 minutes</option>
+            <option value="300">5 minutes</option>
+          </select>
+          <label class="lr-crown hidden">Crown hold</label>
+          <select id="lcrown-select" class="lr-crown hidden">
+            <option value="15">15 seconds</option><option value="25">25 seconds</option>
+            <option value="40">40 seconds</option>
+          </select>
+          <label>Fill with bots</label>
+          <div class="sg-check"><input type="checkbox" id="lobby-bots"><span>top up to 4 players</span></div>
         </div>
       </div>
       <div id="lobby-players"></div>
@@ -1229,36 +1324,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=41"></script>
-<script src="js/profile.js?v=41"></script>
-<script src="js/utils.js?v=41"></script>
-<script src="js/gfx.js?v=41"></script>
-<script src="js/mapdata.js?v=41"></script>
-<script src="js/audio.js?v=41"></script>
-<script src="js/settings.js?v=41"></script>
-<script src="js/input.js?v=41"></script>
-<script src="js/world.js?v=41"></script>
-<script src="js/effects.js?v=41"></script>
-<script src="js/map.js?v=41"></script>
-<script src="js/characters.js?v=41"></script>
-<script src="js/pawn.js?v=41"></script>
-<script src="js/weapons.js?v=41"></script>
-<script src="js/loot.js?v=41"></script>
-<script src="js/pickups.js?v=41"></script>
-<script src="js/sparks.js?v=41"></script>
-<script src="js/grenades.js?v=41"></script>
-<script src="js/grapple.js?v=41"></script>
-<script src="js/bots.js?v=41"></script>
-<script src="js/hud.js?v=41"></script>
-<script src="js/game.js?v=41"></script>
-<script src="js/attract.js?v=41"></script>
-<script src="js/net.js?v=41"></script>
-<script src="js/dof.js?v=41"></script>
-<script src="js/replay.js?v=41"></script>
-<script src="js/demos.js?v=41"></script>
-<script src="js/locker.js?v=41"></script>
-<script src="js/assets.js?v=41"></script>
-<script src="js/editor.js?v=41"></script>
-<script src="js/main.js?v=41"></script>
+<script src="js/config.js?v=42"></script>
+<script src="js/profile.js?v=42"></script>
+<script src="js/utils.js?v=42"></script>
+<script src="js/gfx.js?v=42"></script>
+<script src="js/mapdata.js?v=42"></script>
+<script src="js/audio.js?v=42"></script>
+<script src="js/settings.js?v=42"></script>
+<script src="js/input.js?v=42"></script>
+<script src="js/world.js?v=42"></script>
+<script src="js/effects.js?v=42"></script>
+<script src="js/map.js?v=42"></script>
+<script src="js/characters.js?v=42"></script>
+<script src="js/pawn.js?v=42"></script>
+<script src="js/weapons.js?v=42"></script>
+<script src="js/loot.js?v=42"></script>
+<script src="js/pickups.js?v=42"></script>
+<script src="js/sparks.js?v=42"></script>
+<script src="js/grenades.js?v=42"></script>
+<script src="js/grapple.js?v=42"></script>
+<script src="js/bots.js?v=42"></script>
+<script src="js/hud.js?v=42"></script>
+<script src="js/game.js?v=42"></script>
+<script src="js/attract.js?v=42"></script>
+<script src="js/net.js?v=42"></script>
+<script src="js/dof.js?v=42"></script>
+<script src="js/replay.js?v=42"></script>
+<script src="js/demos.js?v=42"></script>
+<script src="js/locker.js?v=42"></script>
+<script src="js/assets.js?v=42"></script>
+<script src="js/editor.js?v=42"></script>
+<script src="js/main.js?v=42"></script>
 </body>
 </html>

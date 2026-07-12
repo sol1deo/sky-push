@@ -186,6 +186,12 @@ SKY.Profile = (function () {
     finishDef,
     charDef,
 
+    /* everything cosmetic in one bundle — same shape the net roster carries
+       (pawn.cos), so offline pawns/replays render identically to online */
+    equipped() {
+      return { char: data.char, fin: data.finishes, skin: data.skin, outfit: data.outfit };
+    },
+
     /* paint a weapon mesh group in a finish (viewmodel/avatar/thumbs) */
     applyFinish(group, finishId, accentHex) {
       const f = finishDef(finishId);

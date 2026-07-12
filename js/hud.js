@@ -14,11 +14,68 @@ SKY.HUD = (function () {
   let lastTier = -1, lastWeapon = '';
   let lootKeyHandler = null;
 
+  /* ---- themed dropdowns: the native <select> stays (all .value/.disabled/
+     change wiring intact) but is hidden behind a styled trigger + popup ---- */
+  function dressSelect(sel) {
+    if (sel._dressed) return;
+    sel._dressed = true;
+    const wrap = document.createElement('div');
+    wrap.className = 'dd';
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+    const trig = document.createElement('button');
+    trig.type = 'button';
+    trig.className = 'dd-trig';
+    wrap.appendChild(trig);
+    const pop = document.createElement('div');
+    pop.className = 'dd-pop hidden';
+    wrap.appendChild(pop);
+    const optHtml = (o) =>
+      `<div class="dd-opt${o.value === sel.value ? ' sel' : ''}" data-v="${o.value}">${o.textContent}</div>`;
+    const sync = () => {
+      const o = sel.selectedOptions[0];
+      trig.textContent = o ? o.textContent : '—';
+      wrap.classList.toggle('locked', sel.disabled);
+    };
+    const build = () => {
+      let h = '';
+      for (const node of sel.children) {
+        if (node.tagName === 'OPTGROUP') {
+          h += `<div class="dd-group">${node.label}</div>`;
+          for (const o of node.children) h += optHtml(o);
+        } else h += optHtml(node);
+      }
+      pop.innerHTML = h;
+    };
+    trig.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (sel.disabled) return;
+      const wasOpen = !pop.classList.contains('hidden');
+      closeDropdowns();
+      if (!wasOpen) { build(); pop.classList.remove('hidden'); }
+    });
+    pop.addEventListener('click', (e) => {
+      const o = e.target.closest('.dd-opt');
+      if (!o) return;
+      sel.value = o.dataset.v;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      sync();
+      pop.classList.add('hidden');
+    });
+    sel.addEventListener('change', sync);
+    sel._ddSync = sync;
+    sync();
+  }
+  function closeDropdowns() {
+    document.querySelectorAll('.dd-pop').forEach(p => p.classList.add('hidden'));
+  }
+  window.addEventListener('click', closeDropdowns);
+
   const api = {
     botCount: 3,
     mapSel: 'sky',
-    modeSel: 'spark',
-    roundsSel: 2, livesSel: 3, crownSel: 25, sparkSel: 40, dmSel: 10,
+    modeSel: 'dm',
+    roundsSel: 2, livesSel: 3, crownSel: 25, sparkSel: 40, dmSel: 10, timeSel: 0,
     onPlay: null, onResume: null, onQuit: null,
 
     init() {
@@ -45,33 +102,34 @@ SKY.HUD = (function () {
       };
       el.chLines = el.crosshair.querySelectorAll('.l');
 
-      const bindSel = (cls, attr, set) => {
-        document.querySelectorAll('.' + cls).forEach(b => {
-          b.addEventListener('click', () => {
-            document.querySelectorAll('.' + cls).forEach(x => x.classList.remove('sel'));
-            b.classList.add('sel');
-            set(b.dataset[attr]);
-          });
-        });
+      // vs-bots match setup — proper dropdowns instead of the pill wall
+      const MODE_HINTS = {
+        dm: 'One timed round: KOs score points, assists pay less, the rotating bonus weapon pays extra. Pick your loadout with B.',
+        lbs: 'Limited lives, first to the round target wins the match. Fall off = lose a life.',
+        crown: 'Grab the crown and HOLD it — total hold time wins. Dying drops it where the crown home is.',
       };
-      bindSel('bot-btn', 'n', v => { api.botCount = parseInt(v, 10); });
-      // map row is DELEGATED (custom maps get added dynamically)
-      $('map-row').addEventListener('click', (e) => {
-        const b = e.target.closest('.map-btn');
-        if (!b) return;
-        $('map-row').querySelectorAll('.map-btn').forEach(x => x.classList.remove('sel'));
-        b.classList.add('sel');
-        api.mapSel = b.dataset.m;
-        SKY.Game.previewMap(b.dataset.m);
-      });
-      bindSel('mode-btn', 'm', v => {
-        api.modeSel = v;
-        $('crown-row').classList.toggle('hidden', v !== 'crown');
-        $('spark-row').classList.toggle('hidden', v !== 'spark');
-        $('dm-row').classList.toggle('hidden', v !== 'dm');
-        $('rl-row').classList.toggle('hidden', v === 'spark' || v === 'dm');
-      });
-      bindSel('dmmin-btn', 'v', v => { api.dmSel = +v; });
+      const wireSel = (id, set) => {
+        const el = $(id);
+        el.addEventListener('change', () => set(el.value));
+        return el;
+      };
+      wireSel('bots-select', v => { api.botCount = parseInt(v, 10); });
+      wireSel('map-select', v => { api.mapSel = v; SKY.Game.previewMap(v); });
+      const modeRows = (v) => {
+        document.querySelectorAll('.r-dm').forEach(e => e.classList.toggle('hidden', v !== 'dm'));
+        document.querySelectorAll('.r-rl').forEach(e => e.classList.toggle('hidden', v === 'dm'));
+        document.querySelectorAll('.r-crown').forEach(e => e.classList.toggle('hidden', v !== 'crown'));
+        const hint = $('mode-hint');
+        if (hint) hint.textContent = MODE_HINTS[v] || '';
+      };
+      wireSel('mode-select', v => { api.modeSel = v; modeRows(v); });
+      wireSel('dm-select', v => { api.dmSel = +v; });
+      wireSel('time-select', v => { api.timeSel = parseInt(v, 10); });
+      wireSel('rounds-select', v => { api.roundsSel = parseInt(v, 10); });
+      wireSel('lives-select', v => { api.livesSel = parseInt(v, 10); });
+      wireSel('crown-select', v => { api.crownSel = parseInt(v, 10); });
+      $('mode-select').value = api.modeSel;
+      modeRows(api.modeSel);
       // PLAY hub: secondary chips toggle the drawer (vs bots / lobby browser)
       document.querySelectorAll('.play-sub').forEach(b => {
         b.addEventListener('click', () =>
@@ -88,10 +146,7 @@ SKY.HUD = (function () {
       api.refreshNick();
       SKY.MapData.onListChange = () => api.refreshCustomMaps();
       api.refreshCustomMaps();
-      bindSel('rounds-btn', 'v', v => { api.roundsSel = parseInt(v, 10); });
-      bindSel('lives-btn', 'v', v => { api.livesSel = parseInt(v, 10); });
-      bindSel('crown-btn', 'v', v => { api.crownSel = parseInt(v, 10); });
-      bindSel('spark-btn', 'v', v => { api.sparkSel = parseInt(v, 10); });
+      api.dressSelects('#menu');   // themed dropdowns over every menu select
 
       $('play-btn').addEventListener('click', () => api.onPlay && api.onPlay());
       $('resume-btn').addEventListener('click', () => api.onResume && api.onResume());
@@ -100,21 +155,28 @@ SKY.HUD = (function () {
       $('pause-settings').addEventListener('click', () => SKY.Settings.open());
     },
 
-    /* custom maps (editor drafts / deployed / net) appear as extra buttons */
+    /* map dropdowns: built-ins + an optgroup of custom maps (editor drafts /
+       deployed / net-received). Selection survives the rebuild. */
     refreshCustomMaps() {
-      for (const rowId of ['map-row', 'lmap-row']) {
-        const row = $(rowId);
-        if (!row) continue;
-        row.querySelectorAll('.custom-map').forEach(b => b.remove());
-        for (const d of SKY.MapData.list()) {
-          const b = document.createElement('button');
-          b.className = 'sel-btn custom-map ' + (rowId === 'map-row' ? 'map-btn' : 'lmap-btn');
-          b.dataset.m = d.id;
-          b.textContent = d.name;
-          // the PLAY list is for playing — editing/deleting lives in the EDITOR
-          row.appendChild(b);
+      const BUILTIN = [['sky', 'Sky Arena'], ['yacht', 'Yacht'], ['convoy', 'Convoy'],
+        ['foundry', 'Foundry'], ['rooftop', 'Rooftops'], ['temple', 'Temple'],
+        ['terminal', 'Terminal']];
+      const opts = (current) => {
+        let h = BUILTIN.map(([id, name]) =>
+          `<option value="${id}"${id === current ? ' selected' : ''}>${name}</option>`).join('');
+        const customs = SKY.MapData.list();
+        if (customs.length) {
+          h += '<optgroup label="Your maps">' + customs.map(d =>
+            `<option value="${d.id}"${d.id === current ? ' selected' : ''}>${d.name}</option>`).join('') +
+            '</optgroup>';
         }
-      }
+        return h;
+      };
+      const ms = $('map-select');
+      if (ms) ms.innerHTML = opts(api.mapSel);
+      const ls = $('lmap-select');
+      if (ls) ls.innerHTML = opts(SKY.Net && SKY.Net.online ? SKY.Net.settings.map : api.mapSel);
+      api.syncSelects();
     },
 
     /* PLAY hub state: '' = hero landing, 'bots'/'online' = drawer,
@@ -137,6 +199,14 @@ SKY.HUD = (function () {
     refreshNick() {
       const el = $('nav-nick');
       if (el) el.textContent = (SKY.Settings.data.nickname || '').trim() || 'pick a name';
+    },
+
+    /* themed-dropdown helpers (settings panel dresses its own on rebuild) */
+    dressSelects(rootSel) {
+      document.querySelectorAll(rootSel + ' select').forEach(dressSelect);
+    },
+    syncSelects() {
+      document.querySelectorAll('select').forEach(s => { if (s._ddSync) s._ddSync(); });
     },
 
     showMenu() { el.menu.classList.remove('hidden'); el.hud.classList.add('hidden'); api.relockHint(false); },
@@ -472,8 +542,12 @@ SKY.HUD = (function () {
       }
 
       if (G.mode !== 'spark' && G.mode !== 'dm') {
-        const t = Math.max(0, G.roundTime);
+        // with a round limit set the clock counts DOWN and goes red late
+        const lim = SKY.TUNING.game.timeLimit || 0;
+        const t = lim > 0 ? Math.max(0, lim - G.roundTime) : Math.max(0, G.roundTime);
         setText(el.timer, Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0'));
+        const tc = lim > 0 && t <= 30 ? 'var(--danger)' : '';
+        if (el.timer._c !== tc) { el.timer._c = tc; el.timer.style.color = tc; }
       }
 
       // ammo + weapon chip (bar shows reload progress while reloading)

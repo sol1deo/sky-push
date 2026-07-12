@@ -9,6 +9,7 @@ SKY.Locker = (function () {
   const $ = (id) => document.getElementById(id);
   let panel = null;
   let selWeapon = 'pistol';
+  let lkTab = 'char';       // char | style | weapons — kills the giant scroll
   const charThumbs = {};    // charId -> dataURL
 
   const WEAPON_ROW = ['pistol', 'blaster', 'scatter', 'smg', 'burst', 'bouncer',
@@ -158,39 +159,72 @@ SKY.Locker = (function () {
     const P = SKY.Profile;
     const ready = SKY.GFX && SKY.GFX.charReady();
 
-    const charCards = P.CHARS.map((c) => {
-      const owned = P.ownsChar(c.id);
-      const equipped = P.data.char === c.id;
-      const img = ready ? charThumb(c.id) : null;
-      return `<div class="lk-card ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}" data-char="${c.id}">
-        ${img ? `<img src="${img}" draggable="false">` : '<div class="lk-ph"></div>'}
-        <div class="lk-name">${c.name}</div>
-        <div class="lk-tag">${equipped ? 'EQUIPPED' : owned ? 'OWNED' : '⬡ ' + c.price}</div>
-      </div>`;
-    }).join('');
-    const randomCard = `<div class="lk-card ${P.data.char === null ? 'equipped' : 'owned'}" data-char="__random">
-      <div class="lk-ph lk-rand">?</div>
-      <div class="lk-name">SURPRISE ME</div>
-      <div class="lk-tag">${P.data.char === null ? 'EQUIPPED' : 'FREE'}</div>
+    const tabs = `<div class="lk-tabs">
+      ${[['char', 'Character'], ['style', 'Colors'], ['weapons', 'Weapons']].map(([id, label]) =>
+        `<button class="lk-tab ${lkTab === id ? 'sel' : ''}" data-tab="${id}">${label}</button>`).join('')}
     </div>`;
 
-    const wpnBtns = WEAPON_ROW.map((k) => {
-      // the grapple hook is a tool, not a TUNING weapon — style it by hand
-      const W = SKY.TUNING.weapons[k] || { short: 'HOOK', color: '#d8c49a' };
-      return `<button class="lk-wbtn ${k === selWeapon ? 'sel' : ''}" data-w="${k}"
-        style="--wc:${W.color}">${W.short}</button>`;
-    }).join('');
-
-    const finCards = P.FINISHES.map((f) => {
-      const owned = P.ownsFinish(selWeapon, f.id);
-      const equipped = P.finishFor(selWeapon) === f.id;
-      const img = SKY.Effects.weaponThumb(selWeapon, f.id === 'stock' ? undefined : f.id);
-      return `<div class="lk-card lk-fin ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}" data-fin="${f.id}">
-        ${img ? `<img src="${img}" draggable="false">` : '<div class="lk-ph"></div>'}
-        <div class="lk-name">${f.name}</div>
-        <div class="lk-tag">${equipped ? 'EQUIPPED' : owned ? 'OWNED' : '⬡ ' + f.price}</div>
+    let body = '';
+    if (lkTab === 'char') {
+      const charCards = P.CHARS.map((c) => {
+        const owned = P.ownsChar(c.id);
+        const equipped = P.data.char === c.id;
+        const img = ready ? charThumb(c.id) : null;
+        return `<div class="lk-card ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}" data-char="${c.id}">
+          ${img ? `<img src="${img}" draggable="false">` : '<div class="lk-ph"></div>'}
+          <div class="lk-name">${c.name}</div>
+          <div class="lk-tag">${equipped ? 'EQUIPPED' : owned ? 'OWNED' : '⬡ ' + c.price}</div>
+        </div>`;
+      }).join('');
+      const randomCard = `<div class="lk-card ${P.data.char === null ? 'equipped' : 'owned'}" data-char="__random">
+        <div class="lk-ph lk-rand">?</div>
+        <div class="lk-name">SURPRISE ME</div>
+        <div class="lk-tag">${P.data.char === null ? 'EQUIPPED' : 'FREE'}</div>
       </div>`;
-    }).join('');
+      body = `${ready ? '' : '<div class="lk-note">character previews load with the asset pack…</div>'}
+        <div class="lk-grid">${randomCard}${charCards}</div>`;
+    } else if (lkTab === 'style') {
+      body = `
+        <h4 class="lk-h">SKIN TONE</h4>
+        <div class="lk-dots">
+          <span class="lk-dot lk-auto ${P.data.skin === null ? 'sel' : ''}" data-skin="auto">A</span>
+          ${SKY.Characters.SKINS.map((c, i) =>
+            `<span class="lk-dot ${P.data.skin === i ? 'sel' : ''}" data-skin="${i}" style="background:${c}"></span>`).join('')}
+        </div>
+        <h4 class="lk-h">OUTFIT COLOR <small>A = your player color</small></h4>
+        <div class="lk-dots">
+          <span class="lk-dot lk-auto ${P.data.outfit === null ? 'sel' : ''}" data-outfit="auto">A</span>
+          ${P.OUTFIT_COLORS.map((c) =>
+            `<span class="lk-dot ${P.data.outfit === c ? 'sel' : ''}" data-outfit="${c}" style="background:${c}"></span>`).join('')}
+        </div>`;
+    } else {
+      // weapons: a real icon grid to PICK the weapon, then its paint jobs
+      const wpnCards = WEAPON_ROW.map((k) => {
+        const W = SKY.TUNING.weapons[k] || { short: 'HOOK', color: '#d8c49a' };
+        const icon = SKY.Effects.weaponWireIcon(k, W.color);
+        const fin = P.finishFor(k);
+        return `<div class="lk-wcard ${k === selWeapon ? 'sel' : ''}" data-w="${k}">
+          ${icon ? `<img src="${icon}" draggable="false">` : ''}
+          <div class="lk-name">${W.short}</div>
+          ${fin !== 'stock' ? '<div class="lk-wdot"></div>' : ''}
+        </div>`;
+      }).join('');
+      const finCards = P.FINISHES.map((f) => {
+        const owned = P.ownsFinish(selWeapon, f.id);
+        const equipped = P.finishFor(selWeapon) === f.id;
+        const img = SKY.Effects.weaponThumb(selWeapon, f.id === 'stock' ? undefined : f.id);
+        return `<div class="lk-card lk-fin ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}" data-fin="${f.id}">
+          ${img ? `<img src="${img}" draggable="false">` : '<div class="lk-ph"></div>'}
+          <div class="lk-name">${f.name}</div>
+          <div class="lk-tag">${equipped ? 'EQUIPPED' : owned ? 'OWNED' : '⬡ ' + f.price}</div>
+        </div>`;
+      }).join('');
+      const WSel = SKY.TUNING.weapons[selWeapon] || { label: 'GRAPPLE HOOK' };
+      body = `
+        <div class="lk-wgrid">${wpnCards}</div>
+        <h4 class="lk-h">${(WSel.label || selWeapon).toUpperCase()} — PAINT JOBS</h4>
+        <div class="lk-grid">${finCards}</div>`;
+    }
 
     panel.innerHTML = `
       <div class="lk-head"><h3>LOCKER</h3>
@@ -198,27 +232,13 @@ SKY.Locker = (function () {
           <button class="lk-wbtn" id="lk-dev" title="testing only">+1000 ⬡ dev</button>
           ${coinsChip()}
         </div></div>
-      ${ready ? '' : '<div class="lk-note">character previews load with the asset pack…</div>'}
-      <h4 class="lk-h">CHARACTER</h4>
-      <div class="lk-grid">${randomCard}${charCards}</div>
-      <h4 class="lk-h">SKIN TONE</h4>
-      <div class="lk-dots">
-        <span class="lk-dot lk-auto ${P.data.skin === null ? 'sel' : ''}" data-skin="auto">A</span>
-        ${SKY.Characters.SKINS.map((c, i) =>
-          `<span class="lk-dot ${P.data.skin === i ? 'sel' : ''}" data-skin="${i}" style="background:${c}"></span>`).join('')}
-      </div>
-      <h4 class="lk-h">OUTFIT COLOR <small>A = your player color</small></h4>
-      <div class="lk-dots">
-        <span class="lk-dot lk-auto ${P.data.outfit === null ? 'sel' : ''}" data-outfit="auto">A</span>
-        ${P.OUTFIT_COLORS.map((c) =>
-          `<span class="lk-dot ${P.data.outfit === c ? 'sel' : ''}" data-outfit="${c}" style="background:${c}"></span>`).join('')}
-      </div>
-      <h4 class="lk-h">WEAPON PAINT JOBS</h4>
-      <div class="lk-wrow">${wpnBtns}</div>
-      <div class="lk-grid">${finCards}</div>
+      ${tabs}
+      ${body}
       <div class="lk-note">earn ⬡ by finishing matches — KOs and wins pay extra</div>`;
 
     panel.onclick = (e) => {
+      const tab = e.target.closest('.lk-tab');
+      if (tab) { lkTab = tab.dataset.tab; renderPanel(); return; }
       if (e.target.id === 'lk-dev') {
         SKY.Profile.addCoins(1000);
         SKY.SFX.init(); SKY.SFX.cash();
@@ -240,7 +260,7 @@ SKY.Locker = (function () {
       }
       const cCard = e.target.closest('[data-char]');
       const fCard = e.target.closest('[data-fin]');
-      const wBtn = e.target.closest('.lk-wbtn');
+      const wBtn = e.target.closest('.lk-wcard');
       if (wBtn) { selWeapon = wBtn.dataset.w; renderPanel(); return; }
       if (cCard) {
         const id = cCard.dataset.char;

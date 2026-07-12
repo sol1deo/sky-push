@@ -1567,6 +1567,280 @@ SKY.Map = (function () {
     return [{ c: b.getCenter(new THREE.Vector3()), s: b.getSize(new THREE.Vector3()) }];
   }
 
+  /* =============================================================
+   * SEA EVENTS — tsunami / bermuda triangle / kraken / shark.
+   * Placed as invisible fx: markers in the editor; fully DETERMINISTIC off
+   * the synced round clock (start/every/dur + a seeded chance roll), so
+   * every client sees the same show with zero net messages. Forces apply
+   * only to pawns this client simulates (own pawn + host's bots).
+   * ============================================================= */
+  const _ev = new THREE.Vector3();
+  const _ev2 = new THREE.Vector3();
+
+  /* seeded 0..1 — identical on every peer for (marker, cycle) */
+  function evRand(pr, cycle) {
+    let x = (Math.imul((pr.p[0] * 73 + pr.p[2] * 179 + pr.p[1] * 37) | 0, 2654435761) ^
+             Math.imul(cycle + 1, 40503)) | 0;
+    x = Math.imul(x ^ (x >>> 15), 1 | x);
+    x ^= x + Math.imul(x ^ (x >>> 7), 61 | x);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  }
+
+  /* knock that respects ownership (skip remote pawns — their client rolls
+     the same event and applies it locally) */
+  function evKnock(pos, radius, force, up) {
+    for (const p of SKY.Game.pawns) {
+      if (!p.alive || p.isRemote) continue;
+      _ev.set(p.pos.x - pos.x, 0, p.pos.z - pos.z);
+      const d = _ev.length();
+      if (d > radius || Math.abs(p.pos.y - pos.y) > 6) continue;
+      const k = 1 - (d / radius) * 0.55;
+      _ev.multiplyScalar(d > 0.01 ? 1 / d : 0);
+      p.applyKnockback(_ev2.set(_ev.x * force * k, up * k, _ev.z * force * k), null);
+      p.grounded = false;
+    }
+  }
+
+  const lamEv = (c, e) => new THREE.MeshLambertMaterial({ color: c, emissive: e || 0x000000 });
+
+  /* ---- per-kind build / tick (vis = { g, ...state }) ---- */
+  const EV_BUILD = {
+    tsunami(pr, o) {
+      const g = new THREE.Group();
+      const col = new THREE.Color(o.color).convertSRGBToLinear();
+      const w = o.size, h = o.height;
+      // rolling crest: a squashed half-cylinder wall + a foam cap
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(h, h, w, 18, 1, false,
+        0, Math.PI), new THREE.MeshPhongMaterial({
+          color: col, transparent: true, opacity: 0.82, shininess: 60,
+          specular: 0x668aa8, side: THREE.DoubleSide }));
+      body.rotation.z = Math.PI / 2;   // cylinder axis along X = wave width
+      body.scale.set(1, 1, 0.62);
+      body.position.y = 0;
+      const foam = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.16, h * 0.5),
+        lamEv(0xf4fbff, 0x3a4148));
+      foam.position.y = h * 0.92;
+      g.add(body, foam);
+      group.add(g);
+      const yaw = (pr.r && pr.r[1]) || 0;
+      const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+      g.rotation.y = yaw;
+      if (SKY.Game.player) {
+        SKY.HUD.subMsg('TSUNAMI incoming!', 2.5);
+        SKY.SFX.gust();
+      }
+      return { g, fwd, right, sprayT: 0 };
+    },
+    triangle(pr, o) {
+      const g = new THREE.Group();
+      const col = new THREE.Color(o.color).convertSRGBToLinear();
+      const r = o.size;
+      // glowing triangle ring + swirling mist + a downward throat
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.5, 3, 1, true),
+        new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
+      ring.position.y = 0.4;
+      g.add(ring);
+      const swirls = [];
+      for (let i = 0; i < 3; i++) {
+        const s = new THREE.Mesh(new THREE.PlaneGeometry(r * 1.7, r * 1.7),
+          new THREE.MeshBasicMaterial({ map: SKY.U.blobTexture(), color: col,
+            transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending,
+            depthWrite: false, side: THREE.DoubleSide }));
+        s.rotation.x = -Math.PI / 2;
+        s.position.y = 0.3 + i * 0.5;
+        g.add(s);
+        swirls.push(s);
+      }
+      const throat = new THREE.Mesh(new THREE.ConeGeometry(r * 0.55, 4.5, 12, 1, true),
+        new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.3,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false }));
+      throat.rotation.x = Math.PI;
+      throat.position.y = -2;
+      g.add(throat);
+      const light = new THREE.PointLight(col, 1.6, r * 3.2, 1.6);
+      light.position.y = 1.5;
+      g.add(light);
+      g.position.set(pr.p[0], pr.p[1], pr.p[2]);
+      group.add(g);
+      if (SKY.Game.player) {
+        SKY.HUD.subMsg('The BERMUDA TRIANGLE opens…', 2.5);
+        SKY.SFX.thunder();
+      }
+      return { g, swirls, ring };
+    },
+    kraken(pr, o) {
+      const g = new THREE.Group();
+      const col = new THREE.Color(o.color).convertSRGBToLinear();
+      const skin = lamEv(col, col.clone().multiplyScalar(0.15));
+      const tents = [];
+      const n = 6;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2 + 0.4;
+        const t = new THREE.Group();
+        const seg1 = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.6, 4.6, 8), skin);
+        seg1.position.y = 2.3;
+        const seg2 = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.28, 3.2, 8), skin);
+        seg2.position.y = 5.8;
+        seg2.rotation.z = 0.35;
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), skin);
+        tip.position.set(-1, 7.2, 0);
+        t.add(seg1, seg2, tip);
+        t.position.set(Math.cos(a) * o.size * 0.62, -8, Math.sin(a) * o.size * 0.62);
+        t.rotation.y = -a;
+        g.add(t);
+        tents.push({ t, phase: i * 1.1, baseA: a });
+      }
+      g.position.set(pr.p[0], pr.p[1], pr.p[2]);
+      group.add(g);
+      if (SKY.Game.player) {
+        SKY.HUD.subMsg('KRAKEN! Tentacles from the deep!', 2.5);
+        SKY.SFX.rumble();
+      }
+      return { g, tents, slamT: 1.2, o };
+    },
+    shark(pr, o) {
+      const g = new THREE.Group();
+      const col = new THREE.Color(o.color).convertSRGBToLinear();
+      const skin = lamEv(col.clone().multiplyScalar(0.5));
+      const fin = new THREE.Group();
+      const finMesh = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.5, 4), skin);
+      finMesh.position.y = 0.9;
+      finMesh.rotation.y = Math.PI / 4;
+      finMesh.scale.z = 0.35;
+      const back = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 2.4, 4, 8), skin);
+      back.rotation.x = Math.PI / 2;
+      back.position.y = 0.15;
+      fin.add(finMesh, back);
+      g.add(fin);
+      g.position.set(pr.p[0], pr.p[1], pr.p[2]);
+      group.add(g);
+      if (SKY.Game.player) SKY.HUD.subMsg('Shark in the water!', 2.2);
+      return { g, fin, ang: evRand(pr, 999) * Math.PI * 2, wakeT: 0, o };
+    },
+  };
+
+  const EV_TICK = {
+    tsunami(v, dt, phase, pr, o) {
+      // sweep: starts range/2 behind the marker, rides through along facing
+      const along = -o.range / 2 + o.range * phase;
+      v.g.position.set(pr.p[0] + v.fwd.x * along, pr.p[1], pr.p[2] + v.fwd.z * along);
+      // spray off the crest
+      v.sprayT -= dt;
+      if (v.sprayT <= 0) {
+        v.sprayT = 0.09;
+        _ev.set(v.g.position.x + v.right.x * SKY.U.rand(-o.size / 2, o.size / 2),
+                pr.p[1] + o.height * SKY.U.rand(0.7, 1.05),
+                v.g.position.z + v.right.z * SKY.U.rand(-o.size / 2, o.size / 2));
+        SKY.Effects.burst(_ev, { count: 3, speed: 3.5, color: '#eaf6ff',
+          gravity: 7, life: 0.5, size: 0.6 });
+      }
+      // push everything caught in the face of the wave
+      for (const p of SKY.Game.pawns) {
+        if (!p.alive || p.isRemote) continue;
+        _ev.set(p.pos.x - v.g.position.x, 0, p.pos.z - v.g.position.z);
+        const a = _ev.dot(v.fwd), lat = _ev.dot(v.right);
+        if (Math.abs(a) > 4 || Math.abs(lat) > o.size / 2) continue;
+        if (p.pos.y > pr.p[1] + o.height + 2.5) continue;
+        p.vel.addScaledVector(v.fwd, o.power * dt);
+        p.vel.y += o.power * 0.4 * dt;
+        p.grounded = false;
+      }
+    },
+    triangle(v, dt, phase, pr, o) {
+      const grow = Math.min(1, phase / 0.12) * Math.min(1, (1 - phase) / 0.12);
+      v.g.scale.setScalar(Math.max(0.001, grow));
+      v.g.rotation.y += dt * 0.8;
+      for (let i = 0; i < v.swirls.length; i++) {
+        v.swirls[i].rotation.z += dt * (1.6 + i * 0.7);
+      }
+      v.ring.material.opacity = 0.45 + Math.sin(performance.now() * 0.004) * 0.25;
+      // the pull — and the throat swallows anyone who drifts to the middle
+      for (const p of SKY.Game.pawns) {
+        if (!p.alive || p.isRemote) continue;
+        _ev.set(pr.p[0] - p.pos.x, 0, pr.p[2] - p.pos.z);
+        const d = _ev.length();
+        if (d > o.size || Math.abs(p.pos.y - pr.p[1]) > 7) continue;
+        _ev.multiplyScalar(d > 0.01 ? 1 / d : 0);
+        const k = grow * (1 - (d / o.size) * 0.4);
+        p.vel.addScaledVector(_ev, o.power * k * dt);
+        if (d < o.size * 0.35) p.vel.y -= o.power * 0.55 * k * dt;
+        p.grounded = false;
+      }
+    },
+    kraken(v, dt, phase, pr, o) {
+      const t = performance.now() * 0.001;
+      const rise = Math.min(1, phase / 0.15) * Math.min(1, (1 - phase) / 0.12);
+      for (const tn of v.tents) {
+        tn.t.position.y = -8 + rise * 8;
+        tn.t.rotation.z = Math.sin(t * 2.1 + tn.phase) * 0.28;
+        tn.t.rotation.x = Math.cos(t * 1.7 + tn.phase) * 0.2;
+      }
+      v.slamT -= dt;
+      if (v.slamT <= 0 && rise > 0.9) {
+        v.slamT = 1.6;
+        evKnock(v.g.position, o.size + 2, o.power, o.power * 0.55);
+        SKY.Effects.ring(_ev.set(v.g.position.x, v.g.position.y + 0.4, v.g.position.z).clone(),
+          '#bfe9ff', o.size, 0.5);
+        SKY.SFX.boom(SKY.Game.player ? v.g.position.distanceTo(SKY.Game.player.pos) : 20);
+      }
+    },
+    shark(v, dt, phase, pr, o) {
+      v.ang += dt * (5.2 / Math.max(3, o.size));   // ~constant surface speed
+      const fx = pr.p[0] + Math.cos(v.ang) * o.size;
+      const fz = pr.p[2] + Math.sin(v.ang) * o.size;
+      v.g.position.set(fx, pr.p[1], fz);
+      v.g.rotation.y = -v.ang - Math.PI / 2;       // face along the tangent
+      v.wakeT -= dt;
+      if (v.wakeT <= 0) {
+        v.wakeT = 0.12;
+        SKY.Effects.trailPuff(_ev.set(fx, pr.p[1] + 0.25, fz).clone(), '#dceefc');
+      }
+      // the bite: close + near sea level = launched
+      for (const p of SKY.Game.pawns) {
+        if (!p.alive || p.isRemote) continue;
+        if (Math.abs(p.pos.y - pr.p[1]) > 2.6) continue;
+        _ev.set(p.pos.x - fx, 0, p.pos.z - fz);
+        if (_ev.lengthSq() > 2.6 * 2.6) continue;
+        if (p._sharkT && SKY.Game.time - p._sharkT < 1.3) continue;
+        p._sharkT = SKY.Game.time;
+        _ev.normalize();
+        p.applyKnockback(_ev2.set(_ev.x * o.power, o.power * 0.7, _ev.z * o.power), null);
+        SKY.Effects.hitBurst(_ev2.set(p.pos.x, p.pos.y + 0.7, p.pos.z).clone(), 2, '#eaf6ff');
+        SKY.SFX.hit(0.7, SKY.Game.player ? p.pos.distanceTo(SKY.Game.player.pos) : 10);
+      }
+    },
+  };
+
+  function registerSeaEvent(kind, pr) {
+    const o = { ...(SKY.Assets ? SKY.Assets.fxDefaults('fx:' + kind) : {}), ...(pr.fx || {}) };
+    o.start = Math.max(0, o.start || 0);
+    o.every = Math.max(5, o.every || 30);
+    o.dur = Math.min(Math.max(1, o.dur || 8), o.every);
+    const st = { on: false, vis: null };
+    tickers.push((dt) => {
+      const playing = SKY.Game.state === 'playing' || SKY.Game.state === 'roundend';
+      const t = SKY.Game.roundTime;
+      let want = false, phase = 0;
+      if (playing && t >= o.start) {
+        const cyc = Math.floor((t - o.start) / o.every);
+        const ph = (t - o.start) - cyc * o.every;
+        if (ph < o.dur &&
+            evRand(pr, cyc) * 100 < (o.chance !== undefined ? o.chance : 100)) {
+          want = true;
+          phase = ph / o.dur;
+        }
+      }
+      if (want && !st.on) { st.on = true; st.vis = EV_BUILD[kind](pr, o); }
+      else if (!want && st.on) {
+        st.on = false;
+        if (st.vis) { group.remove(st.vis.g); st.vis = null; }
+      }
+      if (st.on && st.vis) EV_TICK[kind](st.vis, dt, phase, pr, o);
+    });
+  }
+
   /* -------- interactable doors -------- */
   function setDoor(i, open) {
     const d = doors[i];
@@ -1682,6 +1956,10 @@ SKY.Map = (function () {
       const nm = ((embed && embed.name) ? String(embed.name) : a).toLowerCase();
       const isDoor = pr.door !== undefined ? !!pr.door : /door-rotate/.test(nm);
       const doorIdx = isDoor ? doorSeq++ : -1;
+      // SEA EVENTS: invisible markers -> deterministic clock-driven shows
+      if (a === 'fx:tsunami' || a === 'fx:triangle' || a === 'fx:kraken' || a === 'fx:shark') {
+        registerSeaEvent(a.slice(3), pr);
+      }
       // AIR VENT: register the updraft column (pawn.tick applies the lift —
       // deterministic from the def, so every peer simulates it identically)
       if (a === 'fx:airvent') {

@@ -43,10 +43,19 @@ SKY.Characters = (function () {
       this.pawn = pawn;
       this.scene = scene;
       const h = hash(pawn.name);
-      this.skinMat = lam(SKINS[h % SKINS.length]);
-      this.jacketMat = lam(pawn.color);
+      // LOCKER picks apply to the primitive puppet + ragdoll PROXY too —
+      // these used to hash-roll, so your ragdoll wore the default look
+      const cos = pawn.cos;
+      const localP = pawn.isLocal && SKY.Profile ? SKY.Profile.data : null;
+      const skinPick = cos ? cos.skin : (localP ? localP.skin : null);
+      const outfitPick = cos ? cos.outfit : (localP ? localP.outfit : null);
+      const skinCol = new THREE.Color((skinPick !== null && skinPick !== undefined)
+        ? SKINS[skinPick % SKINS.length] : SKINS[h % SKINS.length]).convertSRGBToLinear();
+      const jacketCol = new THREE.Color(outfitPick || pawn.color).convertSRGBToLinear();
+      this.skinMat = lam(skinCol);
+      this.jacketMat = lam(jacketCol);
       this.pantsMat = lam(PANTS[h % PANTS.length]);
-      this.darkMat = lam(new THREE.Color(pawn.color).multiplyScalar(0.55));
+      this.darkMat = lam(jacketCol.clone().multiplyScalar(0.55));
       this.shoeMat = lam('#e8e8ee');
 
       this.facingYaw = 0; this.facingVel = 0;

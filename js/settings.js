@@ -157,6 +157,7 @@ SKY.Settings = (function () {
     });
 
     panel.querySelector('#settings-close').onclick = close;
+    if (SKY.HUD && SKY.HUD.dressSelects) SKY.HUD.dressSelects('#settings-ov');
   }
 
   // capture the next key / mouse button while rebinding

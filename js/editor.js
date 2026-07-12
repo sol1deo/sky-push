@@ -710,9 +710,7 @@ SKY.Editor = (function () {
   function deleteSel() {
     if (msel.length > 1) {
       const del = msel.map(i => objects[i]).filter(Boolean);
-      const nBlocks = del.filter(o => o.kind === 'block').length;
       const nSpawns = del.filter(o => o.kind === 'spawn').length;
-      if (def.blocks.length - nBlocks < 1) { status('a map needs at least one block'); return; }
       if (def.spawns.length - nSpawns < 2) { status('keep at least 2 spawns'); return; }
       push();
       for (const o of del) {
@@ -726,7 +724,7 @@ SKY.Editor = (function () {
     }
     const o = objects[sel];
     if (!o) return;
-    if (o.kind === 'block' && def.blocks.length <= 1) { status('a map needs at least one block'); return; }
+    // blocks can all go — props carry collision now (a props-only map is fine)
     if (o.kind === 'spawn' && def.spawns.length <= 2) { status('keep at least 2 spawns'); return; }
     push();
     arrOf(o).splice(arrOf(o).indexOf(o.data), 1);
@@ -978,10 +976,20 @@ SKY.Editor = (function () {
         if (fx.power !== undefined) h += numRow('Intensity', fx.power, 'fxpower', 0.1);
         if (fx.range !== undefined) h += numRow('Range', fx.range, 'fxrange', 1);
         if (fx.alpha !== undefined) h += numRow('Haze', fx.alpha, 'fxalpha', 0.02);
-        if (fx.width !== undefined) {
-          h += numRow('Width', fx.width, 'fxwidth', 0.5) + numRow('Height', fx.height, 'fxheight', 1);
-        }
+        if (fx.width !== undefined) h += numRow('Width', fx.width, 'fxwidth', 0.5);
+        if (fx.height !== undefined) h += numRow('Height', fx.height, 'fxheight', 1);
         if (fx.size !== undefined) h += numRow('Size', fx.size, 'fxsize', 1);
+        // event timing (sea events: tsunami / triangle / kraken / shark)
+        if (fx.start !== undefined) h += numRow('Starts at s', fx.start, 'fxstart', 5);
+        if (fx.every !== undefined) h += numRow('Every s', fx.every, 'fxevery', 5);
+        if (fx.dur !== undefined) h += numRow('Duration s', fx.dur, 'fxdur', 1);
+        if (fx.chance !== undefined) h += numRow('Chance %', fx.chance, 'fxchance', 10);
+        if (fx.start !== undefined) {
+          h += `<div class="ed-hint">Event: first fires STARTS-AT seconds into the round,
+          then repeats EVERY seconds, staying active for DURATION. CHANCE rolls
+          per cycle (same result for every player). Place several markers for
+          random-feeling spawns.</div>`;
+        }
         // tip: Rot X/Z steer spot lights — rotate via the raw fields
         if (d.asset === 'fx:spot') {
           h += numRow('Tilt X°', (d.r ? d.r[0] : 0) * 180 / Math.PI, 'pr0', 5)
@@ -1123,6 +1131,10 @@ SKY.Editor = (function () {
       else if (k === 'fxwidth') d.fx.width = Math.max(0.5, num);
       else if (k === 'fxheight') d.fx.height = Math.max(1, num);
       else if (k === 'fxsize') d.fx.size = Math.max(1, num);
+      else if (k === 'fxstart') d.fx.start = Math.max(0, num);
+      else if (k === 'fxevery') d.fx.every = Math.max(5, num);
+      else if (k === 'fxdur') d.fx.dur = Math.max(1, num);
+      else if (k === 'fxchance') d.fx.chance = SKY.U.clamp(num, 0, 100);
       markDirty();
       rebuildProp(o);
       return;
@@ -1240,8 +1252,8 @@ SKY.Editor = (function () {
     push();
     SKY.Assets.embed(def, assetId);
     const airy = /crane|site-fence/.test(assetId);
-    // fx decor defaults non-solid — except the planes, which are real cover
-    const solidFx = /^fx:plane/.test(assetId);
+    // fx decor defaults non-solid — except aviation, which is real cover
+    const solidFx = /^fx:(plane|heli|jet|helipad|runway|tower|hangar)/.test(assetId);
     // new props default to MESH collision — the shape you see is what you hit
     const pr = { asset: assetId, p: [+_v.x.toFixed(2), +_v.y.toFixed(2), +_v.z.toFixed(2)],
       r: [0, 0, 0], scale: 1,

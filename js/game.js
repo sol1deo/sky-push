@@ -71,7 +71,7 @@ SKY.Game = (function () {
         SKY.SFX.music('game');
         api.startMatch(SKY.HUD.botCount, SKY.HUD.mapSel, SKY.HUD.modeSel, {
           rounds: SKY.HUD.roundsSel, lives: SKY.HUD.livesSel, crown: SKY.HUD.crownSel,
-          sparks: SKY.HUD.sparkSel, dmMin: SKY.HUD.dmSel,
+          sparks: SKY.HUD.sparkSel, dmMin: SKY.HUD.dmSel, time: SKY.HUD.timeSel,
         });
         SKY.Input.requestLock();
       };
@@ -113,6 +113,18 @@ SKY.Game = (function () {
       if (rules.crown) SKY.TUNING.crown.holdToWin = rules.crown;
       if (rules.sparks) SKY.TUNING.spark.target = rules.sparks;
       if (rules.dmMin) SKY.TUNING.dm.timeLimit = rules.dmMin * 60;
+      // optional hard round cap for lbs/crown (0 = classic, no limit)
+      SKY.TUNING.game.timeLimit = rules.time !== undefined ? rules.time : 0;
+    },
+
+    /* round-limit buzzer: best-placed player takes the round */
+    timeoutWinner() {
+      const alive = api.pawns.filter(p => !p.eliminated);
+      if (!alive.length) return null;
+      const best = alive.slice().sort((a, b) => api.mode === 'crown'
+        ? (b.crownTime - a.crownTime) || (b.koCount - a.koCount)
+        : (b.lives - a.lives) || (b.koCount - a.koCount))[0];
+      return best || null;
     },
 
     /* ---------------- match / round setup ---------------- */
@@ -127,6 +139,9 @@ SKY.Game = (function () {
 
       const myName = (SKY.Settings.data.nickname || '').trim() || 'YOU';
       api.player = new SKY.Pawn({ name: myName, color: '#ffd34d', isLocal: true });
+      // offline pawns carry the LOCKER picks the same way net pawns do —
+      // without this, replays/ragdolls of you showed the default look
+      api.player.cos = SKY.Profile ? SKY.Profile.equipped() : null;
       api.player.buildVisual(scene);
       api.pawns.push(api.player);
       for (let i = 0; i < SKY.U.clamp(nBots, 1, 9); i++) {
@@ -406,6 +421,14 @@ SKY.Game = (function () {
       if (api.state === 'playing') api.roundTime += dt;   // clock freezes at round end
       if (api.mode === 'spark' && api.state === 'playing') this.tickSpark(dt);
       if (api.mode === 'dm' && api.state === 'playing') this.tickDm(dt);
+      // optional round limit (lbs/crown): buzzer ends the round for the leader
+      if (SKY.Net.authority && api.state === 'playing' &&
+          (api.mode === 'lbs' || api.mode === 'crown') &&
+          (SKY.TUNING.game.timeLimit || 0) > 0 &&
+          api.roundTime >= SKY.TUNING.game.timeLimit) {
+        this.endRound(this.timeoutWinner());
+        return;
+      }
 
       // OVERTIME: arena starts working against you (host decides; not in spark)
       if (SKY.Net.authority && api.state === 'playing' &&

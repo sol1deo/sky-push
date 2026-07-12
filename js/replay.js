@@ -91,7 +91,8 @@ SKY.Replay = (function () {
     const G = SKY.Game;
     if (!roster || roster.length !== G.pawns.length) {
       frames.length = 0; events.length = 0;
-      roster = G.pawns.map(p => ({ name: p.name, color: p.color }));
+      // cos rides along so ghosts wear the right character/skin/outfit
+      roster = G.pawns.map(p => ({ name: p.name, color: p.color, cos: p.cos || null }));
     }
     const fr = { t: G.time, pw: [] };
     for (const p of G.pawns) {
@@ -174,7 +175,7 @@ SKY.Replay = (function () {
 
   function makeGhost(r) {
     const stub = {
-      name: r.name, color: r.color, isLocal: false,
+      name: r.name, color: r.color, cos: r.cos || null, isLocal: false,
       pos: new THREE.Vector3(), vel: new THREE.Vector3(),
       tumbleVel: new THREE.Vector3(),
       yaw: 0, pitch: 0, height: 1.8, eyeHeight: 1.62,

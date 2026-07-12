@@ -386,6 +386,7 @@ SKY.TUNING = {
    * ------------------------------------------------------------------ */
   game: {
     lives:             3,
+    timeLimit:         0,     // optional lbs/crown round cap in seconds (0 = off)
     respawnDelay:      2.5,
     killY:           -22.0,   // per-map override in map.js
     countdown:         3,
