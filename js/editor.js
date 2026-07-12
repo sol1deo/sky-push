@@ -163,7 +163,8 @@ SKY.Editor = (function () {
      Computed by the same code the game uses (SKY.Map.propCollisionLocal),
      so what you see in the editor is exactly what you collide with. */
   let collOn = false;
-  let collMat = null;
+  let collMat = null, collEditMat = null;
+  let collEdit = null;   // { o, i, mesh } — a custom collider box owns the gizmo
   function updateCollVis(o, invalidate) {
     if (!o || o.kind !== 'prop' || !o.mesh) return;
     if (o.collVis) {
@@ -175,29 +176,105 @@ SKY.Editor = (function () {
     const show = (collOn || objects[sel] === o) && d.solid !== false;
     if (!show || !o.inner) return;
     const mode = d.coll || 'box';
-    if (!o._collBoxes || o._collMode !== mode) {
-      o._collMode = mode;
-      o._collBoxes = SKY.Map.propCollisionLocal(o.inner, mode);
-    }
-    if (!o._collBoxes.length) return;
     if (!collMat) {
       collMat = new THREE.MeshBasicMaterial({
         color: 0x35ff8a, wireframe: true, transparent: true, opacity: 0.5, depthTest: false });
+      collEditMat = new THREE.MeshBasicMaterial({
+        color: 0xffd34d, wireframe: true, transparent: true, opacity: 0.9, depthTest: false });
     }
     const g = new THREE.Group();
     g.name = 'edcoll';
-    for (const b of o._collBoxes) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(b.s.x, b.s.y, b.s.z), collMat);
-      m.name = 'edcoll';
-      m.position.copy(b.c);
-      m.renderOrder = 5;
-      m.raycast = () => {};   // display only — never steals viewport clicks
-      g.add(m);
+    if (mode === 'custom') {
+      // hand-authored boxes straight from the def (no cache — they're edited live)
+      (d.boxes || []).forEach((b, i) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(
+          Math.max(0.05, b.s[0]), Math.max(0.05, b.s[1]), Math.max(0.05, b.s[2])),
+          collEdit && collEdit.o === o && collEdit.i === i ? collEditMat : collMat);
+        m.name = 'edcoll';
+        m.position.set(b.p[0], b.p[1], b.p[2]);
+        const br = b.r || [0, 0, 0];
+        m.rotation.set(br[0], br[1], br[2]);
+        m.renderOrder = 5;
+        m.raycast = () => {};
+        m.userData.cbi = i;
+        g.add(m);
+      });
+    } else {
+      if (!o._collBoxes || o._collMode !== mode) {
+        o._collMode = mode;
+        o._collBoxes = SKY.Map.propCollisionLocal(o.inner, mode);
+      }
+      for (const b of o._collBoxes) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(b.s.x, b.s.y, b.s.z), collMat);
+        m.name = 'edcoll';
+        m.position.copy(b.c);
+        m.renderOrder = 5;
+        m.raycast = () => {};   // display only — never steals viewport clicks
+        g.add(m);
+      }
     }
     o.inner.add(g);   // inherits the holder's position/rotation/scale
     o.collVis = g;
+    // the gizmo target was just rebuilt — re-attach to the fresh mesh
+    if (collEdit && collEdit.o === o) {
+      const m = g.children.find(ch => ch.userData.cbi === collEdit.i);
+      if (m) { collEdit.mesh = m; if (gizmo) gizmo.attach(m); }
+      else collEdit = null;
+    }
   }
   function refreshCollVis(invalidate) { for (const o of objects) updateCollVis(o, invalidate); }
+
+  /* ---- custom collider editing (gizmo drives one box of pr.boxes) ---- */
+  function enterCollEdit(o, i) {
+    if (!o || o.kind !== 'prop' || !o.data.boxes || !o.data.boxes[i]) return;
+    collEdit = { o, i, mesh: null };
+    updateCollVis(o);            // recolors + re-attaches the gizmo
+    if (collEdit && gizmo && collEdit.mesh) {
+      gizmo.attach(collEdit.mesh);
+      status('editing collider box ' + (i + 1) + ' — G/R/S, click elsewhere to finish');
+    }
+    syncInspector();
+  }
+  function exitCollEdit(silent) {
+    if (!collEdit) return;
+    const o = collEdit.o;
+    collEdit = null;
+    updateCollVis(o);
+    // hand the gizmo back to the selected object
+    if (gizmo && objects[sel]) gizmo.attach(objects[sel].mesh);
+    if (!silent) { syncInspector(); }
+  }
+
+  /* first collider = the model's own bounds, so you carve from something real */
+  function seedColliderBox(o) {
+    if (o.inner) {
+      const b = SKY.Map.propCollisionLocal(o.inner, 'box');
+      if (b.length) {
+        return { p: [+b[0].c.x.toFixed(2), +b[0].c.y.toFixed(2), +b[0].c.z.toFixed(2)],
+                 s: [+b[0].s.x.toFixed(2), +b[0].s.y.toFixed(2), +b[0].s.z.toFixed(2)],
+                 r: [0, 0, 0] };
+      }
+    }
+    return { p: [0, 1, 0], s: [2, 2, 2], r: [0, 0, 0] };
+  }
+  /* live gizmo motion -> box def (scale baked on drag end) */
+  function writeBackCollider(final) {
+    if (!collEdit || !collEdit.mesh) return;
+    const { o, i, mesh } = collEdit;
+    const b = o.data.boxes[i];
+    b.p = [+mesh.position.x.toFixed(3), +mesh.position.y.toFixed(3), +mesh.position.z.toFixed(3)];
+    b.r = [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z];
+    if (final && (mesh.scale.x !== 1 || mesh.scale.y !== 1 || mesh.scale.z !== 1)) {
+      b.s = [Math.max(0.05, b.s[0] * mesh.scale.x),
+             Math.max(0.05, b.s[1] * mesh.scale.y),
+             Math.max(0.05, b.s[2] * mesh.scale.z)].map(v => +v.toFixed(3));
+      mesh.scale.set(1, 1, 1);
+      mesh.geometry.dispose();
+      mesh.geometry = new THREE.BoxGeometry(b.s[0], b.s[1], b.s[2]);
+    }
+    markDirty();
+    if (final) syncInspector();
+  }
 
   function rebuild(keepSel) {
     const oldSel = keepSel ? sel : -1;
@@ -404,6 +481,7 @@ SKY.Editor = (function () {
   }
 
   function updateSelVisuals() {
+    if (collEdit) exitCollEdit(true);   // any selection action ends collider editing
     if (selBox) { group.remove(selBox); selBox = null; }
     for (const b of mboxes) group.remove(b);
     mboxes = [];
@@ -857,10 +935,38 @@ SKY.Editor = (function () {
         h += `<div class="ed-row"><span>Collision</span><select data-k="pcoll">
           <option value=""${!d.coll ? ' selected' : ''}>box (whole bounds)</option>
           <option value="mesh"${d.coll === 'mesh' ? ' selected' : ''}>mesh (fits the shape)</option>
-        </select></div>
-        <div class="ed-hint">MESH builds collision from the model's real shape —
-        ramps, stacked crates and openings become walkable/passable. The green
-        wireframe (shown on selection, or COLL up top) is the exact result.</div>`;
+          <option value="custom"${d.coll === 'custom' ? ' selected' : ''}>custom boxes</option>
+        </select></div>`;
+        if (d.coll === 'custom') {
+          const boxes = d.boxes || [];
+          h += `<div class="ed-row"><span>Collider boxes</span>
+            <button class="ed-mini" data-k="cbadd">+ add box</button></div>`;
+          boxes.forEach((b, i) => {
+            const on = collEdit && collEdit.o === o && collEdit.i === i;
+            h += `<div class="ed-row"><span>box ${i + 1}${on ? ' ✎' : ''}</span><span>
+              <button class="ed-mini" data-cbe="${i}">${on ? 'done' : 'edit'}</button>
+              <button class="ed-mini" data-cbx="${i}">×</button></span></div>`;
+          });
+          if (collEdit && collEdit.o === o && boxes[collEdit.i]) {
+            const b = boxes[collEdit.i];
+            const br = b.r || [0, 0, 0];
+            h += numRow('Box X', b.p[0], 'cbp0') + numRow('Box Y', b.p[1], 'cbp1')
+              + numRow('Box Z', b.p[2], 'cbp2')
+              + numRow('Box W', b.s[0], 'cbs0') + numRow('Box H', b.s[1], 'cbs1')
+              + numRow('Box L', b.s[2], 'cbs2')
+              + numRow('Box RX°', br[0] * 180 / Math.PI, 'cbr0', 5)
+              + numRow('Box RY°', br[1] * 180 / Math.PI, 'cbr1', 5)
+              + numRow('Box RZ°', br[2] * 180 / Math.PI, 'cbr2', 5);
+          }
+          h += `<div class="ed-hint">CUSTOM: you author the collider boxes yourself
+          (e.g. give a crane a walkable top only). EDIT puts the gizmo on a box —
+          G/R/S move/rotate/resize it; boxes live in the prop's local space so
+          they follow the prop everywhere.</div>`;
+        } else {
+          h += `<div class="ed-hint">MESH builds collision from the model's real shape —
+          ramps, stacked crates and openings become walkable/passable. The green
+          wireframe (shown on selection, or COLL up top) is the exact result.</div>`;
+        }
       }
       const isDoor = d.door !== undefined ? d.door : /door-rotate/.test(d.asset || '');
       h += `<div class="ed-row"><span>Door <small>use key opens</small></span>
@@ -990,7 +1096,23 @@ SKY.Editor = (function () {
     else if (k === 'pr2') { d.r = d.r || [0, 0, 0]; d.r[2] = num * Math.PI / 180; }
     else if (k === 'pscale') d.scale = Math.max(0.05, num);
     else if (k === 'psolid') { d.solid = e.target.checked; updateCollVis(o); syncInspector(); }
-    else if (k === 'pcoll') { d.coll = e.target.value || null; updateCollVis(o, true); }
+    else if (k === 'pcoll') {
+      d.coll = e.target.value || null;
+      exitCollEdit(true);
+      if (d.coll === 'custom' && (!d.boxes || !d.boxes.length)) d.boxes = [seedColliderBox(o)];
+      updateCollVis(o, true);
+      syncInspector();
+    }
+    else if (k.indexOf('cbp') === 0 || k.indexOf('cbs') === 0 || k.indexOf('cbr') === 0) {
+      if (collEdit && collEdit.o === o && d.boxes && d.boxes[collEdit.i]) {
+        const b = d.boxes[collEdit.i];
+        const ax = +k[3];
+        if (k[1] === 'b' && k[2] === 'p') b.p[ax] = num;
+        else if (k[2] === 's') b.s[ax] = Math.max(0.05, num);
+        else if (k[2] === 'r') { b.r = b.r || [0, 0, 0]; b.r[ax] = num * Math.PI / 180; }
+        updateCollVis(o);
+      }
+    }
     else if (k === 'pdoor') d.door = e.target.checked;
     else if (k.indexOf('fx') === 0 && o.kind === 'prop') {
       d.fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
@@ -1300,6 +1422,11 @@ SKY.Editor = (function () {
       gizmo.setSize(0.9);
       gizmo.addEventListener('dragging-changed', (e) => {
         gizmoDrag = e.value;
+        if (collEdit) {                            // a collider box owns the gizmo
+          if (e.value) push();
+          else writeBackCollider(true);
+          return;
+        }
         if (e.value) {
           push();                                  // undo point at drag start
           // group translate: remember where everyone started
@@ -1317,6 +1444,7 @@ SKY.Editor = (function () {
         }
       });
       gizmo.addEventListener('objectChange', () => {
+        if (collEdit) { writeBackCollider(false); return; }
         const o = objects[sel];
         if (!o) return;
         writeBack(o);
@@ -1375,6 +1503,39 @@ SKY.Editor = (function () {
     ui.ins.addEventListener('click', (e) => {
       if (e.target.dataset.k === 'cleartex') { onInspectorInput(e); return; }
       if (e.target.dataset.k === 'centermap') { centerMap(); return; }
+      /* custom collider box buttons */
+      if (e.target.dataset.k === 'cbadd') {
+        const o = objects[sel];
+        if (o && o.kind === 'prop') {
+          push();
+          o.data.boxes = o.data.boxes || [];
+          o.data.boxes.push(seedColliderBox(o));
+          markDirty();
+          updateCollVis(o);
+          syncInspector();
+        }
+        return;
+      }
+      if (e.target.dataset.cbe !== undefined) {
+        const o = objects[sel];
+        const i = +e.target.dataset.cbe;
+        if (collEdit && collEdit.o === o && collEdit.i === i) exitCollEdit();
+        else enterCollEdit(o, i);
+        return;
+      }
+      if (e.target.dataset.cbx !== undefined) {
+        const o = objects[sel];
+        const i = +e.target.dataset.cbx;
+        if (o && o.data.boxes && o.data.boxes[i]) {
+          push();
+          exitCollEdit(true);
+          o.data.boxes.splice(i, 1);
+          markDirty();
+          updateCollVis(o);
+          syncInspector();
+        }
+        return;
+      }
       const pf = e.target.closest('.ed-pf');
       if (pf) { paintFace = parseInt(pf.dataset.pf, 10); syncInspector(); return; }
       const ext = e.target.closest('.ed-ext');

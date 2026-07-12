@@ -1067,19 +1067,27 @@ SKY.Net = (function () {
   function showOnlineHome() {
     $('mp-home').classList.remove('hidden');
     $('mp-lobby').classList.add('hidden');
+    SKY.HUD.playSub('online');
+    if (SKY.Attract && SKY.Attract.lobby) SKY.Attract.lobby(null);
   }
   function showLobby() {
     $('menu').classList.remove('hidden');
     selectTab('tab-offline');
-    SKY.HUD.playSub('online');
-    $('mp-home').classList.add('hidden');
+    SKY.HUD.playSub('lobby');            // fullscreen stage over the 3D lineup
+    $('mp-home').classList.remove('hidden');   // ready for when we come back
     $('mp-lobby').classList.remove('hidden');
     renderLobby();
   }
-  function hideLobby() { /* game start hides the whole menu via Game */ }
+  function hideLobby() {
+    if (SKY.Attract && SKY.Attract.lobby) SKY.Attract.lobby(null);
+  }
 
   function renderLobby() {
     if (!api.online) return;
+    // the 3D stage: everyone's actual character standing in a lineup
+    if (SKY.Attract && SKY.Attract.lobby && SKY.Game.state === 'menu') {
+      SKY.Attract.lobby(api.roster.filter(r => !r.bot));
+    }
     $('lobby-code').textContent = api.code.replace('priv-', '').replace('pub-', 'PUBLIC ');
     $('lobby-type').textContent = api.isPublic || api.code.startsWith('pub') ? 'public lobby' : 'private — share the code';
     $('lobby-players').innerHTML = api.roster.filter(r => !r.bot).map(r =>
@@ -1116,21 +1124,37 @@ SKY.Net = (function () {
     renderLobby();
   }
 
+  /* ZERO FRICTION (krunker-style): never block play on naming — auto-mint a
+     guest name and go. Renaming lives on the top-bar chip / lobby row. */
   function ensureNickname(then) {
-    if ((SKY.Settings.data.nickname || '').trim()) { then(); return; }
+    if (!(SKY.Settings.data.nickname || '').trim()) {
+      SKY.Settings.data.nickname = 'BEAN-' + randCode(3);
+      SKY.Settings.save();
+      syncNickLabels();
+    }
+    then();
+  }
+  function syncNickLabels() {
+    const v = (SKY.Settings.data.nickname || '').trim();
+    const a = $('mp-nick'); if (a) a.textContent = v || '(pick a nickname)';
+    if (SKY.HUD && SKY.HUD.refreshNick) SKY.HUD.refreshNick();
+  }
+  /* explicit rename — the only place the modal still appears */
+  function promptNickname(then) {
     const modal = $('nick-modal');
     modal.classList.remove('hidden');
     const input = $('nick-input');
-    input.value = '';
+    input.value = (SKY.Settings.data.nickname || '').trim();
     input.focus();
+    input.select();
     $('nick-ok').onclick = () => {
       const v = input.value.trim().slice(0, 14);
       if (!v) return;
       SKY.Settings.data.nickname = v;
       SKY.Settings.save();
       modal.classList.add('hidden');
-      $('mp-nick').textContent = v;
-      then();
+      syncNickLabels();
+      if (then) then();
     };
   }
 
@@ -1141,6 +1165,8 @@ SKY.Net = (function () {
     $('panel-offline').classList.toggle('hidden', id !== 'tab-offline');
     $('panel-locker').classList.toggle('hidden', id !== 'tab-locker');
     $('panel-matches').classList.toggle('hidden', id !== 'tab-matches');
+    // the card wrapper only exists for locker/matches — hide it on PLAY
+    $('menu-panel').classList.toggle('hidden', id === 'tab-offline');
   }
 
   function refreshServers() {
@@ -1182,10 +1208,7 @@ SKY.Net = (function () {
       SKY.Demos.renderPanel();
     };
     $('srv-refresh').onclick = () => { if (!api._browsing) refreshServers(); };
-    $('mp-nick').onclick = () => {
-      SKY.Settings.data.nickname = '';
-      ensureNickname(() => {});
-    };
+    $('mp-nick').onclick = () => promptNickname();
     $('mp-quick').onclick = () => ensureNickname(() => quickJoin(1));
     // ONE create button; the checkbox decides public (listed) vs private (code)
     $('mp-create').onclick = () => ensureNickname(() => host(!$('mp-private').checked, 1));
@@ -1247,9 +1270,15 @@ SKY.Net = (function () {
     send, broadcast,
     /* PLAY → Online sub-tab was opened: prep nick label + kick off a scan */
     enterOnline() {
-      $('mp-nick').textContent = SKY.Settings.data.nickname || '(pick a nickname)';
+      syncNickLabels();
       if (!api.online && !api._browsing) refreshServers();
     },
+    /* the hero PLAY button: guest name + straight into a public match */
+    quickPlay() {
+      if (api.online) return;
+      ensureNickname(() => quickJoin(1));
+    },
+    renameNick() { promptNickname(); },
     /* test hooks */
     _host: host, _join: join, _start: hostStart,
 

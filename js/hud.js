@@ -72,10 +72,20 @@ SKY.HUD = (function () {
         $('rl-row').classList.toggle('hidden', v === 'spark' || v === 'dm');
       });
       bindSel('dmmin-btn', 'v', v => { api.dmSel = +v; });
-      // PLAY hub sub-tabs: vs bots ↔ online
+      // PLAY hub: secondary chips toggle the drawer (vs bots / lobby browser)
       document.querySelectorAll('.play-sub').forEach(b => {
-        b.addEventListener('click', () => api.playSub(b.dataset.v));
+        b.addEventListener('click', () =>
+          api.playSub(b.classList.contains('sel') ? '' : b.dataset.v));
       });
+      $('drawer-close').addEventListener('click', () => api.playSub(''));
+      // the hero button: ZERO-friction online — auto guest name, quick join
+      $('quick-play').addEventListener('click', () => {
+        SKY.SFX.init();
+        api.playSub('online');
+        SKY.Net.quickPlay();
+      });
+      $('nav-nick').addEventListener('click', () => SKY.Net.renameNick());
+      api.refreshNick();
       SKY.MapData.onListChange = () => api.refreshCustomMaps();
       api.refreshCustomMaps();
       bindSel('rounds-btn', 'v', v => { api.roundsSel = parseInt(v, 10); });
@@ -107,13 +117,26 @@ SKY.HUD = (function () {
       }
     },
 
-    /* PLAY hub sub-tab switch (Net calls this with 'online' when a lobby opens) */
+    /* PLAY hub state: '' = hero landing, 'bots'/'online' = drawer,
+       'lobby' = fullscreen lobby stage (Net drives that one) */
     playSub(v) {
       document.querySelectorAll('.play-sub').forEach(b =>
         b.classList.toggle('sel', b.dataset.v === v));
+      const lobby = v === 'lobby';
+      $('play-drawer').classList.toggle('hidden', lobby || !v);
       $('play-bots').classList.toggle('hidden', v !== 'bots');
       $('play-online').classList.toggle('hidden', v !== 'online');
+      $('play-hero').classList.toggle('hidden', lobby);
+      $('play-actions').classList.toggle('hidden', lobby);
+      const mc = $('menu-char-wrap');
+      if (mc) mc.classList.toggle('hidden', lobby);   // real characters take over
       if (v === 'online') SKY.Net.enterOnline();
+    },
+
+    /* top-bar nickname chip mirrors the saved (or guest) name */
+    refreshNick() {
+      const el = $('nav-nick');
+      if (el) el.textContent = (SKY.Settings.data.nickname || '').trim() || 'pick a name';
     },
 
     showMenu() { el.menu.classList.remove('hidden'); el.hud.classList.add('hidden'); api.relockHint(false); },

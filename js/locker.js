@@ -132,7 +132,10 @@ SKY.Locker = (function () {
   function tickPreview(dt) {
     const wrap = $('menu-char-wrap');
     if (!wrap) return;
-    const inMenu = SKY.Game && SKY.Game.state === 'menu' &&
+    // hidden in the LOBBY stage too — the real character lineup takes over
+    const lobbyUp = document.getElementById('mp-lobby') &&
+      !document.getElementById('mp-lobby').classList.contains('hidden');
+    const inMenu = SKY.Game && SKY.Game.state === 'menu' && !lobbyUp &&
       !(SKY.Editor && SKY.Editor.active) && !(SKY.Replay && SKY.Replay.active);
     wrap.classList.toggle('hidden', !inMenu);
     if (!inMenu || !pv.renderer) return;

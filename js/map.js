@@ -1779,7 +1779,23 @@ SKY.Map = (function () {
             solid: wantSolid && closedOpts ? SKY.World.addSolid(closedOpts) : null,
           };
         } else if (wantSolid && okBox) {
-          if (collMode === 'mesh') {
+          if (collMode === 'custom' && Array.isArray(pr.boxes) && pr.boxes.length) {
+            // hand-authored collider boxes (editor 'custom' mode) — stored in
+            // the prop's LOCAL unscaled frame, composed with its transform
+            const sc = pr.scale || 1;
+            for (const b of pr.boxes) {
+              const br = b.r || [0, 0, 0];
+              const q = obj.quaternion.clone().multiply(new THREE.Quaternion()
+                .setFromEuler(new THREE.Euler(br[0], br[1], br[2])));
+              const e = new THREE.Euler().setFromQuaternion(q, 'XYZ');
+              const lc = new THREE.Vector3(b.p[0], b.p[1], b.p[2]).multiplyScalar(sc)
+                .applyQuaternion(obj.quaternion).add(obj.position);
+              SKY.World.addSolid({ x: lc.x, y: lc.y, z: lc.z,
+                sx: Math.max(0.05, b.s[0]) * sc, sy: Math.max(0.05, b.s[1]) * sc,
+                sz: Math.max(0.05, b.s[2]) * sc,
+                rotX: e.x, rotY: e.y, rotZ: e.z });
+            }
+          } else if (collMode === 'mesh') {
             // mesh-fit: voxelized boxes in local frame -> scaled/rotated OBBs
             const sc = pr.scale || 1;
             const boxes = propCollisionLocal(obj, 'mesh');

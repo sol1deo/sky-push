@@ -22,15 +22,22 @@
     background:radial-gradient(ellipse at 50% 46%, transparent 58%, rgba(6,8,14,.4) 100%); }
 
   :root {
-    --bg: rgba(13,15,19,.82);
-    --bg2: rgba(13,15,19,.6);
-    --txt: #f4f6f9;
-    --dim: #c6cdd9;     /* readable mid-tone (was too grey in-game) */
-    --faint: #8d94a3;
-    --line: rgba(255,255,255,.12);
-    --line2: rgba(255,255,255,.06);
+    --bg: rgba(11,13,24,.86);      /* ink navy — the identity base */
+    --bg2: rgba(11,13,24,.6);
+    --txt: #f6f7ff;
+    --dim: #c9d0e4;     /* readable mid-tone (was too grey in-game) */
+    --faint: #8b93ad;
+    --line: rgba(255,255,255,.14);
+    --line2: rgba(255,255,255,.07);
     --danger: #ff5a5a;
+    --brand: #ffd34d;               /* SKY yellow — the hero color */
+    --brand-ink: #1a1400;           /* text ON yellow */
+    --pop: #ff5d3b;                 /* hot coral accent */
+    --aqua: #35c7ff;
   }
+  /* the arcade voice: heavy italic caps for anything that shouts */
+  .shout { font-weight:900; font-style:italic; text-transform:uppercase;
+    letter-spacing:.04em; }
 
   .hidden { display:none !important; }
   .ov { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -46,38 +53,88 @@
     text-transform:uppercase; color:var(--faint); text-align:center; text-indent:.32em; }
 
   /* ---------- buttons & controls ---------- */
-  .btn { display:inline-block; margin-top:22px; padding:13px 52px; font-size:13px;
-    font-weight:700; letter-spacing:.2em; text-transform:uppercase; text-indent:.2em;
-    color:#0d0f13; background:#fff; border:none; border-radius:8px; cursor:pointer;
-    transition:opacity .12s, transform .12s; font-family:inherit; }
-  .btn:hover { opacity:.85; }
-  .btn:active { transform:scale(.98); }
-  .btn.small { background:transparent; border:1px solid var(--line); color:var(--dim);
-    font-size:11px; padding:9px 22px; margin-top:12px; }
-  .btn.small:hover { color:var(--txt); border-color:rgba(255,255,255,.3); opacity:1; }
+  .btn { display:inline-block; margin-top:22px; padding:14px 50px; font-size:13.5px;
+    font-weight:900; font-style:italic; letter-spacing:.14em; text-transform:uppercase;
+    text-indent:.14em; color:var(--brand-ink);
+    background:linear-gradient(180deg, #ffdd6e, #ffc93c); border:none; border-radius:9px;
+    cursor:pointer; transform:skewX(-6deg);
+    box-shadow:0 4px 0 rgba(20,12,0,.45), 0 10px 26px rgba(255,211,77,.18);
+    transition:transform .12s, box-shadow .12s, filter .12s; font-family:inherit; }
+  .btn:hover { transform:skewX(-6deg) translateY(-2px); filter:brightness(1.07); }
+  .btn:active { transform:skewX(-6deg) translateY(2px); box-shadow:0 1px 0 rgba(20,12,0,.45); }
+  .btn.small { background:var(--bg2); border:1px solid var(--line); color:var(--dim);
+    font-size:11px; padding:9px 22px; margin-top:12px; box-shadow:none; font-style:normal;
+    font-weight:700; }
+  .btn.small:hover { color:var(--txt); border-color:rgba(255,255,255,.35); filter:none; }
 
-  /* left rail navigation */
-  #rail { position:absolute; left:0; top:0; bottom:0; width:230px; z-index:21;
-    background:linear-gradient(90deg, rgba(10,12,16,.92), rgba(10,12,16,.55));
-    backdrop-filter:blur(14px); border-right:1px solid var(--line2);
-    padding:56px 0 32px 44px; display:flex; flex-direction:column; }
-  .rail-logo { font-size:17px; font-weight:800; letter-spacing:.34em;
-    text-transform:uppercase; color:var(--txt); margin-bottom:6px; }
-  .rail-sub { font-size:9px; font-weight:500; letter-spacing:.3em; text-transform:uppercase;
-    color:var(--faint); margin-bottom:54px; }
-  .rail-btn { display:block; background:none; border:none; text-align:left; padding:11px 0;
-    color:var(--faint); font-family:inherit; font-size:13px; font-weight:600;
-    letter-spacing:.24em; text-transform:uppercase; cursor:pointer; transition:color .12s,
-    padding-left .12s; position:relative; }
-  .rail-btn:hover { color:var(--dim); }
-  .rail-btn.sel { color:var(--txt); padding-left:14px; }
-  .rail-btn.sel::before { content:''; position:absolute; left:0; top:50%; transform:translateY(-50%);
-    width:3px; height:14px; background:#fff; }
-  .rail-foot { margin-top:auto; font-size:9px; letter-spacing:.2em; text-transform:uppercase;
+  /* ---------- top navigation (Fortnite-style tab bar) ---------- */
+  #topnav { position:absolute; top:0; left:0; right:0; height:62px; z-index:22;
+    display:flex; align-items:center; gap:2px; padding:0 30px;
+    background:linear-gradient(180deg, rgba(7,9,18,.9), rgba(7,9,18,.42) 74%, transparent); }
+  #nav-logo { font-size:21px; font-weight:900; font-style:italic; letter-spacing:.02em;
+    color:var(--txt); margin-right:26px; text-shadow:0 2px 10px rgba(0,0,0,.5); }
+  #nav-logo b { color:var(--brand); }
+  .nav-tab { background:none; border:none; padding:24px 15px 20px; color:var(--faint);
+    font-family:inherit; font-size:12.5px; font-weight:800; font-style:italic;
+    letter-spacing:.18em; text-transform:uppercase; cursor:pointer; position:relative;
+    transition:color .12s; }
+  .nav-tab:hover { color:var(--dim); }
+  .nav-tab.sel { color:var(--txt); }
+  .nav-tab.sel::after { content:''; position:absolute; left:13px; right:9px; bottom:13px;
+    height:3px; background:var(--brand); transform:skewX(-24deg);
+    box-shadow:0 0 10px rgba(255,211,77,.55); }
+  #nav-right { margin-left:auto; display:flex; gap:16px; align-items:center; }
+  #nav-nick { background:var(--bg2); border:1px solid var(--line); border-radius:8px;
+    color:var(--txt); font-family:inherit; font-size:11.5px; font-weight:800;
+    letter-spacing:.14em; text-transform:uppercase; padding:8px 16px; cursor:pointer;
+    transform:skewX(-6deg); transition:border-color .12s; }
+  #nav-nick:hover { border-color:var(--brand); color:var(--brand); }
+  .rail-foot { font-size:9px; letter-spacing:.2em; text-transform:uppercase;
     color:var(--faint); }
-  .rail-coins { margin-top:auto; margin-bottom:10px; font-size:13px; font-weight:700;
-    letter-spacing:.12em; color:#ffd34d; }
-  .rail-coins + .rail-foot { margin-top:0; }
+  #build-foot { position:absolute; left:16px; bottom:12px; z-index:21; }
+  .rail-coins { font-size:13px; font-weight:800; letter-spacing:.1em; color:var(--brand); }
+
+  /* ---------- PLAY landing: hero + action cluster ---------- */
+  #panel-offline { position:absolute; inset:0; pointer-events:none; }
+  #panel-offline > * { pointer-events:auto; }
+  #play-hero { position:absolute; left:6vw; top:24vh; pointer-events:none; }
+  #hero-title { font-size:88px; font-weight:900; font-style:italic; letter-spacing:.01em;
+    color:var(--txt); line-height:.94;
+    text-shadow:0 4px 0 rgba(10,8,2,.5), 0 16px 44px rgba(0,0,0,.55); }
+  #hero-title b { color:var(--brand); }
+  #hero-sub { margin-top:12px; font-size:12px; font-weight:700; letter-spacing:.42em;
+    text-transform:uppercase; color:var(--dim); text-shadow:0 2px 8px rgba(0,0,0,.6); }
+  #play-actions { position:absolute; right:44px; bottom:44px; display:flex;
+    flex-direction:column; align-items:flex-end; gap:14px; }
+  #quick-play { display:block; padding:22px 86px 19px; border:none; border-radius:12px;
+    background:linear-gradient(180deg, #ffdd6e, #ffc93c); color:var(--brand-ink);
+    font-family:inherit; font-size:34px; font-weight:900; font-style:italic;
+    letter-spacing:.06em; cursor:pointer; transform:skewX(-6deg); text-align:center;
+    box-shadow:0 6px 0 rgba(20,12,0,.5), 0 18px 48px rgba(255,211,77,.28);
+    transition:transform .13s, filter .13s, box-shadow .13s; }
+  #quick-play small { display:block; margin-top:3px; font-size:10px; font-weight:800;
+    font-style:normal; letter-spacing:.3em; text-transform:uppercase;
+    color:rgba(26,20,0,.72); }
+  #quick-play:hover { transform:skewX(-6deg) translateY(-3px) scale(1.02); filter:brightness(1.06); }
+  #quick-play:active { transform:skewX(-6deg) translateY(2px); box-shadow:0 2px 0 rgba(20,12,0,.5); }
+  #pa-secondary { display:flex; gap:10px; }
+  #pa-secondary .play-sub { padding:12px 26px; border-radius:9px; border:1px solid var(--line);
+    background:var(--bg2); backdrop-filter:blur(10px); color:var(--dim); font-family:inherit;
+    font-size:11.5px; font-weight:800; font-style:italic; letter-spacing:.18em;
+    text-transform:uppercase; cursor:pointer; transform:skewX(-6deg); transition:all .12s; }
+  #pa-secondary .play-sub:hover { color:var(--txt); border-color:rgba(255,255,255,.35); }
+  #pa-secondary .play-sub.sel { background:var(--txt); color:#0d0f13; border-color:transparent; }
+
+  /* the drawer: vs-bots setup / lobby browser slides in on the left */
+  #play-drawer { position:absolute; left:44px; top:96px; max-height:calc(100vh - 160px);
+    overflow-y:auto; min-width:520px; max-width:560px; text-align:center;
+    animation:drawerin .22s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes drawerin { from { opacity:0; transform:translateX(-22px); } }
+  #play-drawer::-webkit-scrollbar { width:5px; }
+  #play-drawer::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:3px; }
+  #drawer-close { position:absolute; top:10px; right:12px; background:none; border:none;
+    color:var(--faint); font-size:22px; cursor:pointer; line-height:1; padding:4px 8px; }
+  #drawer-close:hover { color:var(--txt); }
 
   /* ---------- LOCKER ---------- */
   #panel-locker { min-width:560px; max-width:640px; text-align:left; }
@@ -120,18 +177,20 @@
   .lk-h small { font-weight:500; letter-spacing:.08em; text-transform:none; opacity:.6; }
 
   /* live character preview to the right of the menu card */
-  #menu-char-wrap { position:absolute; right:5vw; top:50%; transform:translateY(-50%);
+  #menu-char-wrap { position:absolute; right:6vw; top:43%; transform:translateY(-50%);
     z-index:21; text-align:center; pointer-events:none; }
   #menu-char { width:300px; height:430px; filter:drop-shadow(0 18px 30px rgba(0,0,0,.35)); }
   #menu-char-name { margin-top:2px; font-size:11px; font-weight:700; letter-spacing:.3em;
     color:var(--txt); text-transform:uppercase; text-shadow:0 2px 8px rgba(0,0,0,.6); }
   @media (max-width: 1250px) { #menu-char-wrap { display:none; } }
-  #menu-panel { position:absolute; left:290px; top:50%; transform:translateY(-50%); z-index:21; }
-  #menu-panel .card { min-width:480px; max-height:88vh; overflow-y:auto; }
+  #menu-panel { position:absolute; left:44px; top:96px; z-index:21; }
+  #menu-panel .card { min-width:480px; max-height:calc(100vh - 160px); overflow-y:auto; }
   #menu-panel .card::-webkit-scrollbar { width:5px; }
   #menu-panel .card::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:3px; }
-  .panel-title { font-size:11px; font-weight:700; letter-spacing:.3em; text-transform:uppercase;
-    color:var(--dim); margin-bottom:6px; }
+  .panel-title { font-size:12px; font-weight:900; font-style:italic; letter-spacing:.26em;
+    text-transform:uppercase; color:var(--txt); margin-bottom:6px; }
+  .panel-title::before { content:''; display:inline-block; width:16px; height:3px;
+    background:var(--brand); margin-right:9px; transform:translateY(-3px) skewX(-24deg); }
 
   /* server browser */
   .srv-row { display:flex; align-items:center; gap:14px; padding:11px 4px; font-size:12.5px;
@@ -141,14 +200,6 @@
   .srv-row .sel-btn { border:1px solid var(--line); }
   .srv-empty { padding:18px 4px; font-size:12px; color:var(--faint); }
 
-  /* PLAY hub sub-tabs */
-  .play-subrow { display:flex; gap:6px; justify-content:center; margin-bottom:4px; }
-  .play-sub { padding:10px 34px; border-radius:8px; border:1px solid var(--line);
-    background:transparent; color:var(--dim); font-family:inherit; font-size:12px;
-    font-weight:700; letter-spacing:.18em; text-transform:uppercase; cursor:pointer;
-    transition:all .12s; }
-  .play-sub:hover { color:var(--txt); }
-  .play-sub.sel { background:#fff; color:#0d0f13; border-color:transparent; }
   .mp-priv { color:var(--dim); font-size:11px; display:flex; gap:5px; align-items:center; }
 
   /* match history (demos) */
@@ -173,7 +224,7 @@
     font-weight:600; letter-spacing:.12em; text-transform:uppercase; cursor:pointer;
     transition:all .12s; }
   .sel-btn:hover { background:rgba(255,255,255,.06); color:var(--txt); }
-  .sel-btn.sel { background:#fff; color:#0d0f13; }
+  .sel-btn.sel { background:var(--brand); color:var(--brand-ink); font-weight:800; }
   .sel-btn.locked { opacity:.4; cursor:default; pointer-events:none; }
 
   .controls-grid { margin-top:22px; display:grid; grid-template-columns:auto auto;
@@ -188,16 +239,34 @@
     letter-spacing:.3em; outline:none; transition:border-color .12s; }
   .code-input:focus { border-color:rgba(255,255,255,.4); }
 
-  /* ---------- lobby ---------- */
-  .lobby-head { margin-top:20px; text-align:center; }
-  #lobby-code { font-size:30px; font-weight:800; letter-spacing:.32em; text-indent:.32em;
-    cursor:pointer; }
-  .lobby-head small { display:block; margin-top:4px; color:var(--faint); font-size:10px;
-    letter-spacing:.2em; text-transform:uppercase; }
-  #lobby-players { margin:16px auto 4px; display:flex; flex-wrap:wrap; gap:8px;
-    justify-content:center; max-width:420px; }
-  .lob-player { padding:11px 20px; border-radius:9px; border:1px solid var(--line);
-    background:var(--bg2); font-size:14px; font-weight:700; color:var(--txt); }
+  /* ---------- LOBBY: fullscreen stage over the 3D lineup ---------- */
+  #mp-lobby { position:absolute; inset:0; pointer-events:none; z-index:21; }
+  #mp-lobby > * { pointer-events:auto; }
+  #lobby-top { position:absolute; top:74px; left:50%; transform:translateX(-50%);
+    pointer-events:none; }
+  .lobby-head { text-align:center; }
+  #lobby-code { font-size:38px; font-weight:900; font-style:italic; letter-spacing:.3em;
+    text-indent:.3em; cursor:pointer; pointer-events:auto; color:var(--txt);
+    text-shadow:0 3px 0 rgba(10,8,2,.45), 0 10px 30px rgba(0,0,0,.6); }
+  #lobby-code:hover { color:var(--brand); }
+  .lobby-head small { display:block; margin-top:5px; color:var(--dim); font-size:10px;
+    font-weight:700; letter-spacing:.3em; text-transform:uppercase;
+    text-shadow:0 2px 6px rgba(0,0,0,.6); }
+  #lobby-leave { position:absolute; top:74px; left:30px; margin:0; }
+  #lobby-side { position:absolute; left:30px; top:140px; max-width:460px;
+    max-height:calc(100vh - 260px); overflow-y:auto; padding:22px 26px; text-align:left; }
+  #lobby-side .sel-row { justify-content:flex-start; }
+  #lobby-side::-webkit-scrollbar { width:5px; }
+  #lobby-side::-webkit-scrollbar-thumb { background:rgba(255,255,255,.18); border-radius:3px; }
+  #lobby-players { position:absolute; left:50%; bottom:36px; transform:translateX(-50%);
+    display:flex; flex-wrap:wrap; gap:8px; justify-content:center; max-width:56vw;
+    pointer-events:none; }
+  .lob-player { padding:10px 20px; border-radius:9px; border:1px solid var(--line);
+    background:var(--bg); backdrop-filter:blur(10px); font-size:13px; font-weight:800;
+    font-style:italic; letter-spacing:.06em; color:var(--txt); transform:skewX(-6deg); }
+  #lobby-start { position:absolute; right:44px; bottom:44px; margin:0;
+    padding:20px 74px 18px; font-size:22px; }
+  #lobby-start:disabled, #lobby-start.locked { opacity:.55; }
   #mp-status { min-height:18px; margin-top:10px; font-size:11px; color:var(--dim);
     text-align:center; }
   #net-test-out { margin:12px auto 0; padding:12px 18px; max-width:420px; text-align:left;
@@ -219,7 +288,8 @@
   /* top-center match status — proper game UI, still sleek */
   #topbar { position:absolute; top:14px; left:50%; transform:translateX(-50%);
     display:flex; align-items:stretch; border-radius:11px; overflow:hidden;
-    border:1px solid var(--line); background:var(--bg2); backdrop-filter:blur(14px);
+    border:1px solid var(--line); border-top:2px solid var(--brand);
+    background:var(--bg2); backdrop-filter:blur(14px);
     box-shadow:0 4px 24px rgba(0,0,0,.35); }
   #hud.spectating #topbar { display:none; }
   .top-seg { display:flex; align-items:center; gap:9px; padding:9px 18px;
@@ -246,9 +316,11 @@
     color:var(--dim); text-transform:uppercase; white-space:nowrap; }
 
   #killfeed { position:absolute; top:20px; right:22px; display:flex; flex-direction:column;
-    gap:5px; align-items:flex-end; max-width:44vw; }
-  .feed-item { font-size:12px; font-weight:500; color:#dfe4ec; animation:feedin .2s ease-out; }
-  .feed-item b { font-weight:700; color:#fff; }
+    gap:6px; align-items:flex-end; max-width:44vw; }
+  .feed-item { font-size:12px; font-weight:600; color:#e6eaf6; animation:feedin .2s ease-out;
+    background:var(--bg2); backdrop-filter:blur(8px); padding:5px 12px; border-radius:7px;
+    border-right:3px solid var(--brand); }
+  .feed-item b { font-weight:800; color:var(--brand); }
   @keyframes feedin { from { opacity:0; transform:translateX(12px); } }
 
   #crosshair { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -309,11 +381,13 @@
 
   #speedo { position:absolute; left:50%; bottom:24px; transform:translateX(-50%);
     width:180px; text-align:center; }
-  #speed-num { font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1; }
-  #speed-num small { font-size:10px; font-weight:500; color:var(--dim); letter-spacing:.1em; }
-  #speed-bar { margin:7px auto 0; height:2px; width:150px; background:rgba(255,255,255,.14);
-    border-radius:1px; overflow:hidden; }
-  #speed-bar-fill { height:100%; width:0%; background:#fff; }
+  #speed-num { font-size:25px; font-weight:900; font-style:italic;
+    font-variant-numeric:tabular-nums; line-height:1; }
+  #speed-num small { font-size:10px; font-weight:600; color:var(--dim); letter-spacing:.1em;
+    font-style:normal; }
+  #speed-bar { margin:7px auto 0; height:3px; width:150px; background:rgba(255,255,255,.14);
+    border-radius:2px; overflow:hidden; transform:skewX(-20deg); }
+  #speed-bar-fill { height:100%; width:0%; background:var(--brand); }
 
   #ammo-wrap { position:absolute; right:26px; bottom:78px; text-align:right; }
   #ammo { font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; }
@@ -331,8 +405,8 @@
   .slot .si { height:34px; max-width:96px; filter:drop-shadow(0 2px 5px rgba(0,0,0,.5)); }
   .slot .sn { font-size:9.5px; font-weight:700; letter-spacing:.14em; color:var(--dim);
     text-transform:uppercase; }
-  .slot.on { opacity:1; border-color:rgba(255,255,255,.45); transform:translateY(-2px);
-    background:rgba(24,27,34,.75); }
+  .slot.on { opacity:1; border-color:var(--brand); transform:translateY(-2px);
+    background:rgba(22,22,14,.75); box-shadow:0 0 12px rgba(255,211,77,.18); }
   .slot.on .sn { color:var(--txt); }
   .slot.empty { opacity:.22; }
 
@@ -341,8 +415,9 @@
   .cd-chip .k { font-size:9px; font-weight:700; color:var(--faint); letter-spacing:.15em; }
   .cd-chip .n { font-size:10px; font-weight:600; letter-spacing:.12em; color:var(--dim);
     margin:1px 0 5px; white-space:nowrap; text-transform:uppercase; }
-  .cd-chip .bar { height:2px; border-radius:1px; background:rgba(255,255,255,.14); overflow:hidden; }
-  .cd-chip .fill { height:100%; width:100%; background:#fff; }
+  .cd-chip .bar { height:3px; border-radius:2px; background:rgba(255,255,255,.14);
+    overflow:hidden; transform:skewX(-20deg); }
+  .cd-chip .fill { height:100%; width:100%; background:var(--brand); }
   .cd-chip.cooling .n { color:var(--faint); }
   .cd-chip.cooling .fill { background:var(--dim); }
 
@@ -354,8 +429,9 @@
   .scope-cross.v { top:50%; left:50%; height:1px; width:54vmin; transform:translate(-50%,-50%); }
 
   #center-msg { position:absolute; left:50%; top:30%; transform:translate(-50%,-50%);
-    font-size:56px; font-weight:800; letter-spacing:.22em; text-indent:.22em;
-    text-transform:uppercase; opacity:0; white-space:nowrap; }
+    font-size:56px; font-weight:900; font-style:italic; letter-spacing:.16em;
+    text-indent:.16em; text-transform:uppercase; opacity:0; white-space:nowrap;
+    text-shadow:0 4px 0 rgba(10,8,2,.4), 0 12px 34px rgba(0,0,0,.5); }
   #center-msg.punch { animation:punch .4s ease-out; }
   @keyframes punch { from { opacity:0; transform:translate(-50%,-50%) scale(1.08); } }
 
@@ -405,9 +481,10 @@
     text-transform:uppercase; }
   .lo-card.bonus b { color:#ffd34d; }
   #sub-msg { position:absolute; left:50%; top:40%; transform:translate(-50%,-50%);
-    font-size:11.5px; font-weight:600; letter-spacing:.28em; text-indent:.28em;
+    font-size:11.5px; font-weight:700; letter-spacing:.28em; text-indent:.28em;
     text-transform:uppercase; opacity:0; color:var(--txt); background:var(--bg2);
-    backdrop-filter:blur(8px); border:1px solid var(--line); border-radius:6px;
+    backdrop-filter:blur(8px); border:1px solid var(--line);
+    border-left:3px solid var(--brand); border-radius:6px;
     padding:9px 22px; white-space:nowrap; }
   #sub-msg.punch { animation:bannerin .25s ease-out; }
   @keyframes bannerin { from { opacity:0; transform:translate(-50%,-50%) translateY(6px); } }
@@ -869,28 +946,38 @@
   </div>
 </div>
 
-<!-- ============ start menu (left rail + center panels) ============ -->
+<!-- ============ start menu (top nav + fullscreen play hub) ============ -->
 <div id="menu">
-  <div id="rail">
-    <div class="rail-logo">Sky Push</div>
-    <div class="rail-sub">Momentum is power</div>
-    <button class="rail-btn sel" id="tab-offline">Play</button>
-    <button class="rail-btn" id="tab-locker">Locker</button>
-    <button class="rail-btn" id="tab-matches">Matches</button>
-    <button class="rail-btn" id="tab-editor">Editor</button>
-    <button class="rail-btn" id="open-settings">Settings</button>
-    <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 40</div>
+  <div id="topnav">
+    <div id="nav-logo">SKY<b>PUSH</b></div>
+    <button class="nav-tab sel" id="tab-offline">Play</button>
+    <button class="nav-tab" id="tab-locker">Locker</button>
+    <button class="nav-tab" id="tab-matches">Matches</button>
+    <button class="nav-tab" id="tab-editor">Editor</button>
+    <button class="nav-tab" id="open-settings">Settings</button>
+    <div id="nav-right">
+      <button id="nav-nick" title="click to change your name">…</button>
+      <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
+    </div>
   </div>
-  <div id="menu-panel">
-  <div class="card" style="text-align:center;">
+  <div id="build-foot" class="rail-foot">prototype · build 41</div>
 
-    <!-- ---------- PLAY hub: vs bots / online ---------- -->
-    <div id="panel-offline">
-      <div class="play-subrow">
-        <button class="play-sub sel" data-v="bots">Vs Bots</button>
-        <button class="play-sub" data-v="online">Online</button>
+  <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
+  <div id="panel-offline">
+    <div id="play-hero">
+      <h1 id="hero-title">SKY<b>PUSH</b></h1>
+      <div id="hero-sub">movement arena · knock them into the sky</div>
+    </div>
+    <div id="play-actions">
+      <div id="pa-secondary">
+        <button class="play-sub" data-v="online">Lobbies &amp; codes</button>
+        <button class="play-sub" data-v="bots">Vs bots</button>
       </div>
+      <button id="quick-play"><b>PLAY</b><small>online · finds a match instantly</small></button>
+    </div>
+
+    <div id="play-drawer" class="card hidden">
+      <button id="drawer-close" title="close">×</button>
 
       <!-- ..... vs bots ..... -->
       <div id="play-bots">
@@ -968,73 +1055,82 @@
             <div class="srv-empty">Scanning…</div>
           </div>
         </div>
-
-        <div id="mp-lobby" class="hidden">
-          <div class="lobby-head">
-            <span id="lobby-code" title="click to copy">CODE</span>
-            <small id="lobby-type"></small>
-          </div>
-          <div id="lobby-players"></div>
-          <div class="sel-row" id="lmap-row" style="flex-wrap:wrap; max-width:460px;"><span class="lbl">Map</span>
-            <button class="sel-btn lmap-btn" data-m="sky">Sky</button>
-            <button class="sel-btn lmap-btn" data-m="yacht">Yacht</button>
-            <button class="sel-btn lmap-btn" data-m="convoy">Convoy</button>
-            <button class="sel-btn lmap-btn" data-m="foundry">Foundry</button>
-            <button class="sel-btn lmap-btn" data-m="rooftop">Rooftops</button>
-            <button class="sel-btn lmap-btn" data-m="temple">Temple</button>
-            <button class="sel-btn lmap-btn" data-m="terminal">Terminal</button>
-          </div>
-          <div class="sel-row"><span class="lbl">Mode</span>
-            <button class="sel-btn lmode-btn" data-m="spark">Spark Rush</button>
-            <button class="sel-btn lmode-btn" data-m="dm">Deathmatch</button>
-            <button class="sel-btn lmode-btn" data-m="lbs">Last Standing</button>
-            <button class="sel-btn lmode-btn" data-m="crown">Crown Rush</button>
-          </div>
-          <div class="sel-row"><span class="lbl">DM min</span>
-            <button class="sel-btn ldm-btn" data-v="5">5</button>
-            <button class="sel-btn ldm-btn" data-v="10">10</button>
-            <button class="sel-btn ldm-btn" data-v="15">15</button>
-            <span class="lbl" style="width:auto;margin-left:10px">First to</span>
-            <button class="sel-btn lrounds-btn" data-v="1">1</button>
-            <button class="sel-btn lrounds-btn" data-v="2">2</button>
-            <button class="sel-btn lrounds-btn" data-v="3">3</button>
-            <button class="sel-btn lrounds-btn" data-v="5">5</button>
-          </div>
-          <div class="sel-row"><span class="lbl">Lives</span>
-            <button class="sel-btn llives-btn" data-v="1">1</button>
-            <button class="sel-btn llives-btn" data-v="3">3</button>
-            <button class="sel-btn llives-btn" data-v="5">5</button>
-            <span class="lbl" style="width:auto;margin-left:10px">Crown</span>
-            <button class="sel-btn lcrown-btn" data-v="15">15s</button>
-            <button class="sel-btn lcrown-btn" data-v="25">25s</button>
-            <button class="sel-btn lcrown-btn" data-v="40">40s</button>
-            <span class="lbl" style="width:auto;margin-left:10px">Sparks</span>
-            <button class="sel-btn lsparks-btn" data-v="25">25</button>
-            <button class="sel-btn lsparks-btn" data-v="40">40</button>
-            <button class="sel-btn lsparks-btn" data-v="60">60</button>
-            <label style="color:var(--dim);font-size:11px;margin-left:12px"><input type="checkbox" id="lobby-bots" checked> bots</label>
-          </div>
-          <button class="btn" id="lobby-start">Start Game</button><br>
-          <button class="btn small" id="lobby-leave">Leave</button>
-        </div>
         <div id="mp-status"></div>
       </div>
-    </div>
+    </div><!-- /play-drawer -->
 
-    <!-- ---------- match history (demos) ---------- -->
-    <div id="panel-matches" class="hidden">
-      <div class="panel-title">Recent matches</div>
-      <div id="demo-list" style="margin-top:14px; text-align:left; min-width:440px;">
-        <div class="srv-empty">No matches recorded yet.</div>
+    <!-- ..... the LOBBY: fullscreen stage — your squad stands in the world ..... -->
+    <div id="mp-lobby" class="hidden">
+      <div id="lobby-top">
+        <div class="lobby-head">
+          <span id="lobby-code" title="click to copy">CODE</span>
+          <small id="lobby-type"></small>
+        </div>
       </div>
-      <div class="hint" style="margin-left:auto;margin-right:auto">Every offline round keeps its last 30 seconds.
-        WATCH opens the round in the replay editor — cameras, keyframes, depth of field, the lot.</div>
+      <button class="btn small" id="lobby-leave">← Leave</button>
+      <div id="lobby-side" class="card">
+        <div class="panel-title">Match setup</div>
+        <div class="sel-row" id="lmap-row" style="flex-wrap:wrap;"><span class="lbl">Map</span>
+          <button class="sel-btn lmap-btn" data-m="sky">Sky</button>
+          <button class="sel-btn lmap-btn" data-m="yacht">Yacht</button>
+          <button class="sel-btn lmap-btn" data-m="convoy">Convoy</button>
+          <button class="sel-btn lmap-btn" data-m="foundry">Foundry</button>
+          <button class="sel-btn lmap-btn" data-m="rooftop">Rooftops</button>
+          <button class="sel-btn lmap-btn" data-m="temple">Temple</button>
+          <button class="sel-btn lmap-btn" data-m="terminal">Terminal</button>
+        </div>
+        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">Mode</span>
+          <button class="sel-btn lmode-btn" data-m="spark">Spark Rush</button>
+          <button class="sel-btn lmode-btn" data-m="dm">Deathmatch</button>
+          <button class="sel-btn lmode-btn" data-m="lbs">Last Standing</button>
+          <button class="sel-btn lmode-btn" data-m="crown">Crown Rush</button>
+        </div>
+        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">DM min</span>
+          <button class="sel-btn ldm-btn" data-v="5">5</button>
+          <button class="sel-btn ldm-btn" data-v="10">10</button>
+          <button class="sel-btn ldm-btn" data-v="15">15</button>
+          <span class="lbl" style="width:auto;margin-left:10px">First to</span>
+          <button class="sel-btn lrounds-btn" data-v="1">1</button>
+          <button class="sel-btn lrounds-btn" data-v="2">2</button>
+          <button class="sel-btn lrounds-btn" data-v="3">3</button>
+          <button class="sel-btn lrounds-btn" data-v="5">5</button>
+        </div>
+        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">Lives</span>
+          <button class="sel-btn llives-btn" data-v="1">1</button>
+          <button class="sel-btn llives-btn" data-v="3">3</button>
+          <button class="sel-btn llives-btn" data-v="5">5</button>
+          <span class="lbl" style="width:auto;margin-left:10px">Crown</span>
+          <button class="sel-btn lcrown-btn" data-v="15">15s</button>
+          <button class="sel-btn lcrown-btn" data-v="25">25s</button>
+          <button class="sel-btn lcrown-btn" data-v="40">40s</button>
+        </div>
+        <div class="sel-row" style="flex-wrap:wrap;"><span class="lbl">Sparks</span>
+          <button class="sel-btn lsparks-btn" data-v="25">25</button>
+          <button class="sel-btn lsparks-btn" data-v="40">40</button>
+          <button class="sel-btn lsparks-btn" data-v="60">60</button>
+          <label style="color:var(--dim);font-size:11px;margin-left:12px"><input type="checkbox" id="lobby-bots" checked> fill with bots</label>
+        </div>
+      </div>
+      <div id="lobby-players"></div>
+      <button class="btn" id="lobby-start">Start Game</button>
     </div>
+  </div><!-- /panel-offline -->
 
-    <!-- ---------- locker: characters + weapon paint jobs ---------- -->
-    <div id="panel-locker" class="hidden"></div>
+  <div id="menu-panel" class="hidden">
+    <div class="card" style="text-align:center;">
+      <!-- ---------- match history (demos) ---------- -->
+      <div id="panel-matches" class="hidden">
+        <div class="panel-title">Recent matches</div>
+        <div id="demo-list" style="margin-top:14px; text-align:left; min-width:440px;">
+          <div class="srv-empty">No matches recorded yet.</div>
+        </div>
+        <div class="hint" style="margin-left:auto;margin-right:auto">Every offline round keeps its last 30 seconds.
+          WATCH opens the round in the replay editor — cameras, keyframes, depth of field, the lot.</div>
+      </div>
 
-  </div>
+      <!-- ---------- locker: characters + weapon paint jobs ---------- -->
+      <div id="panel-locker" class="hidden"></div>
+    </div>
   </div>
   <!-- live character preview beside the menu (your LOCKER pick) -->
   <div id="menu-char-wrap">
@@ -1133,36 +1229,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=40"></script>
-<script src="js/profile.js?v=40"></script>
-<script src="js/utils.js?v=40"></script>
-<script src="js/gfx.js?v=40"></script>
-<script src="js/mapdata.js?v=40"></script>
-<script src="js/audio.js?v=40"></script>
-<script src="js/settings.js?v=40"></script>
-<script src="js/input.js?v=40"></script>
-<script src="js/world.js?v=40"></script>
-<script src="js/effects.js?v=40"></script>
-<script src="js/map.js?v=40"></script>
-<script src="js/characters.js?v=40"></script>
-<script src="js/pawn.js?v=40"></script>
-<script src="js/weapons.js?v=40"></script>
-<script src="js/loot.js?v=40"></script>
-<script src="js/pickups.js?v=40"></script>
-<script src="js/sparks.js?v=40"></script>
-<script src="js/grenades.js?v=40"></script>
-<script src="js/grapple.js?v=40"></script>
-<script src="js/bots.js?v=40"></script>
-<script src="js/hud.js?v=40"></script>
-<script src="js/game.js?v=40"></script>
-<script src="js/attract.js?v=40"></script>
-<script src="js/net.js?v=40"></script>
-<script src="js/dof.js?v=40"></script>
-<script src="js/replay.js?v=40"></script>
-<script src="js/demos.js?v=40"></script>
-<script src="js/locker.js?v=40"></script>
-<script src="js/assets.js?v=40"></script>
-<script src="js/editor.js?v=40"></script>
-<script src="js/main.js?v=40"></script>
+<script src="js/config.js?v=41"></script>
+<script src="js/profile.js?v=41"></script>
+<script src="js/utils.js?v=41"></script>
+<script src="js/gfx.js?v=41"></script>
+<script src="js/mapdata.js?v=41"></script>
+<script src="js/audio.js?v=41"></script>
+<script src="js/settings.js?v=41"></script>
+<script src="js/input.js?v=41"></script>
+<script src="js/world.js?v=41"></script>
+<script src="js/effects.js?v=41"></script>
+<script src="js/map.js?v=41"></script>
+<script src="js/characters.js?v=41"></script>
+<script src="js/pawn.js?v=41"></script>
+<script src="js/weapons.js?v=41"></script>
+<script src="js/loot.js?v=41"></script>
+<script src="js/pickups.js?v=41"></script>
+<script src="js/sparks.js?v=41"></script>
+<script src="js/grenades.js?v=41"></script>
+<script src="js/grapple.js?v=41"></script>
+<script src="js/bots.js?v=41"></script>
+<script src="js/hud.js?v=41"></script>
+<script src="js/game.js?v=41"></script>
+<script src="js/attract.js?v=41"></script>
+<script src="js/net.js?v=41"></script>
+<script src="js/dof.js?v=41"></script>
+<script src="js/replay.js?v=41"></script>
+<script src="js/demos.js?v=41"></script>
+<script src="js/locker.js?v=41"></script>
+<script src="js/assets.js?v=41"></script>
+<script src="js/editor.js?v=41"></script>
+<script src="js/main.js?v=41"></script>
 </body>
 </html>

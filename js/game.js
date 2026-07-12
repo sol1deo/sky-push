@@ -814,13 +814,16 @@ SKY.Game = (function () {
                          api.state === 'matchend' || (p && p.eliminated);
 
       if (spectating) {
-        orbitA += rdt * 0.12;
-        // menus orbit closer/lower so the attract-mode cast reads well
-        const rad = api.state === 'menu' ? 26 : 34;
-        const hgt = api.state === 'menu' ? 9 : 14;
-        camera.position.set(Math.cos(orbitA) * rad, hgt, Math.sin(orbitA) * rad);
-        camera.lookAt(CENTER);
-        camera.fov = SKY.U.damp(camera.fov, 70, 4, rdt);
+        // the LOBBY stage owns the camera while a lineup is up
+        if (!(SKY.Attract.lobbyCam && SKY.Attract.lobbyCam(camera, rdt))) {
+          orbitA += rdt * 0.12;
+          // menus orbit closer/lower so the attract-mode cast reads well
+          const rad = api.state === 'menu' ? 26 : 34;
+          const hgt = api.state === 'menu' ? 9 : 14;
+          camera.position.set(Math.cos(orbitA) * rad, hgt, Math.sin(orbitA) * rad);
+          camera.lookAt(CENTER);
+          camera.fov = SKY.U.damp(camera.fov, 70, 4, rdt);
+        }
         camera.updateProjectionMatrix();
       } else if (p.alive) {
         p.eyePos(_eye).add(SKY.Effects.shakeOffset);

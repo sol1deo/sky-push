@@ -20,6 +20,11 @@ SKY.Attract = (function () {
   let actors = [];
   let shots = [];                   // in-flight darts { vis, start, dir, t, range, victim }
   let pool = [];                    // parked tracer visuals
+  let lobbyRoster = null;           // non-null = LOBBY STAGE mode (character lineup)
+  let lobbyActors = [];
+  const lobbyCamPos = new THREE.Vector3();
+  const lobbyLook = new THREE.Vector3();
+  let lobbyCamOk = false;
   const _v = new THREE.Vector3();
   const _from = new THREE.Vector3();
   const _dir = new THREE.Vector3();
@@ -61,6 +66,57 @@ SKY.Attract = (function () {
     for (const vis of pool) if (vis.g.parent) vis.g.parent.remove(vis.g);
     shots = [];
     pool = [];
+    lobbyStop();     // roster is kept — the lineup rebuilds on the next menu frame
+  }
+
+  /* ==================== LOBBY STAGE ====================
+   * Fortnite-style: the lobby's actual characters stand in a lineup on the
+   * map preview, facing a FIXED cinematic camera. Names float above heads
+   * via the avatars' own nameSpr. */
+  function lobbyStop() {
+    for (const a of lobbyActors) a.avatar.dispose();
+    lobbyActors = [];
+    lobbyCamOk = false;
+  }
+
+  function buildLobby() {
+    lobbyStop();
+    if (!lobbyRoster || !lobbyRoster.length) return;
+    const n = lobbyRoster.length;
+    let midY = 0;
+    for (let i = 0; i < n; i++) {
+      const r = lobbyRoster[i];
+      const a = {
+        name: r.name, color: r.color, cos: r.cos || null, isLocal: false, alive: true,
+        weapon: 'pistol', pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+        yaw: Math.PI, pitch: 0, height: SKY.TUNING.move.standHeight,
+        grounded: true, sliding: false, ragdoll: null,
+        tumbleVel: new THREE.Vector3(), fellScreamed: false,
+        emoteT: SKY.U.rand(4, 15),
+        speedH() { return 0; },
+      };
+      // stage the line near the map's center, dropped onto real ground
+      const x = (i - (n - 1) / 2) * 1.8;
+      _from.set(x, 30, -1 - Math.abs(x) * 0.24);   // gentle arc, wings behind
+      const hit = SKY.World.raycast(_from, _dir.set(0, -1, 0), 60);
+      a.pos.set(_from.x, hit ? 30 - hit.t : 0, _from.z);
+      if (i === Math.floor((n - 1) / 2)) midY = a.pos.y;
+      a.avatar = SKY.Characters.create(a, scene);
+      lobbyActors.push(a);
+    }
+    // fixed camera in front of the line, a touch above eye height
+    lobbyCamPos.set(0, midY + 2.3, 6.6);
+    lobbyLook.set(0, midY + 1.1, -1);
+    lobbyCamOk = true;
+  }
+
+  function tickLobby(rdt) {
+    if (!lobbyActors.length) { buildLobby(); if (!lobbyActors.length) return; }
+    for (const a of lobbyActors) {
+      a.emoteT -= rdt;
+      if (a.emoteT <= 0) { a.avatar.playEmote(); a.emoteT = SKY.U.rand(9, 22); }
+      a.avatar.update(rdt);
+    }
   }
 
   function ragdollActor(v, dir) {
@@ -189,7 +245,17 @@ SKY.Attract = (function () {
     tick(rdt) {
       const busy = SKY.Game.state !== 'menu' ||
         (SKY.Editor && SKY.Editor.active) || (SKY.Replay && SKY.Replay.active);
-      if (busy) { if (actors.length || shots.length) stop(); return; }
+      if (busy) { if (actors.length || shots.length || lobbyActors.length) stop(); return; }
+      if (lobbyRoster) {                 // lobby stage replaces the slow-mo show
+        if (actors.length || shots.length) {
+          for (const a of actors) a.avatar.dispose();
+          actors = [];
+          for (const s of shots) if (s.vis.g.parent) s.vis.g.parent.remove(s.vis.g);
+          shots = [];
+        }
+        tickLobby(rdt);
+        return;
+      }
       if (!actors.length) start();
       if (!actors.length) return;
       const pts = SKY.World.roamPoints;
@@ -197,6 +263,26 @@ SKY.Attract = (function () {
       const dt = rdt * SLOWMO;
       for (const a of actors) tickActor(a, dt, pts);
       tickShots(dt);
+    },
+
+    /* lobby stage on/off: pass the roster (rebuilds on every change), or null */
+    lobby(roster) {
+      lobbyRoster = roster && roster.length ? roster : null;
+      lobbyStop();     // lineup lazily rebuilds in tick with fresh data
+    },
+
+    /* fixed cinematic camera while the lobby stage is up. Returns true when
+       it drove the camera (Game.renderTick falls back to the orbit else). */
+    lobbyCam(camera, rdt) {
+      if (!lobbyRoster || !lobbyCamOk || SKY.Game.state !== 'menu') return false;
+      const t = performance.now() * 0.00022;
+      camera.position.set(
+        lobbyCamPos.x + Math.sin(t) * 0.45,
+        lobbyCamPos.y + Math.sin(t * 0.7) * 0.12,
+        lobbyCamPos.z);
+      camera.lookAt(lobbyLook);
+      camera.fov = SKY.U.damp(camera.fov, 55, 6, rdt);
+      return true;
     },
 
     /* map preview changed → recast on the new map next menu frame */
