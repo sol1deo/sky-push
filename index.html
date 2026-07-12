@@ -766,9 +766,52 @@
     color:var(--faint); text-shadow:0 1px 3px rgba(0,0,0,.5); white-space:nowrap; }
   #rp-bar { position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
     width:min(1180px, calc(100vw - 44px));
-    display:flex; gap:14px; align-items:flex-end; background:var(--bg);
+    display:flex; flex-direction:column; gap:9px; background:var(--bg);
     backdrop-filter:blur(18px); border:1px solid var(--line); border-radius:12px;
-    padding:12px 18px; pointer-events:auto; animation:rpbarin .3s cubic-bezier(.34,1.56,.64,1); }
+    padding:10px 18px 12px; pointer-events:auto; animation:rpbarin .3s cubic-bezier(.34,1.56,.64,1); }
+  #rp-transport { display:flex; gap:14px; align-items:flex-end; width:100%; }
+  #rp-project { display:flex; gap:6px; align-items:center; width:100%;
+    padding-bottom:8px; border-bottom:1px solid var(--line2); }
+  .rp-projlbl { font-size:8.5px; font-weight:800; letter-spacing:.24em;
+    text-transform:uppercase; color:var(--faint); margin-right:4px; }
+  #rp-clips { display:flex; gap:4px; align-items:center; max-width:46%;
+    overflow-x:auto; }
+  .rp-clip { flex:none; display:flex; gap:6px; align-items:center; padding:6px 10px;
+    border-radius:6px; border:1px solid var(--line2); background:transparent;
+    color:var(--dim); font-size:10px; font-weight:700; letter-spacing:.1em;
+    text-transform:uppercase; cursor:pointer; white-space:nowrap; }
+  .rp-clip:hover { border-color:var(--line); color:var(--txt); }
+  .rp-clip.sel { background:#fff; color:#0d0f13; border-color:#fff; }
+  .rp-clip i { font-style:normal; opacity:.5; font-size:9px; }
+  .rp-clip .x { opacity:.4; font-style:normal; padding:0 1px; }
+  .rp-clip .x:hover { opacity:1; color:var(--danger); }
+  #rp-clipshade { position:absolute; inset:0; pointer-events:none; }
+  #rp-clipshade div { position:absolute; top:0; bottom:0;
+    background:rgba(6,8,14,.55); }
+  #rp-clipshade i { position:absolute; top:0; bottom:0; width:2px;
+    background:var(--brand); }
+
+  /* render dialog */
+  #rp-renderov { position:absolute; inset:0; z-index:30; display:flex;
+    align-items:center; justify-content:center; background:rgba(6,8,14,.6);
+    pointer-events:auto; }
+  #rp-renderov.hidden { display:none; }
+  #rp-rendercard { width:400px; background:var(--bg); backdrop-filter:blur(18px);
+    border:1px solid var(--line); border-top:3px solid var(--brand);
+    border-radius:12px; padding:20px 22px; display:flex; flex-direction:column;
+    gap:10px; }
+  #rp-rendercard h4 { font-size:13px; font-weight:900; font-style:italic;
+    letter-spacing:.18em; text-transform:uppercase; margin-bottom:4px; }
+  #rp-rendercard .rp-dofrow span { width:56px; }
+  #rr-note { font-size:9px; color:var(--faint); letter-spacing:.08em; }
+  #rr-progress { position:relative; height:20px; border:1px solid var(--line2);
+    border-radius:6px; overflow:hidden; }
+  #rr-progress.hidden { display:none; }
+  #rr-progfill { position:absolute; left:0; top:0; bottom:0; width:0;
+    background:var(--brand); }
+  #rr-progtxt { position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:9.5px; font-weight:800; letter-spacing:.14em;
+    color:var(--txt); text-transform:uppercase; }
   @keyframes rpbarin { from { opacity:0; transform:translateX(-50%) translateY(14px); } }
   #replay-ov.ui-hidden #rp-bar, #replay-ov.ui-hidden #rp-top, #replay-ov.ui-hidden #rp-hint,
   #replay-ov.ui-hidden .rp-panel { opacity:0; pointer-events:none; }
@@ -1107,7 +1150,7 @@
     <div class="l h" style="left:0"></div><div class="l h" style="right:0"></div>
     <div class="l v" style="top:0"></div><div class="l v" style="bottom:0"></div>
   </div>
-  <div id="rp-hint">hold lmb — look · wasd + e/q — fly · space — play · k — keyframe (drag / del / right-click) · wheel on timeline — zoom · , . — frame step · h — hide ui · esc — exit</div>
+  <div id="rp-hint">hold lmb — look · wasd + e/q — fly · z/x — roll (c resets) · space — play · k — keyframe · i/o — clip in/out · wheel on timeline — zoom · , . — frame step · h — hide ui · esc — exit</div>
 
   <!-- LEFT: camera / player / keyframes -->
   <div id="rp-left" class="rp-panel">
@@ -1120,6 +1163,11 @@
         <span id="rp-pname"></span>
         <button class="rp-pill" id="rp-next">›</button>
       </div>
+      <div class="rp-row" id="rp-attach" title="camera rides the selected player — Mount also follows their turning">
+        <button class="rp-pill sel" data-a="0">Free</button>
+        <button class="rp-pill" data-a="1">Follow</button>
+        <button class="rp-pill" data-a="2">Mount</button>
+      </div>
       <div class="rp-col">
         <button class="rp-pill sel" id="rp-namebtn" title="show player nicknames">Names</button>
         <button class="rp-pill" id="rp-hudbtn" title="show the full game HUD (POV camera)">HUD</button>
@@ -1127,6 +1175,10 @@
       </div>
     </div>
     <div class="rp-sec"><small>Keyframes</small>
+      <div class="rp-row" id="rp-pathmode" title="Ease settles at each key · Smooth glides through all of them">
+        <button class="rp-pill sel" data-p="ease">Ease</button>
+        <button class="rp-pill" data-p="smooth">Smooth</button>
+      </div>
       <div class="rp-col">
         <button class="rp-pill" id="rp-addkf">+ Key <i>K</i></button>
         <button class="rp-pill rp-disabled" id="rp-delkf">Delete</button>
@@ -1157,6 +1209,10 @@
         <div class="rp-keeplbl">render (rest = green)</div>
         <div class="rp-row" id="rp-keeps"></div>
       </div>
+      <div id="rp-depthpanel" class="hidden">
+        <div class="rp-dofrow"><span>Range</span>
+          <input type="range" id="rp-dvrng" min="15" max="250" step="5" value="100"><b id="rp-dvrngv">100m</b></div>
+      </div>
     </div>
     <div class="rp-sec"><small>Handheld shake</small>
       <div class="rp-dofrow"><span>Amount</span>
@@ -1166,15 +1222,52 @@
     </div>
   </div>
 
-  <!-- BOTTOM: transport + the big timeline (keys ride ABOVE the scrub line) -->
+  <!-- BOTTOM: project clips strip + transport + the big timeline -->
   <div id="rp-bar">
-    <button id="rp-play"><span class="ico"></span></button>
-    <div id="rp-time">0:00.0 / 0:00.0</div>
-    <div id="rp-timeline">
-      <div id="rp-keys"></div>
-      <div id="rp-track"><div id="rp-marks"></div><div id="rp-fill"></div><div id="rp-handle"></div></div>
+    <div id="rp-project">
+      <span class="rp-projlbl">Project</span>
+      <div id="rp-clips"></div>
+      <button class="rp-pill" id="rp-newclip" title="new clip from the current zoom window">+ Clip</button>
+      <button class="rp-pill" id="rp-trimclip" title="trim the clip to its keyframes">⇥ Trim to keys</button>
+      <span style="flex:1"></span>
+      <button class="rp-pill" id="rp-playproj" title="play every clip in order">▶ Project</button>
+      <button class="rp-pill" id="rp-render" title="export a video file">🎬 Render</button>
     </div>
-    <div class="rp-group" id="rp-speeds"></div>
+    <div id="rp-transport">
+      <button id="rp-play"><span class="ico"></span></button>
+      <div id="rp-time">0:00.0 / 0:00.0</div>
+      <div id="rp-timeline">
+        <div id="rp-keys"></div>
+        <div id="rp-track"><div id="rp-marks"></div><div id="rp-clipshade"></div><div id="rp-fill"></div><div id="rp-handle"></div></div>
+      </div>
+      <div class="rp-group" id="rp-speeds"></div>
+    </div>
+  </div>
+
+  <!-- render dialog -->
+  <div id="rp-renderov" class="hidden">
+    <div id="rp-rendercard">
+      <h4>Render video</h4>
+      <div class="rp-dofrow"><span>Source</span><div class="rp-row" id="rr-src" style="flex:1">
+        <button class="rp-pill sel" data-s="clip">This clip</button>
+        <button class="rp-pill" data-s="proj">Whole project</button></div></div>
+      <div class="rp-dofrow"><span>Size</span><div class="rp-row" id="rr-res" style="flex:1">
+        <button class="rp-pill" data-r="1280">720p</button>
+        <button class="rp-pill sel" data-r="1920">1080p</button>
+        <button class="rp-pill" data-r="2560">1440p</button>
+        <button class="rp-pill" data-r="3840">4K</button></div></div>
+      <div class="rp-dofrow"><span>FPS</span><div class="rp-row" id="rr-fps" style="flex:1">
+        <button class="rp-pill" data-f="30">30</button>
+        <button class="rp-pill sel" data-f="60">60</button></div></div>
+      <div class="rp-dofrow"><span>Bitrate</span>
+        <input type="range" id="rr-bit" min="8" max="150" step="2" value="40"><b id="rr-bitv">40 Mbps</b></div>
+      <div id="rr-progress" class="hidden"><div id="rr-progfill"></div><span id="rr-progtxt"></span></div>
+      <div class="rp-row" style="margin-top:12px">
+        <button class="rp-pill" id="rr-go" style="background:#fff;color:#0d0f13">Start render</button>
+        <button class="rp-pill" id="rr-cancel">Cancel</button>
+      </div>
+      <div id="rr-note">renders offline frame-by-frame — output is a .webm (VP9) download</div>
+    </div>
   </div>
 </div>
 
@@ -1192,7 +1285,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 44</div>
+  <div id="build-foot" class="rail-foot">prototype · build 45</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1467,36 +1560,38 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=44"></script>
-<script src="js/profile.js?v=44"></script>
-<script src="js/utils.js?v=44"></script>
-<script src="js/gfx.js?v=44"></script>
-<script src="js/mapdata.js?v=44"></script>
-<script src="js/audio.js?v=44"></script>
-<script src="js/settings.js?v=44"></script>
-<script src="js/input.js?v=44"></script>
-<script src="js/world.js?v=44"></script>
-<script src="js/effects.js?v=44"></script>
-<script src="js/map.js?v=44"></script>
-<script src="js/characters.js?v=44"></script>
-<script src="js/pawn.js?v=44"></script>
-<script src="js/weapons.js?v=44"></script>
-<script src="js/loot.js?v=44"></script>
-<script src="js/pickups.js?v=44"></script>
-<script src="js/sparks.js?v=44"></script>
-<script src="js/grenades.js?v=44"></script>
-<script src="js/grapple.js?v=44"></script>
-<script src="js/bots.js?v=44"></script>
-<script src="js/hud.js?v=44"></script>
-<script src="js/game.js?v=44"></script>
-<script src="js/attract.js?v=44"></script>
-<script src="js/net.js?v=44"></script>
-<script src="js/dof.js?v=44"></script>
-<script src="js/replay.js?v=44"></script>
-<script src="js/demos.js?v=44"></script>
-<script src="js/locker.js?v=44"></script>
-<script src="js/assets.js?v=44"></script>
-<script src="js/editor.js?v=44"></script>
-<script src="js/main.js?v=44"></script>
+<script src="js/config.js?v=45"></script>
+<script src="js/profile.js?v=45"></script>
+<script src="js/utils.js?v=45"></script>
+<script src="js/gfx.js?v=45"></script>
+<script src="js/mapdata.js?v=45"></script>
+<script src="js/audio.js?v=45"></script>
+<script src="js/settings.js?v=45"></script>
+<script src="js/input.js?v=45"></script>
+<script src="js/world.js?v=45"></script>
+<script src="js/effects.js?v=45"></script>
+<script src="js/map.js?v=45"></script>
+<script src="js/characters.js?v=45"></script>
+<script src="js/pawn.js?v=45"></script>
+<script src="js/weapons.js?v=45"></script>
+<script src="js/loot.js?v=45"></script>
+<script src="js/pickups.js?v=45"></script>
+<script src="js/sparks.js?v=45"></script>
+<script src="js/grenades.js?v=45"></script>
+<script src="js/grapple.js?v=45"></script>
+<script src="js/bots.js?v=45"></script>
+<script src="js/hud.js?v=45"></script>
+<script src="js/game.js?v=45"></script>
+<script src="js/attract.js?v=45"></script>
+<script src="js/net.js?v=45"></script>
+<script src="js/dof.js?v=45"></script>
+<script src="lib/webm-muxer.js"></script>
+<script src="js/replay.js?v=45"></script>
+<script src="js/vidrender.js?v=45"></script>
+<script src="js/demos.js?v=45"></script>
+<script src="js/locker.js?v=45"></script>
+<script src="js/assets.js?v=45"></script>
+<script src="js/editor.js?v=45"></script>
+<script src="js/main.js?v=45"></script>
 </body>
 </html>

@@ -24,7 +24,8 @@ SKY.SFX = (function () {
   /* ---------------- sample bank (https only) ---------------- */
   const canFetch = /^https?:$/.test(location.protocol);
   const MANIFEST = {
-    fire_light: 3, fire_med: 4, fire_heavy: 3, boom: 3, boom_low: 1, thunder_smp: 1,
+    fire_light: 4, fire_med: 4, fire_heavy: 3, glfire: 3,
+    boom: 3, boom_low: 1, thunder_smp: 1,
     hit: 2, headshot: 2, land: 2, step: 5, dash: 2, pad: 1, grapple: 1,
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
     go: 1, ko: 2, aircannon: 1, win: 1, lose: 1, uiclick: 4,
@@ -237,25 +238,25 @@ SKY.SFX = (function () {
     s.start(t0); s.stop(t0 + dur + 0.02);
   }
 
-  /* per-weapon shot table: [bank, rate, vol]. The banks are SUPPRESSED
-     samples (Rust & Blood) — already calm and thumpy, so rates stay close
-     to 1 and character comes from which bank a weapon draws:
-     light = suppressed pistol · med = suppressed SMG · heavy = shotgun/sniper */
+  /* per-weapon shot table: [bank, rate, vol]. REAL unsuppressed gunshots
+     (Rust & Blood) — rates near 1, character comes from the bank:
+     light = pistol · med = SMG/assault · heavy = shotgun/sniper ·
+     glfire = grenade launcher THOOMP */
   const FIRE_SND = {
-    pistol:    ['fire_light', 1.05, 0.55],
-    smg:       ['fire_med', 1.10, 0.40],
-    blaster:   ['fire_med', 0.95, 0.48],
-    burst:     ['fire_light', 1.18, 0.44],
-    scatter:   ['fire_heavy', 1.05, 0.55],
-    boomstick: ['fire_heavy', 0.85, 0.65],
-    longshot:  ['fire_heavy', 1.0, 0.58],
-    magnum:    ['fire_light', 0.80, 0.60],
-    mega:      ['fire_med', 0.88, 0.48],
-    bouncer:   ['fire_light', 1.22, 0.40],
-    piston:    ['fire_heavy', 1.15, 0.55],
-    seeker:    ['fire_heavy', 0.70, 0.72],   // IT tag cannon: deep suppressed WHUMP
-    lobber:    ['boom_low', 2.4, 0.5],       // "thoomp"
-    quad:      ['boom_low', 2.6, 0.45],
+    pistol:    ['fire_light', 1.0, 0.90],
+    smg:       ['fire_med', 1.05, 0.65],
+    blaster:   ['fire_med', 0.92, 0.80],
+    burst:     ['fire_light', 1.12, 0.75],
+    scatter:   ['fire_heavy', 1.05, 0.90],
+    boomstick: ['fire_heavy', 0.85, 1.0],
+    longshot:  ['fire_heavy', 1.0, 0.95],
+    magnum:    ['fire_light', 0.78, 0.95],
+    mega:      ['fire_med', 0.85, 0.80],
+    bouncer:   ['fire_light', 1.18, 0.70],
+    piston:    ['fire_heavy', 1.12, 0.90],
+    seeker:    ['fire_heavy', 0.70, 1.0],    // IT tag cannon: deep BOOM
+    lobber:    ['glfire', 1.0, 0.85],
+    quad:      ['glfire', 1.1, 0.75],
   };
 
   return {
@@ -331,8 +332,8 @@ SKY.SFX = (function () {
     gust()    { noise(1.2, 700, 0.22, 'bandpass'); },
     boom(dist){ const a = att(dist);
                 if (a < 0.05) return;
-                if (sample('boom', 0.5 * a, SKY.U.rand(0.95, 1.1))) {
-                  if (a > 0.5) sample('boom_low', 0.3 * a, 1.2, 0.02);
+                if (sample('boom', 0.95 * a, SKY.U.rand(0.95, 1.1))) {
+                  if (a > 0.5) sample('boom_low', 0.55 * a, 1.1, 0.02);
                   return;
                 }
                 noise(0.5, 300, 0.5 * a); noise(0.08, 3000, 0.25 * a, 'highpass'); },
@@ -353,7 +354,7 @@ SKY.SFX = (function () {
                 [660, 880, 1100].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.2, i * 0.08)); },
     overtime(){ if (sample('alarm', 0.4)) return;
                 tone(220, 110, 0.5, 'sine', 0.18); },
-    airCannon(){ if (sample('aircannon', 0.45, 1.2)) return;
+    airCannon(){ if (sample('aircannon', 0.8, 1.05)) return;
                 noise(0.32, 420, 0.4); },
     hit(p, dist) { const a = att(dist);
                 if (a < 0.06) return;

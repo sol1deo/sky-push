@@ -185,6 +185,13 @@ SKY.Replay = (function () {
   let layerMode = 0;               // 0 final · 1 depth map · 2 greenscreen
   const greenKeep = { world: false, players: true, fx: false, weapon: true };
   let shakeAmt = 0, shakeSpd = 1;  // handheld camera wobble
+  let dvRange = 100;               // depth-layer visual range (m to black)
+  let freeRoll = 0;                // Z/X camera roll (free cam)
+  let pathMode = 'ease';           // 'ease' stops at keys · 'smooth' glides through
+  let attachMode = 0;              // 0 off · 1 position · 2 full (rides the yaw)
+  const attachPrev = new THREE.Vector3();
+  let attachPrevYaw = 0, attachInit = false;
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
   const _ray = new THREE.Ray();
   const _ra = new THREE.Vector3(), _rb = new THREE.Vector3();
   const _rp1 = new THREE.Vector3(), _rp2 = new THREE.Vector3();
@@ -233,9 +240,28 @@ SKY.Replay = (function () {
     gb.length = 0;
   }
 
+  /* is a recorded world position the POV player's own muzzle? (roughly at
+     their eye/shoulder) — those events re-anchor to the LIVE viewmodel so
+     bullets/flashes leave the gun on screen instead of the head */
+  function povStub() {
+    return camMode === 'pov' && ghosts[sel] && ghosts[sel].stub.alive
+      ? ghosts[sel].stub : null;
+  }
+  function nearPovMuzzle(p) {
+    const s = povStub();
+    if (!s || !p) return false;
+    return Math.abs(p.x - s.pos.x) < 1.7 &&
+           Math.abs(p.y - (s.pos.y + s.eyeHeight)) < 1.9 &&
+           Math.abs(p.z - s.pos.z) < 1.7;
+  }
+
   function fire(e) {
     if (e.fn === '__bullet') {
       const pos = new THREE.Vector3(e.p[0], e.p[1], e.p[2]);
+      if (nearPovMuzzle(pos)) {
+        const tip = SKY.Effects.viewmodelTip();
+        if (tip) pos.copy(tip);
+      }
       gb.push({
         pos,
         vel: new THREE.Vector3(e.v[0], e.v[1], e.v[2]),
@@ -244,7 +270,18 @@ SKY.Replay = (function () {
       return;
     }
     const args = e.a.map(deserArg);
-    if (e.fn === 'muzzle') args[2] = false;    // never kick the editor camera
+    if (e.fn === 'muzzle') {
+      // POV's own shot: flash at the viewmodel tip + real recoil kick;
+      // everyone else's flashes stay world-anchored and never kick us
+      if (nearPovMuzzle(args[0])) {
+        const tip = SKY.Effects.viewmodelTip();
+        if (tip) args[0] = tip.clone();
+        args[2] = true;
+      } else args[2] = false;
+    }
+    if (e.fn === 'cannonBlast' && nearPovMuzzle(args[0])) {
+      SKY.Effects.cannonPop();                 // the cannon whips up in POV
+    }
     fxOrig[e.fn](...args);
     // a little sound sells the moment (only while playing forward)
     if (e.fn === 'hitBurst') SKY.SFX.hit((args[1] || 0) / 3);
@@ -382,14 +419,30 @@ SKY.Replay = (function () {
     }
   }
 
-  /* keyframe neighbours + smoothstep blend at time tt */
+  /* keyframe neighbours + blend at time tt.
+     'ease' smoothsteps each segment (settles at every key);
+     'smooth' keeps time linear — position runs a Catmull-Rom through the
+     keys so multi-point shots glide instead of stop-starting. */
   function kfLerp(tt) {
     let i = 0;
     while (i < kf.length - 2 && kf[i + 1].t <= tt) i++;
     const a = kf[i], b = kf[Math.min(i + 1, kf.length - 1)];
     let s = tt <= a.t ? 0 : tt >= b.t ? 1 : (tt - a.t) / Math.max(1e-4, b.t - a.t);
-    s = s * s * (3 - 2 * s);
-    return { a, b, s };
+    if (pathMode !== 'smooth') s = s * s * (3 - 2 * s);
+    return { a, b, s, i };
+  }
+
+  /* Catmull-Rom position through p0..p3 (arrays), t in [0,1] on p1->p2 */
+  function catmull(out, p0, p1, p2, p3, t) {
+    const t2 = t * t, t3 = t2 * t;
+    for (let k = 0; k < 3; k++) {
+      out.setComponent(k, 0.5 * (
+        2 * p1[k] +
+        (-p0[k] + p2[k]) * t +
+        (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 +
+        (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3));
+    }
+    return out;
   }
 
   /* is the camera currently driven by the keyframe path? */
@@ -398,14 +451,23 @@ SKY.Replay = (function () {
            (playing || scrubbing || dragObj !== null);
   }
 
+  /* playback window: the active clip's in/out, else the whole timeline */
+  function playStart() { return clips[activeClip] ? clips[activeClip].in : 0; }
+  function playEnd() { return clips[activeClip] ? clips[activeClip].out : api.duration; }
+
   function cameraTick(rdt) {
     const In = SKY.Input;
     if (onPath()) {
       // KEYS during playback/scrub: glide through the user's keyframes.
       // While paused you keep full free-fly control to line up the next key.
-      const { a, b, s } = kfLerp(T);
-      _v.fromArray(a.p); _v2.fromArray(b.p);
-      camera.position.lerpVectors(_v, _v2, s);
+      const { a, b, s, i } = kfLerp(T);
+      if (pathMode === 'smooth' && kf.length >= 2) {
+        const p0 = kf[Math.max(0, i - 1)].p, p3 = kf[Math.min(kf.length - 1, i + 2)].p;
+        camera.position.copy(catmull(_v, p0, a.p, b.p, p3, s));
+      } else {
+        _v.fromArray(a.p); _v2.fromArray(b.p);
+        camera.position.lerpVectors(_v, _v2, s);
+      }
       _qa.fromArray(a.q); _qb.fromArray(b.q);
       camera.quaternion.slerpQuaternions(_qa, _qb, s);
       camera.fov = SKY.U.lerp(a.fov, b.fov, s);
@@ -417,6 +479,7 @@ SKY.Replay = (function () {
         fcPos.copy(camera.position);
         _e.setFromQuaternion(camera.quaternion);
         In.yaw = _e.y; In.pitch = _e.x;
+        freeRoll = _e.z;
         freeFov = camera.fov;
       }
       if (camMode === 'pov' && ghosts[sel]) {
@@ -436,6 +499,28 @@ SKY.Replay = (function () {
         camera.fov = SKY.U.damp(camera.fov, 70, 10, rdt);
       } else {
         // FREE fly (also KEYS while paused, so you can line up shots)
+        // ATTACH: the camera rides the selected player — position deltas
+        // (and yaw pivots in Full mode) carry the free cam along, so it can
+        // sit "mounted" on a weapon, shoulder, anywhere
+        if (attachMode && ghosts[sel] && ghosts[sel].stub.alive) {
+          const s = ghosts[sel].stub;
+          if (attachInit) {
+            fcPos.x += s.pos.x - attachPrev.x;
+            fcPos.y += s.pos.y - attachPrev.y;
+            fcPos.z += s.pos.z - attachPrev.z;
+            if (attachMode === 2) {
+              const dy = SKY.U.angDelta(attachPrevYaw, s.yaw);
+              _v2.copy(fcPos).sub(_v.set(s.pos.x, fcPos.y, s.pos.z));
+              _v2.applyAxisAngle(Y_AXIS, dy);
+              fcPos.copy(_v).add(_v2);
+              In.yaw += dy;
+            }
+          }
+          attachPrev.copy(s.pos);
+          attachPrevYaw = s.yaw;
+          attachInit = true;
+        } else attachInit = false;
+
         const fast = In.isDown('ShiftLeft') || In.isDown('ShiftRight');
         const sp = (fast ? 26 : 10) * rdt;
         SKY.U.dirFromYawPitch(In.yaw, In.pitch, _v);
@@ -445,12 +530,17 @@ SKY.Replay = (function () {
         const my = (In.isDown('KeyE') ? 1 : 0) - (In.isDown('KeyQ') ? 1 : 0);
         fcPos.addScaledVector(_v, mz * sp).addScaledVector(_v2, mx * sp);
         fcPos.y += my * sp;
+        // Z / X — dutch roll (C resets)
+        if (In.isDown('KeyZ')) freeRoll += 1.1 * rdt;
+        if (In.isDown('KeyX')) freeRoll -= 1.1 * rdt;
+        if (In.isDown('KeyC')) freeRoll = SKY.U.damp(freeRoll, 0, 14, rdt);
         camera.position.copy(fcPos);
-        camera.rotation.set(In.pitch, In.yaw, 0, 'YXZ');
+        camera.rotation.set(In.pitch, In.yaw, freeRoll, 'YXZ');
         camera.fov = SKY.U.damp(camera.fov, freeFov, 12, rdt);
       }
     }
-    if (shakeAmt > 0) applyShake();
+    const eff = effective();
+    if (eff.shA > 0.001) applyShake(eff.shA, eff.shS);
     camera.updateProjectionMatrix();
   }
 
@@ -464,8 +554,15 @@ SKY.Replay = (function () {
     k.p = camera.position.toArray();
     k.q = camera.quaternion.toArray();
     k.fov = camera.fov;
-    k.focus = dof ? currentFocus() : null;
-    k.blur = dof ? dofBlur : null;
+    // each key carries the FULL lens + shake setup — edit any key later and
+    // playback blends between neighbouring keys' settings (no jumps)
+    k.dofMode = dof;
+    k.focus = currentFocus();
+    k.blur = dofBlur;
+    k.bokeh = dofBokeh;
+    k.rng = dofRange;
+    k.shA = shakeAmt;
+    k.shS = shakeSpd;
     kf.sort((x, y) => x.t - y.t);
     selKf = kf.indexOf(k);
     renderKf();
@@ -497,6 +594,7 @@ SKY.Replay = (function () {
       els[i].style.display = (p < -0.01 || p > 1.01) ? 'none' : '';
     }
     positionMarks();
+    updateClipShade();
   }
 
   /* round-start tick marks along the timeline (R1 / R2 / …) */
@@ -517,13 +615,45 @@ SKY.Replay = (function () {
     }
   }
 
-  /* ---------------- DoF ---------------- */
-  function setDof(n) {
-    dof = n;
+  /* ---------------- DoF / per-keyframe editing ----------------
+     With a keyframe SELECTED, the lens/shake panels edit THAT key's stored
+     settings; with nothing selected they edit the session globals. */
+  function editKf() { return selKf >= 0 ? kf[selKf] : null; }
+
+  function paintDof(n) {
     ui.dof.querySelectorAll('.rp-pill').forEach(b =>
       b.classList.toggle('sel', +b.dataset.d === n));
     ui.dofpanel.classList.toggle('hidden', !n);
     ui.focrow.style.display = n === 2 ? '' : 'none';
+  }
+  function setDof(n) {
+    const k = editKf();
+    if (k) k.dofMode = n; else dof = n;
+    paintDof(n);
+  }
+
+  /* reflect either a keyframe's stored settings or the globals in the panels */
+  function syncPanels(k) {
+    const g = (field, glob) => k && k[field] != null ? k[field] : glob;
+    paintDof(k ? (k.dofMode !== undefined ? k.dofMode : dof) : dof);
+    const focus = g('focus', dofFocus);
+    ui.foc.value = focMToSlider(SKY.U.clamp(focus, 0.5, 80));
+    ui.focv.textContent = focus < 10 ? focus.toFixed(1) + 'm' : Math.round(focus) + 'm';
+    const blur = g('blur', dofBlur);
+    ui.blur.value = blur;
+    ui.blurv.textContent = 'f/' + (1.2 / Math.max(0.05, blur)).toFixed(1);
+    const bokeh = g('bokeh', dofBokeh);
+    ui.bok.value = bokeh;
+    ui.bokv.textContent = Math.round(bokeh * 100) + '%';
+    const rng = g('rng', dofRange);
+    ui.rng.value = rng;
+    ui.rngv.textContent = rng.toFixed(1) + 'm';
+    const shA = g('shA', shakeAmt);
+    ui.shake.value = shA;
+    ui.shakev.textContent = shA <= 0.001 ? 'off' : Math.round(shA * 100) + '%';
+    const shS = g('shS', shakeSpd);
+    ui.shakespd.value = shS;
+    ui.shakespdv.textContent = Math.round(shS * 100) + '%';
   }
 
   /* ---------------- layers ---------------- */
@@ -532,28 +662,168 @@ SKY.Replay = (function () {
     ui.layers.querySelectorAll('.rp-pill').forEach(b =>
       b.classList.toggle('sel', +b.dataset.l === n));
     ui.greenpanel.classList.toggle('hidden', n !== 2);
+    ui.depthpanel.classList.toggle('hidden', n !== 1);
+  }
+
+  function setAttach(n) {
+    attachMode = n;
+    attachInit = false;
+    ui.attach.querySelectorAll('.rp-pill').forEach(b =>
+      b.classList.toggle('sel', +b.dataset.a === n));
+  }
+  function setPathMode(m) {
+    pathMode = m;
+    ui.pathmode.querySelectorAll('.rp-pill').forEach(b =>
+      b.classList.toggle('sel', b.dataset.p === m));
+  }
+
+  /* ---------------- CLIPS (the project layer) ----------------
+     A clip = an in/out slice of the match + its OWN keyframes and settings.
+     Build several clips of the same moment from different angles, hop
+     between them to edit, play (or render) the whole project in order. */
+  let clips = [], activeClip = -1, projPlaying = false;
+  let scratchKf = kf;              // the keyframe list used outside any clip
+
+  function snapSettings() {
+    return { dof, dofFocus, dofBlur, dofBokeh, dofRange, shakeAmt, shakeSpd,
+             pathMode, camMode, sel, attachMode, crossOn, namesOn };
+  }
+  function applySnap(s) {
+    if (!s) return;
+    dof = s.dof || 0; dofFocus = s.dofFocus || 10; dofBlur = s.dofBlur || 0.5;
+    dofBokeh = s.dofBokeh || 1; dofRange = s.dofRange != null ? s.dofRange : 1.6;
+    shakeAmt = s.shakeAmt || 0; shakeSpd = s.shakeSpd || 1;
+    setPathMode(s.pathMode || 'ease');
+    setAttach(s.attachMode || 0);
+    crossOn = !!s.crossOn;
+    ui.crossbtn.classList.toggle('sel', crossOn);
+    namesOn = s.namesOn !== false;
+    ui.namebtn.classList.toggle('sel', namesOn);
+    setSel(s.sel || 0);
+    setCam(s.camMode || 'free');
+    syncPanels(null);
+  }
+
+  function saveClip() {
+    if (activeClip >= 0 && clips[activeClip]) {
+      clips[activeClip].set = snapSettings();   // kf is edited by reference
+    }
+  }
+  function loadClip(i) {
+    saveClip();
+    activeClip = i;
+    selKf = -1; dragObj = null;
+    if (i >= 0 && clips[i]) {
+      const c = clips[i];
+      kf = c.kf;
+      applySnap(c.set);
+      viewStart = Math.max(0, c.in - 0.5);
+      viewEnd = Math.min(api.duration, c.out + 0.5);
+      seek(SKY.U.clamp(T, c.in, c.out));
+    } else {
+      kf = scratchKf;
+      viewStart = 0; viewEnd = api.duration;
+    }
+    renderKf();
+    renderClips();
+  }
+  function newClip() {
+    saveClip();
+    const zoomed = viewEnd - viewStart < api.duration - 0.01;
+    const cin = +(zoomed ? viewStart : 0).toFixed(2);
+    const cout = +(zoomed ? viewEnd : api.duration).toFixed(2);
+    clips.push({
+      name: 'Clip ' + (clips.length + 1),
+      in: cin, out: cout,
+      // carry any keys already inside the window (copies — scratch keeps its own)
+      kf: kf.filter(k => k.t >= cin - 1e-3 && k.t <= cout + 1e-3).map(k => ({ ...k })),
+      set: snapSettings(),
+    });
+    loadClip(clips.length - 1);
+  }
+  function deleteClip(i) {
+    clips.splice(i, 1);
+    if (activeClip === i) { activeClip = -1; kf = scratchKf; renderKf(); }
+    else if (activeClip > i) activeClip--;
+    renderClips();
+  }
+  function trimClip() {
+    const c = clips[activeClip];
+    if (!c || !kf.length) return;
+    c.in = Math.max(0, +(kf[0].t - 0.4).toFixed(2));
+    c.out = Math.min(api.duration, +(kf[kf.length - 1].t + 0.4).toFixed(2));
+    viewStart = Math.max(0, c.in - 0.5);
+    viewEnd = Math.min(api.duration, c.out + 0.5);
+    positionKf();
+    renderClips();
+  }
+  function renderClips() {
+    ui.clips.innerHTML = clips.map((c, i) =>
+      `<div class="rp-clip${i === activeClip ? ' sel' : ''}" data-i="${i}">
+        ${c.name} <i>${(c.out - c.in).toFixed(1)}s</i><span class="x" data-x="${i}">×</span>
+      </div>`).join('');
+    ui.trimclip.classList.toggle('rp-disabled', activeClip < 0);
+    updateClipShade();
+  }
+  function updateClipShade() {
+    const c = clips[activeClip];
+    if (!c) { ui.clipshade.innerHTML = ''; return; }
+    const w = Math.max(1e-4, viewEnd - viewStart);
+    const l = SKY.U.clamp01((c.in - viewStart) / w) * 100;
+    const r = SKY.U.clamp01((c.out - viewStart) / w) * 100;
+    ui.clipshade.innerHTML =
+      `<div style="left:0;width:${l}%"></div>` +
+      `<div style="left:${r}%;right:0"></div>` +
+      `<i style="left:${l}%"></i><i style="left:${r}%"></i>`;
+  }
+  function playProject() {
+    if (!clips.length) return;
+    projPlaying = true;
+    loadClip(0);
+    seek(clips[0].in);
+    setPlaying(true);
   }
   function focSliderToM(v) { return 0.5 * Math.pow(160, v); }   // 0.5 .. 80 m
   function focMToSlider(m) { return Math.log(m / 0.5) / Math.log(160); }
 
-  /* focus/blur to use this frame (keyframed values win during path playback) */
-  function effectiveDof() {
-    if (!dof) return null;
-    let focus = currentFocus(), blur = dofBlur;
+  /* per-key lens/shake with global fallbacks (old keys may miss fields) */
+  function kfSettings(k) {
+    const mode = k.dofMode !== undefined ? k.dofMode : dof;
+    return {
+      focus: mode === 1 ? dofAutoF : (k.focus != null ? k.focus : currentFocus()),
+      blur: mode === 0 ? 0 : (k.blur != null ? k.blur : dofBlur),
+      bokeh: k.bokeh != null ? k.bokeh : dofBokeh,
+      rng: k.rng != null ? k.rng : dofRange,
+      shA: k.shA != null ? k.shA : shakeAmt,
+      shS: k.shS != null ? k.shS : shakeSpd,
+    };
+  }
+
+  /* the lens + shake values in effect THIS frame: on the key path every
+     field blends between the neighbouring keyframes' own settings, so an
+     auto-focus key can hand over to a manual key with no visible jump */
+  function effective() {
     if (onPath()) {
       const { a, b, s } = kfLerp(T);
-      const fa = a.focus !== null && a.focus !== undefined ? a.focus : focus;
-      const fb = b.focus !== null && b.focus !== undefined ? b.focus : focus;
-      const ba = a.blur !== null && a.blur !== undefined ? a.blur : blur;
-      const bb = b.blur !== null && b.blur !== undefined ? b.blur : blur;
-      focus = SKY.U.lerp(fa, fb, s);
-      blur = SKY.U.lerp(ba, bb, s);
+      const A = kfSettings(a), B = kfSettings(b);
+      return {
+        focus: SKY.U.lerp(A.focus, B.focus, s),
+        blur: SKY.U.lerp(A.blur, B.blur, s),
+        bokeh: SKY.U.lerp(A.bokeh, B.bokeh, s),
+        rng: SKY.U.lerp(A.rng, B.rng, s),
+        shA: SKY.U.lerp(A.shA, B.shA, s),
+        shS: SKY.U.lerp(A.shS, B.shS, s),
+      };
     }
-    return { focus, blur };
+    return { focus: currentFocus(), blur: dof ? dofBlur : 0,
+             bokeh: dofBokeh, rng: dofRange, shA: shakeAmt, shS: shakeSpd };
   }
 
   function autoFocusTick(rdt) {
-    if (dof !== 1 || !ghosts.length) return;
+    // runs when auto AF is the live mode OR any keyframe on the path uses it
+    const wantAuto = dof === 1 ||
+      (camMode === 'keys' && kf.some(k => k.dofMode === 1));
+    if (!wantAuto || !ghosts.length) return;
     // real-camera CENTER AF: the character the crosshair RAY actually passes
     // near wins (nearest one, capsule test — the old ~26° "most centered"
     // cone missed constantly); nobody there -> orbit target -> the world
@@ -589,9 +859,9 @@ SKY.Replay = (function () {
 
   /* ---------------- handheld shake (layered sines — deterministic in T,
      so scrubbing back and forth reproduces the exact same wobble) -------- */
-  function applyShake() {
-    const t = T * shakeSpd;
-    const a = shakeAmt * 0.016;
+  function applyShake(amt, spd) {
+    const t = T * spd;
+    const a = amt * 0.016;
     const n = (f, s) => Math.sin(t * f + s) * 0.6 +
                         Math.sin(t * f * 2.3 + s * 1.7) * 0.28 +
                         Math.sin(t * f * 5.1 + s * 3.1) * 0.12;
@@ -714,6 +984,10 @@ SKY.Replay = (function () {
       shake: $('rp-shake'), shakev: $('rp-shakev'),
       shakespd: $('rp-shakespd'), shakespdv: $('rp-shakespdv'),
       rng: $('rp-rng'), rngv: $('rp-rngv'),
+      depthpanel: $('rp-depthpanel'), dvrng: $('rp-dvrng'), dvrngv: $('rp-dvrngv'),
+      attach: $('rp-attach'), pathmode: $('rp-pathmode'),
+      clips: $('rp-clips'), clipshade: $('rp-clipshade'),
+      trimclip: $('rp-trimclip'),
     };
     ui.speeds.innerHTML = SPEEDS.map(s =>
       `<button class="rp-pill${s === 1 ? ' sel' : ''}" data-s="${s}">${s}×</button>`).join('');
@@ -732,7 +1006,8 @@ SKY.Replay = (function () {
       `<button class="rp-pill${greenKeep[k] ? ' sel' : ''}" data-k="${k}">${label}</button>`).join('');
 
     ui.play.addEventListener('click', () => {
-      if (!playing && T >= api.duration - 0.01) seek(0);
+      projPlaying = false;
+      if (!playing && T >= playEnd() - 0.01) seek(playStart());
       setPlaying(!playing);
     });
     ui.speeds.addEventListener('click', (e) => {
@@ -758,28 +1033,54 @@ SKY.Replay = (function () {
       b.classList.toggle('sel', greenKeep[b.dataset.k]);
     });
     ui.shake.addEventListener('input', () => {
-      shakeAmt = +ui.shake.value;
-      ui.shakev.textContent = shakeAmt <= 0.001 ? 'off' : Math.round(shakeAmt * 100) + '%';
+      const v = +ui.shake.value;
+      const k = editKf();
+      if (k) k.shA = v; else shakeAmt = v;
+      ui.shakev.textContent = v <= 0.001 ? 'off' : Math.round(v * 100) + '%';
     });
     ui.shakespd.addEventListener('input', () => {
-      shakeSpd = +ui.shakespd.value;
-      ui.shakespdv.textContent = Math.round(shakeSpd * 100) + '%';
+      const v = +ui.shakespd.value;
+      const k = editKf();
+      if (k) k.shS = v; else shakeSpd = v;
+      ui.shakespdv.textContent = Math.round(v * 100) + '%';
     });
     ui.rng.addEventListener('input', () => {
-      dofRange = +ui.rng.value;
-      ui.rngv.textContent = dofRange.toFixed(1) + 'm';
+      const v = +ui.rng.value;
+      const k = editKf();
+      if (k) k.rng = v; else dofRange = v;
+      ui.rngv.textContent = v.toFixed(1) + 'm';
+    });
+    ui.dvrng.addEventListener('input', () => {
+      dvRange = +ui.dvrng.value;
+      ui.dvrngv.textContent = dvRange + 'm';
+    });
+    ui.attach.addEventListener('click', (e) => {
+      const b = e.target.closest('.rp-pill');
+      if (b) setAttach(+b.dataset.a);
+    });
+    ui.pathmode.addEventListener('click', (e) => {
+      const b = e.target.closest('.rp-pill');
+      if (b) setPathMode(b.dataset.p);
     });
     ui.foc.addEventListener('input', () => {
-      dofFocus = focSliderToM(+ui.foc.value);
-      ui.focv.textContent = dofFocus < 10 ? dofFocus.toFixed(1) + 'm' : Math.round(dofFocus) + 'm';
+      const m = focSliderToM(+ui.foc.value);
+      const k = editKf();
+      if (k) k.focus = m; else dofFocus = m;
+      ui.focv.textContent = m < 10 ? m.toFixed(1) + 'm' : Math.round(m) + 'm';
     });
     // aperture reads as an f-number (small f = shallow depth = more blur)
-    const fLabel = () => { ui.blurv.textContent = 'f/' + (1.2 / dofBlur).toFixed(1); };
-    ui.blur.addEventListener('input', () => { dofBlur = +ui.blur.value; fLabel(); });
-    fLabel();
+    ui.blur.addEventListener('input', () => {
+      const v = +ui.blur.value;
+      const k = editKf();
+      if (k) k.blur = v; else dofBlur = v;
+      ui.blurv.textContent = 'f/' + (1.2 / v).toFixed(1);
+    });
+    ui.blurv.textContent = 'f/' + (1.2 / dofBlur).toFixed(1);
     ui.bok.addEventListener('input', () => {
-      dofBokeh = +ui.bok.value;
-      ui.bokv.textContent = Math.round(dofBokeh * 100) + '%';
+      const v = +ui.bok.value;
+      const k = editKf();
+      if (k) k.bokeh = v; else dofBokeh = v;
+      ui.bokv.textContent = Math.round(v * 100) + '%';
     });
     ui.crossbtn.addEventListener('click', () => {
       crossOn = !crossOn;
@@ -798,24 +1099,37 @@ SKY.Replay = (function () {
     $('rp-prev').addEventListener('click', () => setSel(sel - 1));
     $('rp-next').addEventListener('click', () => setSel(sel + 1));
     $('rp-addkf').addEventListener('click', addKf);
-    ui.delkf.addEventListener('click', () => deleteKf(selKf));
-    $('rp-clearkf').addEventListener('click', clearKf);
+    ui.delkf.addEventListener('click', () => { deleteKf(selKf); syncPanels(null); });
+    $('rp-clearkf').addEventListener('click', () => { clearKf(); syncPanels(null); });
     $('rp-exit').addEventListener('click', () => api.close());
+    $('rp-newclip').addEventListener('click', newClip);
+    ui.trimclip.addEventListener('click', trimClip);
+    $('rp-playproj').addEventListener('click', playProject);
+    $('rp-render').addEventListener('click', () => SKY.VidRender.openDialog());
+    ui.clips.addEventListener('click', (e) => {
+      const x = e.target.closest('.x');
+      if (x) { e.stopPropagation(); deleteClip(+x.dataset.x); return; }
+      const chip = e.target.closest('.rp-clip');
+      if (chip) loadClip(+chip.dataset.i);
+    });
 
     /* ----- timeline: scrub, zoom, keyframe select/drag/delete ----- */
     ui.track.addEventListener('mousedown', (e) => {
-      scrubbing = true; setPlaying(false); seek(xToTime(e.clientX));
+      scrubbing = true; setPlaying(false); projPlaying = false;
+      if (selKf >= 0) { selKf = -1; renderKf(); syncPanels(null); }  // back to globals
+      seek(xToTime(e.clientX));
     });
     ui.keys.addEventListener('mousedown', (e) => {
       const m = e.target.closest('.rp-kf');
       if (!m) return;
       e.stopPropagation();               // don't scrub underneath
       selKf = +m.dataset.i;
-      if (e.button === 2) { deleteKf(selKf); return; }   // right-click = delete
+      if (e.button === 2) { deleteKf(selKf); syncPanels(null); return; }
       dragObj = kf[selKf];
       setPlaying(false);
       seek(dragObj.t);
       renderKf();
+      syncPanels(kf[selKf]);             // panels now edit THIS key's settings
     });
     window.addEventListener('mousemove', (e) => {
       if (dragObj) {
@@ -881,11 +1195,20 @@ SKY.Replay = (function () {
       if (e.code === 'Escape') { if (!document.pointerLockElement) api.close(); return; }
       if (e.code === SKY.Settings.data.binds.replay) { api.close(); return; }
       if (e.code === 'Space') {
-        if (!playing && T >= api.duration - 0.01) seek(0);
+        projPlaying = false;
+        if (!playing && T >= playEnd() - 0.01) seek(playStart());
         setPlaying(!playing);
       }
       if (e.code === 'KeyK') addKf();
-      if (e.code === 'Delete' || e.code === 'Backspace') deleteKf(selKf);
+      if (e.code === 'KeyI' && clips[activeClip]) {   // clip in-point at cursor
+        clips[activeClip].in = Math.min(+T.toFixed(2), clips[activeClip].out - 0.2);
+        renderClips();
+      }
+      if (e.code === 'KeyO' && clips[activeClip]) {   // clip out-point at cursor
+        clips[activeClip].out = Math.max(+T.toFixed(2), clips[activeClip].in + 0.2);
+        renderClips();
+      }
+      if (e.code === 'Delete' || e.code === 'Backspace') { deleteKf(selKf); syncPanels(null); }
       if (e.code === 'KeyH') ui.root.classList.toggle('ui-hidden');
       const step = e.shiftKey ? 0.1 : 1;
       if (e.code === 'ArrowLeft') { setPlaying(false); seek(T - step); }
@@ -909,19 +1232,27 @@ SKY.Replay = (function () {
     // replay (its cleanup runs from Game.renderTick, which we replace)
     SKY.Attract.stop();
     cur = 0; evi = 0;
+    kf = scratchKf;
     kf.length = 0; selKf = -1; dragObj = null;
+    // archived demos carry their saved clip projects back in
+    clips = archived && archived.clips
+      ? archived.clips.map(c => ({ ...c, kf: c.kf.map(k => ({ ...k })) })) : [];
+    activeClip = -1; projPlaying = false;
+    renderClips();
     viewStart = 0; viewEnd = api.duration;
     crossOn = false;
     povHud = false; hudWasOn = false;
     ui.crossbtn.classList.remove('sel');
     ui.hudbtn.classList.remove('sel');
     ui.namebtn.classList.toggle('sel', namesOn);
-    setDof(0);
+    dof = 0;
     setLayer(0);
+    setAttach(0);
+    setPathMode('ease');
+    freeRoll = 0;
     dofAutoF = 10;
     shakeAmt = 0;
-    ui.shake.value = 0;
-    ui.shakev.textContent = 'off';
+    syncPanels(null);
     renderMarks();
     document.body.classList.add('replaying');
     ui.root.classList.remove('hidden');
@@ -1038,7 +1369,10 @@ SKY.Replay = (function () {
       camera.updateProjectionMatrix();
       if (document.pointerLockElement) document.exitPointerLock();
       if (archived) {
-        // demo from the menu: just drop our copies — the menu is still there
+        // the clip project rides home with the demo (survives via IndexedDB)
+        saveClip();
+        archived.clips = clips.map(c => ({ ...c, kf: c.kf.map(k => ({ ...k })) }));
+        if (SKY.Demos.persistRec) SKY.Demos.persistRec(archived);
         archived = null;
         wipe();
         SKY.Game.paused = false;
@@ -1068,7 +1402,18 @@ SKY.Replay = (function () {
       const sdt = playing ? rdt * speed : 0;
       if (playing) {
         T += sdt;
-        if (T >= api.duration) { T = api.duration; setPlaying(false); }
+        const end = playEnd();
+        if (T >= end) {
+          if (projPlaying && activeClip < clips.length - 1) {
+            // project playback: roll straight into the next clip's cameras
+            loadClip(activeClip + 1);
+            seek(clips[activeClip].in);
+          } else {
+            T = end;
+            projPlaying = false;
+            setPlaying(false);
+          }
+        }
         const tAbs = frames.length ? frames[0].t + T : 0;
         while (evi < events.length && events[evi].t <= tAbs) { fire(events[evi]); evi++; }
       }
@@ -1085,8 +1430,10 @@ SKY.Replay = (function () {
       // POV shows the player's viewmodel (weapon in hand)
       const povGhost = camMode === 'pov' && ghosts[sel] && ghosts[sel].stub.alive
         ? ghosts[sel] : null;
+      for (const g of ghosts) g.stub._pov = false;
       if (povGhost) {
         const s = povGhost.stub;
+        s._pov = true;                       // rope starts at the hook gun tip
         SKY.Effects.ensureWeapon(s.weapon);
         SKY.Effects.setViewmodelVisible(true);
         SKY.Effects.setHands(!!s.grapple);   // hook arm up while roped
@@ -1113,13 +1460,34 @@ SKY.Replay = (function () {
       uiTick();
     },
 
+    /* ---- video-export hooks (SKY.VidRender drives these) ---- */
+    exportInfo() {
+      return {
+        clips: clips.map((c, i) => ({ i, in: c.in, out: c.out })),
+        activeClip,
+        start: playStart(),
+        end: playEnd(),
+      };
+    },
+    exportUseClip(i) { if (clips[i]) { loadClip(i); projPlaying = false; } },
+    /* advance exactly one export frame (deterministic offline stepping) */
+    exportStep(dt) {
+      playing = true;                    // frame() only advances while playing
+      const sp = speed;
+      speed = 1;
+      api.frame(dt);
+      speed = sp;
+    },
+    exportSeek(t) { projPlaying = false; seek(t); setPlaying(true); },
+    exportDone() { setPlaying(false); },
+
     /* render hook — returns true if a layer mode / DoF handled the frame */
     render(renderer, sc, cam) {
-      if (layerMode === 1) { SKY.DoF.renderDepth(renderer, sc, cam); return true; }
+      if (layerMode === 1) { SKY.DoF.renderDepth(renderer, sc, cam, dvRange); return true; }
       if (layerMode === 2) { renderGreen(renderer, sc, cam); return true; }
-      const d = effectiveDof();
-      if (!d || d.blur <= 0.001) return false;
-      SKY.DoF.render(renderer, sc, cam, d.focus, d.blur, dofBokeh, dofRange);
+      const d = effective();
+      if (d.blur <= 0.001) return false;
+      SKY.DoF.render(renderer, sc, cam, d.focus, d.blur, d.bokeh, d.rng);
       return true;
     },
   };

@@ -110,6 +110,9 @@
     if (rdt > 0.1) rdt = 0.1;       // tab-switch hitch guard
 
     let rendered = false;
+    // video export owns the replay AND the renderer — sit this frame out
+    // (rAF was already re-armed at the top of the loop)
+    if (SKY.VidRender && SKY.VidRender.busy) return;
     if (!window.__autodrive) {
       if (SKY.Editor.active) {
         SKY.Editor.frame(rdt);      // map editor owns the camera

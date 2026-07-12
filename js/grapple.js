@@ -302,8 +302,9 @@ SKY.Grapple = (function () {
       // release them — the alive flag is the reliable signal)
       if (!g || !pawn.alive) { if (pawn._rope) pawn._rope.visible = false; continue; }
 
-      // rope start: the HOOK-GUN tip for the local player, hand-ish for others
-      if (pawn.isLocal) {
+      // rope start: the HOOK-GUN tip for the local player (and the replay's
+      // POV ghost — pawn._pov), hand-ish for everyone else
+      if (pawn.isLocal || pawn._pov) {
         camera.updateMatrixWorld();
         const tip = SKY.Effects.hookTip() || SKY.Effects.viewmodelTip();
         if (tip) _start.copy(tip);

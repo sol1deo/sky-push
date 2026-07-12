@@ -79,12 +79,13 @@ SKY.DoF = (function () {
       gl_FragColor = vec4(lin2srgb(acc / wsum), 1.0);
     }`;
 
-  /* linearized-depth visual: near = white, far = black (exp falloff reads
-     nicely at arena scale). Raw grayscale — meant for compositing software. */
+  /* linearized-depth visual: near = white, far = black. uK sets how far the
+     ramp reaches (the editor's Range slider). Raw grayscale for compositing. */
   const DEPTH_FRAG = COMMON + `
+    uniform float uK;
     void main() {
       float z = viewDepth(vUv);
-      float g = exp(-z * 0.028);
+      float g = exp(-z * uK);
       gl_FragColor = vec4(vec3(g), 1.0);
     }`;
 
@@ -98,7 +99,7 @@ SKY.DoF = (function () {
       uNear: { value: 0.08 }, uFar: { value: 500 },
       uFocus: { value: 10 }, uRange: { value: 1.6 },
       uAperture: { value: 0.5 }, uMaxCoc: { value: 0.02 },
-      uAspect: { value: 1 },
+      uAspect: { value: 1 }, uK: { value: 0.028 },
     };
   }
 
@@ -160,9 +161,10 @@ SKY.DoF = (function () {
       pass(renderer, scene, camera, mat);
     },
 
-    /* depth-map layer (replay "Depth" mode) */
-    renderDepth(renderer, scene, camera) {
+    /* depth-map layer (replay "Depth" mode); range = meters to near-black */
+    renderDepth(renderer, scene, camera, range) {
       ensure(renderer);
+      depthMat.uniforms.uK.value = 2.8 / Math.max(10, range || 100);
       pass(renderer, scene, camera, depthMat);
     },
   };

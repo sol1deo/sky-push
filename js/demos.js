@@ -82,6 +82,8 @@ SKY.Demos = (function () {
   const api = {
     init() { openDb(loadAll); },
     list() { return mem; },
+    /* re-persist a record whose contents changed (e.g. saved clip projects) */
+    persistRec(rec) { persist(rec); },
 
     /* called ONCE when a match ends (or is abandoned) — the recording holds
        every round. Offline AND online (each peer records its local view). */
