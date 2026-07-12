@@ -115,7 +115,7 @@ SKY.Replay = (function () {
         p: [p.pos.x, p.pos.y, p.pos.z],
         v: [p.vel.x, p.vel.y, p.vel.z],
         yaw: p.yaw, pit: p.pitch, h: p.height, e: p.eyeHeight,
-        w: Math.max(0, WK.indexOf(p.weapon)), f,
+        w: p.weapon ? Math.max(0, WK.indexOf(p.weapon)) : 255, f,   // 255 = bare hands
         am: p.ammo,                    // POV HUD ammo readout
         // grapple rope (attach point + slack length) so playback draws hooks
         gp: g && g.point ? [+g.point.x.toFixed(2), +g.point.y.toFixed(2),
@@ -350,9 +350,10 @@ SKY.Replay = (function () {
       s.eyeHeight = SKY.U.lerp(a.e, b.e, u);
       if (b.tv) s.tumbleVel.set(b.tv[0], b.tv[1], b.tv[2]);
       else s.tumbleVel.set(0, 0, 0);
-      s.weapon = WK[b.w] || 'pistol';
+      s.weapon = b.w === 255 ? null : (WK[b.w] || 'pistol');
       // POV HUD mirrors: weapon slots + recorded ammo
-      s.slots[1] = s.weapon !== 'pistol' ? s.weapon : null;
+      s.slots[1] = s.weapon && s.weapon !== 'pistol' ? s.weapon : null;
+      s.slots[2] = s.weapon ? 'pistol' : null;
       s.activeSlot = s.weapon === 'pistol' ? 2 : 1;
       s.ammo = b.am !== undefined ? b.am
         : (SKY.TUNING.weapons[s.weapon] || SKY.TUNING.weapons.pistol).mag;
@@ -1434,8 +1435,8 @@ SKY.Replay = (function () {
       if (povGhost) {
         const s = povGhost.stub;
         s._pov = true;                       // rope starts at the hook gun tip
-        SKY.Effects.ensureWeapon(s.weapon);
-        SKY.Effects.setViewmodelVisible(true);
+        if (s.weapon) SKY.Effects.ensureWeapon(s.weapon);
+        SKY.Effects.setViewmodelVisible(!!(s.weapon || s.grapple));
         SKY.Effects.setHands(!!s.grapple);   // hook arm up while roped
         SKY.Effects.viewmodelMotion(rdt, s.speedH(), s.grounded, s.vel.y, s.sliding, -1);
       } else {

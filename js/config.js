@@ -203,11 +203,14 @@ SKY.TUNING = {
     seeker: {
       label: 'TAG CANNON', short: 'TAG', icon: '👹', rarity: 'epic', color: '#ff4444',
       desc: 'One tag and they fly. Close range only.',
-      cooldown: 0.9, auto: false, mag: 999, reloadTime: 0.5, range: 8,
+      // rangeGrace 0: pellets die EXACTLY at range — no cross-map tags
+      // (the default +0.15s bullet grace was adding ~10m of reach)
+      cooldown: 0.9, auto: false, mag: 999, reloadTime: 0.5, range: 6.5, rangeGrace: 0,
       projSpeed: 70, projGravity: 0,
-      pellets: 5, spreadDeg: 5, zoomSpreadDeg: 4, zoomFov: 74,
-      baseKnockback: 60, speedMult: 0, airborneBonus: 1, slideBonus: 1,
-      headshotMult: 1, upFactor: 0.5, maxKnockback: 95, selfRecoil: 0.5, kick: 1.8, kickPitch: 0.02,
+      pellets: 5, spreadDeg: 7, zoomSpreadDeg: 5, zoomFov: 74,
+      // strong enough to throw you OFF the platform, not into orbit
+      baseKnockback: 28, speedMult: 0, airborneBonus: 1, slideBonus: 1,
+      headshotMult: 1, upFactor: 0.42, maxKnockback: 44, selfRecoil: 0.5, kick: 1.8, kickPitch: 0.02,
     },
     piston: {
       label: 'PISTON CANNON', short: 'PISTON', icon: '🔩', rarity: 'rare', color: '#ff8560',

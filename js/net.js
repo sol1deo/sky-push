@@ -361,7 +361,8 @@ SKY.Net = (function () {
         conn.__id = id; conn.__name = m.name;
         conns.set(id, conn);
         api.roster.push({ id, name: m.name, color: COLORS[api.roster.length % COLORS.length], cos: m.cos || null });
-        conn.send({ t: 'welcome', you: id, roster: api.roster, settings: api.settings });
+        conn.send({ t: 'welcome', you: id, roster: api.roster, settings: api.settings,
+                    mapDef: SKY.MapData.get(api.settings.map) || null });
         broadcast({ t: 'roster', roster: api.roster }, id);
         renderLobby();
         break;
@@ -391,6 +392,7 @@ SKY.Net = (function () {
       case 'hit': routeHit(m); break;
       case 'fire': broadcast(m, conn.__id); onFire(m); break;
       case 'nade': broadcast(m, conn.__id); onNade(m); break;
+      case 'cfx': broadcast(m, conn.__id); onCannonFx(m); break;
       case 'taunt': broadcast(m, conn.__id); onTaunt(m); break;
       case 'door': broadcast(m, conn.__id); SKY.Map.setDoor(m.i, !!m.o); break;
       case 'query':   // server-browser probe
@@ -688,6 +690,7 @@ SKY.Net = (function () {
           api.myId = m.you;
           api.roster = m.roster;
           api.settings = m.settings;
+          if (m.mapDef) SKY.MapData.register(m.mapDef);
           SKY.Game.previewMap(api.settings.map);
           showLobby();
           status('');
@@ -724,6 +727,9 @@ SKY.Net = (function () {
       case 'ping': if (hostConn && hostConn.open) hostConn.send({ t: 'pong', ts: m.ts }); break;
       case 'roster': api.roster = m.roster; renderLobby(); break;
       case 'settings':
+        // custom (editor-made) maps ride along so every client's map list
+        // shows the host's pick — selectable, previewable, loadable
+        if (m.mapDef) SKY.MapData.register(m.mapDef);
         api.settings = m.settings;
         SKY.Game.previewMap(api.settings.map);
         renderLobby();
@@ -732,6 +738,7 @@ SKY.Net = (function () {
       case 'states': applyStates(m); break;
       case 'fire': onFire(m); break;
       case 'nade': onNade(m); break;
+      case 'cfx': onCannonFx(m); break;
       case 'taunt': onTaunt(m); break;
       case 'door': SKY.Map.setDoor(m.i, !!m.o); break;
       case 'skspawn': SKY.Sparks.spawnRemote(m.id, m.n, m.pos); break;
@@ -872,6 +879,17 @@ SKY.Net = (function () {
   function onTaunt(m) {
     const pawn = SKY.Game.pawns.find(p => p.netId === m.id);
     if (pawn && pawn.avatar) { pawn.tauntT = 1.25; pawn.avatar.playEmote(); }
+  }
+  /* a remote player's air-cannon blast — visual + sound + cannon-in-hands */
+  function onCannonFx(m) {
+    const pawn = SKY.Game.pawns.find(p => p.netId === m.id);
+    if (!pawn || !pawn.isRemote) return;   // own sim already showed it
+    const pos = new THREE.Vector3(m.p[0], m.p[1], m.p[2]);
+    const dir = new THREE.Vector3(m.d[0], m.d[1], m.d[2]);
+    pawn._cannonT = 0.7;
+    SKY.Effects.cannonBlast(pos.clone().addScaledVector(dir, 1.2), dir);
+    const me = SKY.Game.player;
+    SKY.SFX.airCannon(me ? me.pos.distanceTo(pos) : 12);
   }
   function routeHit(m) {
     // host: record credit, then apply locally or forward to the victim's client
@@ -1134,7 +1152,9 @@ SKY.Net = (function () {
 
   function hostSetSettings(patch) {
     Object.assign(api.settings, patch);
-    broadcast({ t: 'settings', settings: api.settings });
+    // editor-made map selected? ship its def so clients can list/preview it
+    broadcast({ t: 'settings', settings: api.settings,
+                mapDef: SKY.MapData.get(api.settings.map) || null });
     SKY.Game.previewMap(api.settings.map);
     renderLobby();
   }
@@ -1293,6 +1313,7 @@ SKY.Net = (function () {
     /* hooks used by game/weapons */
     sendFire(data) { if (api.online) send({ t: 'fire', ...data }); },
     sendNade(data) { if (api.online) send({ t: 'nade', ...data }); },
+    sendCannonFx(id, p, d) { if (api.online) send({ t: 'cfx', id, p, d }); },
     sendLevelPick(item) {
       if (api.online && api.role === 'client') send({ t: 'lvpick', id: api.myId, item: item.id });
     },

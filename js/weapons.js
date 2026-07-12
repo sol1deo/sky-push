@@ -90,12 +90,13 @@ SKY.Weapons = (function () {
     if (pawn.grapple || pawn.drawT > 0) return false;   // hook arm out / mid-draw
     if (SKY.Game.roundTime < 0.75) return false;   // no spawn-cheese at GO!
     // IT: runners carry NO primary; the seeker can't fire during the hide phase
+    if (!pawn.weapon) {
+      // bare hands (IT runners): a dry CLICK says "no gun for you" out loud
+      if (pawn.isLocal && pawn.pbCd <= 0) { SKY.SFX.dry(); pawn.pbCd = 0.5; }
+      return false;
+    }
     if (SKY.Game.mode === 'it') {
-      if (!pawn.isSeeker) {
-        // runners are unarmed — a dry CLICK says "no gun for you" out loud
-        if (pawn.isLocal && pawn.pbCd <= 0) { SKY.SFX.dry(); pawn.pbCd = 0.5; }
-        return false;
-      }
+      if (!pawn.isSeeker) return false;
       if (SKY.Game.roundTime < SKY.TUNING.it.hideTime) return false;
     }
     // charge weapons fired without a charge (bots, autotest): decent mid-charge
@@ -170,11 +171,11 @@ SKY.Weapons = (function () {
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
         bounces: W.bounces || 0,
         owner: pawn, auth,
-        life: W.range / pspd + 0.15,
+        life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, _muzzle),
       });
       SKY.Replay.bullet(_muzzle, bullets[bullets.length - 1].vel,
-        W.projGravity || 0, W.range / pspd + 0.15);
+        W.projGravity || 0, W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15));
     }
     if (SKY.Net.online && auth) {
       SKY.Net.sendFire({
@@ -540,11 +541,18 @@ SKY.Weapons = (function () {
 
     pawn.vel.addScaledVector(_dir, -C.selfRecoil);
     if (pawn.vel.y > 1) pawn.grounded = false;
+    pawn._cannonT = 0.7;     // third-person hands show the cannon briefly
     SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone());
-    SKY.SFX.airCannon();
+    SKY.SFX.airCannon(listenDist(_eye));
     if (pawn.isLocal) {
       SKY.Effects.shake(1.25);
       SKY.HUD.hitmark(1);
+    }
+    // everyone else sees + hears the blast too (fx only — hits already route)
+    if (SKY.Net.online && !pawn.isRemote) {
+      SKY.Net.sendCannonFx(pawn.netId,
+        [+_eye.x.toFixed(2), +_eye.y.toFixed(2), +_eye.z.toFixed(2)],
+        [+_dir.x.toFixed(3), +_dir.y.toFixed(3), +_dir.z.toFixed(3)]);
     }
   }
 
@@ -562,7 +570,7 @@ SKY.Weapons = (function () {
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
         bounces: W.bounces || 0,
         owner: pawn, auth: false,
-        life: W.range / W.projSpeed + 0.15,
+        life: W.range / W.projSpeed + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, ori),
       });
     }

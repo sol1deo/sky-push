@@ -42,6 +42,7 @@ window.SKY = window.SKY || {};
 
       this.sliding = false; this.slideT = 0; this.slideCd = 0;
       this.crouching = false;
+      this._frz = null;      // IT hide-phase anchor position
       this.jumpBufferT = 0; this.coyoteT = 0; this.timeSinceJump = 10;
       this.padLockT = 0;
 
@@ -495,6 +496,11 @@ window.SKY = window.SKY || {};
 
     /* =================== knockback =================== */
     applyKnockback(impulse, byPawn) {
+      // IT hide phase: the frozen seeker is IMMOVABLE (runners used to
+      // gang-blast them off the map before the round even started)
+      if (this.isSeeker && SKY.Game.mode === 'it' &&
+          SKY.Game.state === 'playing' &&
+          SKY.Game.roundTime < SKY.TUNING.it.hideTime) return;
       const r = this.mods.knockResist;   // Heavyweight powerup reduces this
       this.vel.addScaledVector(impulse, r);
       const m = impulse.length() * r;

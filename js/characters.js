@@ -314,10 +314,13 @@ SKY.Characters = (function () {
         run: act('Run'),
         air: act('Jump'),
         slide: act('Roll'),
+        crouch: act('SitDown'),
         dance: act('Victory'),
       };
       if (this.acts.idle) this.acts.idle.setEffectiveWeight(1);
-      // air = Jump held near its apex; slide = Roll frozen in the tuck
+      // air = Jump held near its apex; slide = Roll frozen in the tuck;
+      // crouch = SitDown held mid-descent (UACP has no dedicated crouch clip
+      // — half-way into sitting reads as a proper squat)
       if (this.acts.air) {
         this.airApex = this.acts.air.getClip().duration * 0.45;
         this.acts.air.setLoop(THREE.LoopOnce);
@@ -327,6 +330,11 @@ SKY.Characters = (function () {
         this.slideTuck = this.acts.slide.getClip().duration * 0.3;
         this.acts.slide.setLoop(THREE.LoopOnce);
         this.acts.slide.clampWhenFinished = true;
+      }
+      if (this.acts.crouch) {
+        this.crouchHold = this.acts.crouch.getClip().duration * 0.38;
+        this.acts.crouch.setLoop(THREE.LoopOnce);
+        this.acts.crouch.clampWhenFinished = true;
       }
       this.wasGrounded = true;
     }
@@ -344,6 +352,7 @@ SKY.Characters = (function () {
       if (this.emoteT > 0) { this.emoteT -= dt; want = 'dance'; }
       else if (p.sliding) want = 'slide';
       else if (!p.grounded) want = 'air';
+      else if (p.crouching) want = 'crouch';
       else if (spd > 0.6) want = 'run';
 
       for (const key in A) {
@@ -355,9 +364,11 @@ SKY.Characters = (function () {
       }
       // stride speed follows actual velocity
       if (A.run) A.run.timeScale = SKY.U.clamp(spd / 5.5, 0.7, 2.1);
-      // hold poses: Jump pauses at its apex, Roll freezes in the tuck
+      // hold poses: Jump pauses at its apex, Roll freezes in the tuck,
+      // SitDown freezes half-way down = the crouch squat
       if (A.air && A.air.time > this.airApex && !p.grounded) A.air.time = this.airApex;
       if (A.slide && A.slide.time > this.slideTuck) A.slide.time = this.slideTuck;
+      if (A.crouch && A.crouch.time > this.crouchHold) A.crouch.time = this.crouchHold;
 
       this.mixer.update(dt);
 
@@ -385,8 +396,8 @@ SKY.Characters = (function () {
     _armAim(dt) {
       const p = this.pawn;
       if (!this.bUpArmR || !this.bLoArmR || !this.bHandR) return;
-      // taunts and the slide tuck own the whole body
-      const want = (this.emoteT > 0 || p.sliding) ? 0 : 1;
+      // taunts and the slide tuck own the whole body; bare hands = unarmed
+      const want = (this.emoteT > 0 || p.sliding || !this.gunKind) ? 0 : 1;
       this._aimW = SKY.U.damp(this._aimW === undefined ? want : this._aimW, want, 10, dt);
       const w = this._aimW;
       if (w < 0.03) return;
@@ -433,6 +444,7 @@ SKY.Characters = (function () {
       this.gunKind = kind;
       while (this.gunHolder.children.length) this.gunHolder.remove(this.gunHolder.children[0]);
       while (this.proxyGunHolder.children.length) this.proxyGunHolder.remove(this.proxyGunHolder.children[0]);
+      if (!kind) return;                 // bare hands (IT runners)
       const fin = this.pawn.cos && this.pawn.cos.fin ? (this.pawn.cos.fin[kind] || null)
         : (this.pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor(kind) : null);
       const g1 = SKY.Effects.buildWeaponMesh(kind, fin);
@@ -625,7 +637,14 @@ SKY.Characters = (function () {
         this.ragActive = false;
         return;
       }
-      if (p.weapon !== this.gunKind) this.setWeapon(p.weapon);
+      // what's ACTUALLY in their hands: the hook gun while roped, the air
+      // cannon during its pop, else the equipped weapon (null = bare hands) —
+      // so everyone can SEE a player hooking or cannoning in third person
+      if (p._cannonT) p._cannonT = Math.max(0, p._cannonT - dt);
+      const held = p.grapple ? 'hookgun'
+        : p._cannonT > 0 ? 'cannon'
+        : p.weapon;
+      if (held !== this.gunKind) this.setWeapon(held);
 
       if (p.ragdoll) {
         if (!this.ragActive) this.startRagdoll();

@@ -661,14 +661,16 @@ SKY.HUD = (function () {
         if (el.timer._c !== tc) { el.timer._c = tc; el.timer.style.color = tc; }
       }
 
-      // ammo + weapon chip (bar shows reload progress while reloading)
+      // ammo + weapon chip (bar shows reload progress while reloading);
+      // bare hands (IT runners) show no ammo at all
       const wDef = SKY.Weapons.defOf(p);
       if (lastWeapon !== p.weapon) {
         lastWeapon = p.weapon;
-        el.cd.pb.querySelector('.n').textContent = wDef.short || wDef.label;
+        el.cd.pb.querySelector('.n').textContent =
+          p.weapon ? (wDef.short || wDef.label) : '—';
       }
-      setText(el.ammo, String(p.ammo));
-      setText(el.ammoMax, '/' + wDef.mag);
+      setText(el.ammo, p.weapon ? String(p.ammo) : '');
+      setText(el.ammoMax, p.weapon ? '/' + wDef.mag : '');
       const ac = p.reloadT > 0 ? '#ff9a3d' : (p.ammo === 0 ? '#ff5a4a' : '#fff');
       if (el.ammo._c !== ac) { el.ammo._c = ac; el.ammo.style.color = ac; }
       // crosshair ring: reload progress, or the piston's charge meter

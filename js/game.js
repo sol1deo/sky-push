@@ -269,10 +269,16 @@ SKY.Game = (function () {
         const seekIdx = (api.roundNum - 1) % api.pawns.length;
         api.pawns.forEach((p, i) => {
           p.isSeeker = i === seekIdx;
+          p._frz = null;                      // fresh hide-phase anchor
           if (p.isSeeker) {
             if (!p.isRemote) p.giveWeapon('seeker');
           } else {
             p.lives = 1;                      // runners: one life, no rewards
+            // runners carry NOTHING — bare hands, hook + air cannon only
+            p.weapon = null;
+            p.slots = { 1: null, 2: null };
+            p.slotAmmo = { 1: 0, 2: 0 };
+            p.ammo = 0;
           }
           p.nades = { type: 'he', count: 0 }; // hook + cannon only
         });
@@ -457,8 +463,10 @@ SKY.Game = (function () {
         }
         // ROUND end is CS:GO style: a banner counts down up top while the
         // arena stays fully live below — survivors keep running around.
+        // No Enter-skip here: the timer alone starts the next round (skipping
+        // mid-animation could desync clients/loot state).
         SKY.HUD.roundBannerTime(api.restartT);
-        if (SKY.Net.authority && (api.restartT <= 0 || skip)) {
+        if (SKY.Net.authority && api.restartT <= 0) {
           if (SKY.Net.online) SKY.Net.hostNewRound();
           api.startRound();
           return;
@@ -626,7 +634,11 @@ SKY.Game = (function () {
           if (!p.isSeeker || p.isRemote) continue;
           p.cmd.mx = 0; p.cmd.mz = 0;
           p.cmd.jumpHeld = false; p.cmd.jumpPressed = false;
-          p.vel.x = 0; p.vel.z = 0;
+          // hard ANCHOR: runners used to cannon-blast the frozen seeker off
+          // the map — position snaps back and all velocity dies every tick
+          if (!p._frz) p._frz = p.pos.clone();
+          p.pos.copy(p._frz);
+          p.vel.set(0, 0, 0);
         }
         const left = Math.ceil(T.hideTime - api.roundTime);
         if (api._itCd !== left) {
@@ -635,6 +647,7 @@ SKY.Game = (function () {
         }
       } else if (!api._itReleased) {
         api._itReleased = true;
+        for (const p of api.pawns) p._frz = null;
         SKY.HUD.centerMsg('THE SEEKER IS LOOSE', 1.6, 44);
         SKY.SFX.overtime();
       }
@@ -910,7 +923,7 @@ SKY.Game = (function () {
         const stars = winner
           ? '★'.repeat(winner.roundWins) + '☆'.repeat(Math.max(0, SKY.TUNING.game.roundsToWin - winner.roundWins))
           : '';
-        const extra = (SKY.Net.authority ? ' · Enter to skip' : '') + rp;
+        const extra = rp;
         SKY.HUD.roundBanner(name, winner ? winner.color : '', stars,
           SKY.TUNING.game.roundRestartDelay, extra);
       }
@@ -991,6 +1004,7 @@ SKY.Game = (function () {
       // roundend is NOT spectating anymore: the banner plays over live gameplay
       const spectating = !p || api.state === 'menu' ||
                          api.state === 'matchend' || (p && p.eliminated);
+      if (!spectating) SKY.HUD.spectate(null);   // back alive: pill goes away
 
       if (spectating) {
         // priority: lobby stage > live spectate (eliminated) > center orbit
@@ -1028,7 +1042,7 @@ SKY.Game = (function () {
         camera.fov = camFov;
         camera.updateProjectionMatrix();
         SKY.HUD.scope(!!(p.zoomed && wDef.scope));
-        SKY.Effects.ensureWeapon(p.weapon);
+        if (p.weapon) SKY.Effects.ensureWeapon(p.weapon);
         SKY.Effects.setHands(!!p.grapple);   // rope out = hook-gun arm up
         const reloadFrac = p.reloadT > 0
           ? 1 - p.reloadT / (wDef.reloadTime * p.mods.cdMult) : -1;
@@ -1037,7 +1051,8 @@ SKY.Game = (function () {
       // no gun / crosshair / combat HUD while in menus, dead or spectating
       const combat = !spectating && !!p && p.alive;
       SKY.Effects.speedLines(rdt, combat ? p.speed3() : 0, !combat || p.grounded);
-      SKY.Effects.setViewmodelVisible(combat);
+      // bare hands (IT runners): no gun viewmodel — hook arm still shows
+      SKY.Effects.setViewmodelVisible(combat && !!(p.weapon || p.grapple));
       if (!combat) SKY.Effects.setHands(false);
       SKY.HUD.combat(combat);
       if (!combat) { SKY.Input.sensMult = 1; SKY.HUD.scope(false); }

@@ -148,6 +148,34 @@
   }
   requestAnimationFrame(loop);
 
+  /* ONLINE must never freeze: rAF stops in background tabs, which froze the
+   * whole match for everyone whenever the HOST alt-tabbed (clients couldn't
+   * die, the clock stopped, knockbacks queued). While hidden and online, a
+   * timer keeps the fixed tick + net streaming alive — tabs with an active
+   * WebRTC connection are exempt from aggressive timer throttling, so the
+   * sim keeps running at (near) full rate. */
+  let bgTimer = null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && SKY.Net.online && !SKY.Replay.active) {
+      if (bgTimer) return;
+      last = performance.now();
+      bgTimer = setInterval(() => {
+        if (!SKY.Net.online) return;
+        const now = performance.now();
+        let rdt = (now - last) / 1000;
+        last = now;
+        if (rdt > 0.5) rdt = 0.5;
+        acc += rdt;
+        let n = 0;
+        while (acc >= STEP && n < 90) { SKY.Game.tick(STEP); acc -= STEP; n++; }
+      }, 33);
+    } else if (!document.hidden && bgTimer) {
+      clearInterval(bgTimer);
+      bgTimer = null;
+      last = performance.now();   // the resuming rAF must not see a giant dt
+    }
+  });
+
   /* ---------------------------------------------------------------------
    * Headless smoke test: open index.html?autotest — starts a match, drives
    * the player with synthetic input for ~9.5 game-seconds via setTimeout

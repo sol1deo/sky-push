@@ -24,7 +24,7 @@ SKY.SFX = (function () {
   /* ---------------- sample bank (https only) ---------------- */
   const canFetch = /^https?:$/.test(location.protocol);
   const MANIFEST = {
-    fire_light: 4, fire_med: 4, fire_heavy: 3, glfire: 3,
+    fire_light: 4, fire_med: 4, fire_heavy: 2, fire_sniper: 3, glfire: 3,
     boom: 3, boom_low: 1, thunder_smp: 1,
     hit: 2, headshot: 2, land: 2, step: 5, dash: 2, pad: 1, grapple: 1,
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
@@ -240,8 +240,10 @@ SKY.SFX = (function () {
 
   /* per-weapon shot table: [bank, rate, vol]. REAL unsuppressed gunshots
      (Rust & Blood) — rates near 1, character comes from the bank:
-     light = pistol · med = SMG/assault · heavy = shotgun/sniper ·
-     glfire = grenade launcher THOOMP */
+     light = pistol · med = SMG/assault · heavy = SHOTGUN only ·
+     sniper = bolt rifles · glfire = grenade launcher THOOMP
+     (shotgun and sniper each get their OWN bank — mixing them made the
+     shotgun randomly fire sniper cracks) */
   const FIRE_SND = {
     pistol:    ['fire_light', 1.0, 0.90],
     smg:       ['fire_med', 1.05, 0.65],
@@ -249,12 +251,12 @@ SKY.SFX = (function () {
     burst:     ['fire_light', 1.12, 0.75],
     scatter:   ['fire_heavy', 1.05, 0.90],
     boomstick: ['fire_heavy', 0.85, 1.0],
-    longshot:  ['fire_heavy', 1.0, 0.95],
+    longshot:  ['fire_sniper', 1.0, 0.95],
     magnum:    ['fire_light', 0.78, 0.95],
     mega:      ['fire_med', 0.85, 0.80],
     bouncer:   ['fire_light', 1.18, 0.70],
-    piston:    ['fire_heavy', 1.12, 0.90],
-    seeker:    ['fire_heavy', 0.70, 1.0],    // IT tag cannon: deep BOOM
+    piston:    ['fire_sniper', 1.12, 0.90],
+    seeker:    ['fire_heavy', 0.72, 1.0],    // IT tag cannon: shotgun BOOM
     lobber:    ['glfire', 1.0, 0.85],
     quad:      ['glfire', 1.1, 0.75],
   };
@@ -354,8 +356,10 @@ SKY.SFX = (function () {
                 [660, 880, 1100].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.2, i * 0.08)); },
     overtime(){ if (sample('alarm', 0.4)) return;
                 tone(220, 110, 0.5, 'sine', 0.18); },
-    airCannon(){ if (sample('aircannon', 0.8, 1.05)) return;
-                noise(0.32, 420, 0.4); },
+    airCannon(dist){ const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.05) return;
+                if (sample('aircannon', 0.8 * a, 1.05)) return;
+                noise(0.32, 420, 0.4 * a); },
     hit(p, dist) { const a = att(dist);
                 if (a < 0.06) return;
                 if (sample('hit', (0.3 + p * 0.22) * a, 1.15 - p * 0.25)) return;
