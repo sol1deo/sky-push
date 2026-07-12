@@ -39,9 +39,8 @@ because these creators are great:
     only curated picks ship, the raw library is not in the repo).
   - **400 Sounds Pack** — UI clicks/pops, coins, item pickups, air burst
     (per the pack's own license; raw library not in the repo).
-  - **Kenney** "Sci-Fi Sounds" / "Impact Sounds" / "Interface Sounds" /
-    "Music Jingles" (https://kenney.nl/assets?q=audio), CC0 — landings,
-    jump pad, grapple, thunder, round jingles (`go`, `win`, `lose`, `ko`).
+  - (Kenney sfx fully retired in build 44 — every effect now comes from the
+    two packs above; only the music tracks below remain external.)
 
 ## Music
 

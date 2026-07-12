@@ -23,7 +23,13 @@
 window.SKY = window.SKY || {};
 
 SKY.Replay = (function () {
-  const HZ = 60;                 // snapshot rate (every 2nd physics tick)
+  const HZ = 30;                 // snapshot rate — full MATCHES are recorded now,
+                                 // 30 Hz + playback interpolation keeps memory sane
+  // recording continues through the live round-end phase (arena stays hot)
+  function recordable() {
+    const st = SKY.Game.state;
+    return st === 'playing' || st === 'roundend';
+  }
   const _v = new THREE.Vector3();
   const _v2 = new THREE.Vector3();
   const _qa = new THREE.Quaternion();
@@ -36,6 +42,7 @@ SKY.Replay = (function () {
   /* ========================= recorder ========================= */
   let frames = [];               // { t, pw:[per-pawn snapshot] }
   let events = [];               // { t, fn, a } effect calls + '__bullet'
+  let marks = [];                // { t, label } round starts on the timeline
   let roster = null;             // [{ name, color }] captured with the frames
   let recAcc = 0;
   let fxOrig = null;             // unwrapped SKY.Effects functions
@@ -66,7 +73,7 @@ SKY.Replay = (function () {
       const orig = SKY.Effects[name];
       fxOrig[name] = orig;
       SKY.Effects[name] = function (...args) {
-        if (!api.active && SKY.Game.state === 'playing') {
+        if (!api.active && recordable()) {
           events.push({ t: SKY.Game.time, fn: name, a: args.map(serArg) });
         }
         return orig(...args);
@@ -77,13 +84,14 @@ SKY.Replay = (function () {
   function wipe() {
     frames.length = 0;
     events.length = 0;
+    marks.length = 0;
     roster = null;
     recAcc = 0;
   }
 
-  /* called from Game.tick while state === 'playing' (after visualTick) */
+  /* called from Game.tick while the arena is live (after visualTick) */
   function record(dt) {
-    if (api.active || SKY.Game.state !== 'playing') return;
+    if (api.active || !recordable()) return;
     recAcc += dt;
     if (recAcc < 1 / HZ - 1e-6) return;
     recAcc = 0;
@@ -140,11 +148,12 @@ SKY.Replay = (function () {
     const cutoff = G.time - SKY.TUNING.replay.seconds;
     while (frames.length && frames[0].t < cutoff) frames.shift();
     while (events.length && events[0].t < cutoff) events.shift();
+    while (marks.length && marks[0].t < cutoff) marks.shift();
   }
 
   /* bullet spawns can't be caught via Effects — weapons.js calls this */
   function bullet(pos, vel, gravity, life) {
-    if (api.active || SKY.Game.state !== 'playing') return;
+    if (api.active || !recordable()) return;
     events.push({
       t: SKY.Game.time, fn: '__bullet',
       p: [pos.x, pos.y, pos.z], v: [vel.x, vel.y, vel.z], g: gravity, l: life,
@@ -172,6 +181,14 @@ SKY.Replay = (function () {
   let hudWasOn = false;            // restore combat() when the HUD drops
   let dof = 0;                     // 0 off · 1 auto · 2 manual focus
   let dofFocus = 10, dofBlur = 0.5, dofAutoF = 10, dofBokeh = 1;
+  let dofRange = 1.6;              // in-focus DEPTH band (m) — covers a person
+  let layerMode = 0;               // 0 final · 1 depth map · 2 greenscreen
+  const greenKeep = { world: false, players: true, fx: false, weapon: true };
+  let shakeAmt = 0, shakeSpd = 1;  // handheld camera wobble
+  const _ray = new THREE.Ray();
+  const _ra = new THREE.Vector3(), _rb = new THREE.Vector3();
+  const _rp1 = new THREE.Vector3(), _rp2 = new THREE.Vector3();
+  const GREENBG = new THREE.Color(0x00ff00);
 
   function makeGhost(r) {
     const stub = {
@@ -433,6 +450,7 @@ SKY.Replay = (function () {
         camera.fov = SKY.U.damp(camera.fov, freeFov, 12, rdt);
       }
     }
+    if (shakeAmt > 0) applyShake();
     camera.updateProjectionMatrix();
   }
 
@@ -478,6 +496,25 @@ SKY.Replay = (function () {
       els[i].style.left = (p * 100) + '%';
       els[i].style.display = (p < -0.01 || p > 1.01) ? 'none' : '';
     }
+    positionMarks();
+  }
+
+  /* round-start tick marks along the timeline (R1 / R2 / …) */
+  function renderMarks() {
+    if (!frames.length || !marks.length) { ui.marks.innerHTML = ''; return; }
+    const t0 = frames[0].t;
+    ui.marks.innerHTML = marks.map(m =>
+      `<div class="rp-mark" data-t="${Math.max(0, m.t - t0).toFixed(2)}"><span>${m.label}</span></div>`).join('');
+    positionMarks();
+  }
+  function positionMarks() {
+    if (!ui.marks) return;
+    const w = Math.max(1e-4, viewEnd - viewStart);
+    for (const el of ui.marks.children) {
+      const p = (+el.dataset.t - viewStart) / w;
+      el.style.left = (p * 100) + '%';
+      el.style.display = (p < -0.005 || p > 1.005) ? 'none' : '';
+    }
   }
 
   /* ---------------- DoF ---------------- */
@@ -487,6 +524,14 @@ SKY.Replay = (function () {
       b.classList.toggle('sel', +b.dataset.d === n));
     ui.dofpanel.classList.toggle('hidden', !n);
     ui.focrow.style.display = n === 2 ? '' : 'none';
+  }
+
+  /* ---------------- layers ---------------- */
+  function setLayer(n) {
+    layerMode = n;
+    ui.layers.querySelectorAll('.rp-pill').forEach(b =>
+      b.classList.toggle('sel', +b.dataset.l === n));
+    ui.greenpanel.classList.toggle('hidden', n !== 2);
   }
   function focSliderToM(v) { return 0.5 * Math.pow(160, v); }   // 0.5 .. 80 m
   function focMToSlider(m) { return Math.log(m / 0.5) / Math.log(160); }
@@ -509,20 +554,25 @@ SKY.Replay = (function () {
 
   function autoFocusTick(rdt) {
     if (dof !== 1 || !ghosts.length) return;
-    // real-camera CENTER AF: focus the character nearest the middle of the
-    // frame; nobody there -> the world under the crosshair; still nothing ->
-    // hold the last focus (no snapping to infinity)
+    // real-camera CENTER AF: the character the crosshair RAY actually passes
+    // near wins (nearest one, capsule test — the old ~26° "most centered"
+    // cone missed constantly); nobody there -> orbit target -> the world
+    // under the crosshair; still nothing -> hold (no snapping to infinity)
     _v.set(0, 0, -1).applyQuaternion(camera.quaternion);
-    let target = -1, bestDot = 0.9;                 // ~26° cone around center
+    _ray.origin.copy(camera.position);
+    _ray.direction.copy(_v);
+    let target = -1;
     ghosts.forEach((g, i) => {
       if (!g.stub.alive) return;
       if (camMode === 'pov' && i === sel) return;   // never AF on your own head
-      _v2.set(g.stub.pos.x, g.stub.pos.y + g.stub.height * 0.6, g.stub.pos.z)
-         .sub(camera.position);
-      const d = _v2.length();
+      const s = g.stub;
+      _ra.set(s.pos.x, s.pos.y + 0.15, s.pos.z);
+      _rb.set(s.pos.x, s.pos.y + s.height, s.pos.z);
+      const miss = Math.sqrt(_ray.distanceSqToSegment(_ra, _rb, _rp1, _rp2));
+      const d = _rp1.distanceTo(camera.position);
       if (d < 0.4) return;
-      const dot = _v2.multiplyScalar(1 / d).dot(_v);
-      if (dot > bestDot) { bestDot = dot; target = d; }
+      // allowance widens with distance (far people are small on screen)
+      if (miss < 0.6 + d * 0.05 && (target < 0 || d < target)) target = d;
     });
     if (target < 0 && camMode === 'orbit' && ghosts[sel]) {
       const s = ghosts[sel].stub;
@@ -534,8 +584,64 @@ SKY.Replay = (function () {
       if (hit) target = hit.t;
     }
     if (target < 0) target = dofAutoF;
-    dofAutoF = SKY.U.damp(dofAutoF, SKY.U.clamp(target, 0.5, 150), 8, rdt);
+    dofAutoF = SKY.U.damp(dofAutoF, SKY.U.clamp(target, 0.5, 150), 12, rdt);
   }
+
+  /* ---------------- handheld shake (layered sines — deterministic in T,
+     so scrubbing back and forth reproduces the exact same wobble) -------- */
+  function applyShake() {
+    const t = T * shakeSpd;
+    const a = shakeAmt * 0.016;
+    const n = (f, s) => Math.sin(t * f + s) * 0.6 +
+                        Math.sin(t * f * 2.3 + s * 1.7) * 0.28 +
+                        Math.sin(t * f * 5.1 + s * 3.1) * 0.12;
+    _e.set(n(1.9, 1.3) * a, n(1.4, 4.7) * a, n(1.1, 8.9) * a * 0.5);
+    _qa.setFromEuler(_e);
+    camera.quaternion.multiply(_qa);
+    camera.position.x += n(1.2, 2.2) * a * 0.6;
+    camera.position.y += n(1.6, 6.1) * a * 0.6;
+  }
+
+  /* ---------------- greenscreen (HLAE-style layer isolation) ----------------
+     Renders ONLY the kept layers over pure #00ff00 — fog off, background
+     swapped, everything else hidden for one render call, then restored. */
+  function renderGreen(renderer, sc, cam) {
+    const stash = [];
+    const hide = (o) => { if (o.visible) { o.visible = false; stash.push(o); } };
+    const playerObjs = new Set();
+    for (const g of ghosts) {
+      playerObjs.add(g.av.root);
+      playerObjs.add(g.av.proxyRoot);
+      if (g.av.nameSpr) playerObjs.add(g.av.nameSpr);
+      if (g.stub._rope) playerObjs.add(g.stub._rope);
+    }
+    const mapRoot = SKY.Map.rootGroup;
+    for (const ch of sc.children) {
+      if (ch === cam || ch.isLight || ch.isCamera) continue;   // lights stay lit
+      if (ch === mapRoot) {
+        // hide the world's MESHES only — its mood lights keep shading the cast
+        if (!greenKeep.world) {
+          ch.traverse(o => {
+            if (o.isMesh || o.isSprite || o.isPoints || o.isLine) hide(o);
+          });
+        }
+        continue;
+      }
+      if (playerObjs.has(ch)) { if (!greenKeep.players) hide(ch); continue; }
+      if (!greenKeep.fx) hide(ch);
+    }
+    if (!greenKeep.weapon) for (const g of SKY.Effects.vmGroups()) hide(g);
+    const bg = sc.background, fog = sc.fog;
+    renderer.getClearColor(_gcPrev);
+    const prevA = renderer.getClearAlpha();
+    sc.background = null; sc.fog = null;
+    renderer.setClearColor(GREENBG, 1);   // clear color skips tone mapping = pure key green
+    renderer.render(sc, cam);
+    renderer.setClearColor(_gcPrev, prevA);
+    sc.background = bg; sc.fog = fog;
+    for (const o of stash) o.visible = true;
+  }
+  const _gcPrev = new THREE.Color();
 
   /* ---------------- UI ---------------- */
   const SPEEDS = [0.25, 0.5, 1, 2];
@@ -603,15 +709,27 @@ SKY.Replay = (function () {
       bok: $('rp-bok'), bokv: $('rp-bokv'),
       crossbtn: $('rp-crossbtn'), cross: $('rp-cross'),
       namebtn: $('rp-namebtn'), hudbtn: $('rp-hudbtn'),
+      tl: $('rp-timeline'), marks: $('rp-marks'),
+      layers: $('rp-layers'), greenpanel: $('rp-greenpanel'), keeps: $('rp-keeps'),
+      shake: $('rp-shake'), shakev: $('rp-shakev'),
+      shakespd: $('rp-shakespd'), shakespdv: $('rp-shakespdv'),
+      rng: $('rp-rng'), rngv: $('rp-rngv'),
     };
     ui.speeds.innerHTML = SPEEDS.map(s =>
       `<button class="rp-pill${s === 1 ? ' sel' : ''}" data-s="${s}">${s}×</button>`).join('');
     ui.cams.innerHTML = CAMS.map(([id, label]) =>
       `<button class="rp-pill${id === 'free' ? ' sel' : ''}" data-c="${id}">${label}</button>`).join('');
     ui.dof.innerHTML =
-      `<button class="rp-pill sel" data-d="0">No DoF</button>` +
+      `<button class="rp-pill sel" data-d="0">Off</button>` +
       `<button class="rp-pill" data-d="1">Auto</button>` +
       `<button class="rp-pill" data-d="2">Focus</button>`;
+    ui.layers.innerHTML =
+      `<button class="rp-pill sel" data-l="0">Final</button>` +
+      `<button class="rp-pill" data-l="1">Depth</button>` +
+      `<button class="rp-pill" data-l="2">Green</button>`;
+    ui.keeps.innerHTML = [['world', 'World'], ['players', 'Players'],
+                          ['fx', 'FX'], ['weapon', 'Weapon']].map(([k, label]) =>
+      `<button class="rp-pill${greenKeep[k] ? ' sel' : ''}" data-k="${k}">${label}</button>`).join('');
 
     ui.play.addEventListener('click', () => {
       if (!playing && T >= api.duration - 0.01) seek(0);
@@ -628,6 +746,28 @@ SKY.Replay = (function () {
     ui.dof.addEventListener('click', (e) => {
       const b = e.target.closest('.rp-pill');
       if (b) setDof(+b.dataset.d);
+    });
+    ui.layers.addEventListener('click', (e) => {
+      const b = e.target.closest('.rp-pill');
+      if (b) setLayer(+b.dataset.l);
+    });
+    ui.keeps.addEventListener('click', (e) => {
+      const b = e.target.closest('.rp-pill');
+      if (!b) return;
+      greenKeep[b.dataset.k] = !greenKeep[b.dataset.k];
+      b.classList.toggle('sel', greenKeep[b.dataset.k]);
+    });
+    ui.shake.addEventListener('input', () => {
+      shakeAmt = +ui.shake.value;
+      ui.shakev.textContent = shakeAmt <= 0.001 ? 'off' : Math.round(shakeAmt * 100) + '%';
+    });
+    ui.shakespd.addEventListener('input', () => {
+      shakeSpd = +ui.shakespd.value;
+      ui.shakespdv.textContent = Math.round(shakeSpd * 100) + '%';
+    });
+    ui.rng.addEventListener('input', () => {
+      dofRange = +ui.rng.value;
+      ui.rngv.textContent = dofRange.toFixed(1) + 'm';
     });
     ui.foc.addEventListener('input', () => {
       dofFocus = focSliderToM(+ui.foc.value);
@@ -699,7 +839,7 @@ SKY.Replay = (function () {
         if (document.pointerLockElement) document.exitPointerLock();
       }
     });
-    ui.track.addEventListener('wheel', (e) => {
+    ui.tl.addEventListener('wheel', (e) => {
       // zoom the timeline around the cursor (precise keyframe placement)
       e.preventDefault();
       if (api.duration <= 0) return;
@@ -712,7 +852,7 @@ SKY.Replay = (function () {
       viewEnd = viewStart + nw;
       positionKf();
     }, { passive: false });
-    ui.track.addEventListener('dblclick', () => {   // reset zoom
+    ui.tl.addEventListener('dblclick', () => {   // reset zoom
       viewStart = 0; viewEnd = api.duration; positionKf();
     });
 
@@ -777,7 +917,12 @@ SKY.Replay = (function () {
     ui.hudbtn.classList.remove('sel');
     ui.namebtn.classList.toggle('sel', namesOn);
     setDof(0);
+    setLayer(0);
     dofAutoF = 10;
+    shakeAmt = 0;
+    ui.shake.value = 0;
+    ui.shakev.textContent = 'off';
+    renderMarks();
     document.body.classList.add('replaying');
     ui.root.classList.remove('hidden');
     ui.root.classList.remove('ui-hidden');
@@ -810,6 +955,10 @@ SKY.Replay = (function () {
 
     record, wipe, bullet, seek,
     frameCount() { return frames.length; },
+    mark(label) {
+      if (api.active) return;
+      marks.push({ t: SKY.Game.time, label });
+    },
 
     /* snapshot the current buffer for the match-history archive */
     archive() {
@@ -817,6 +966,7 @@ SKY.Replay = (function () {
       return {
         frames: frames.slice(),
         events: events.slice(),
+        marks: marks.slice(),
         roster: roster.map(r => ({ ...r })),
         duration: +(frames[frames.length - 1].t - frames[0].t).toFixed(1),
       };
@@ -855,6 +1005,7 @@ SKY.Replay = (function () {
       archived = rec;
       frames = rec.frames.slice();
       events = rec.events.slice();
+      marks = (rec.marks || []).slice();
       roster = rec.roster.map(r => ({ ...r }));
       if (SKY.Map.currentId !== rec.map) SKY.Map.load(scene, rec.map);
       api.duration = frames[frames.length - 1].t - frames[0].t;
@@ -962,11 +1113,13 @@ SKY.Replay = (function () {
       uiTick();
     },
 
-    /* render hook — returns true if DoF handled the frame */
+    /* render hook — returns true if a layer mode / DoF handled the frame */
     render(renderer, sc, cam) {
+      if (layerMode === 1) { SKY.DoF.renderDepth(renderer, sc, cam); return true; }
+      if (layerMode === 2) { renderGreen(renderer, sc, cam); return true; }
       const d = effectiveDof();
       if (!d || d.blur <= 0.001) return false;
-      SKY.DoF.render(renderer, sc, cam, d.focus, d.blur, dofBokeh);
+      SKY.DoF.render(renderer, sc, cam, d.focus, d.blur, dofBokeh, dofRange);
       return true;
     },
   };

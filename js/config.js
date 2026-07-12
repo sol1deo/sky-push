@@ -465,6 +465,6 @@ SKY.TUNING = {
    * REPLAY / MATCH EDITOR — ring buffer of the last N seconds (V key)
    * ------------------------------------------------------------------ */
   replay: {
-    seconds: 30,          // how much history the ring buffer keeps
+    seconds: 720,         // ring cap — enough for a WHOLE match (all rounds)
   },
 };

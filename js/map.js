@@ -2281,5 +2281,6 @@ SKY.Map = (function () {
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
            setDoor, tryInteract, propCollisionLocal, skyFollow,
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
-           get currentId() { return currentId; } };
+           get currentId() { return currentId; },
+           get rootGroup() { return group; } };
 })();

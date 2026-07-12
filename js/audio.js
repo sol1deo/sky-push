@@ -25,9 +25,10 @@ SKY.SFX = (function () {
   const canFetch = /^https?:$/.test(location.protocol);
   const MANIFEST = {
     fire_light: 3, fire_med: 4, fire_heavy: 3, boom: 3, boom_low: 1, thunder_smp: 1,
-    hit: 2, headshot: 2, land: 3, step: 5, dash: 2, pad: 1, grapple: 1,
+    hit: 2, headshot: 2, land: 2, step: 5, dash: 2, pad: 1, grapple: 1,
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
-    go: 1, ko: 1, aircannon: 1, win: 1, lose: 1, uiclick: 4,
+    go: 1, ko: 2, aircannon: 1, win: 1, lose: 1, uiclick: 4,
+    taunt: 1, cheer: 1, alarm: 1,
   };
   const FILE_FOR = { thunder_smp: 'thunder' };   // bank name -> file prefix
   const bank = {};          // name -> [AudioBuffer] (buffers survive rebuilds)
@@ -241,20 +242,20 @@ SKY.SFX = (function () {
      to 1 and character comes from which bank a weapon draws:
      light = suppressed pistol · med = suppressed SMG · heavy = shotgun/sniper */
   const FIRE_SND = {
-    pistol:    ['fire_light', 1.05, 0.30],
-    smg:       ['fire_med', 1.10, 0.22],
-    blaster:   ['fire_med', 0.95, 0.26],
-    burst:     ['fire_light', 1.18, 0.24],
-    scatter:   ['fire_heavy', 1.05, 0.30],
-    boomstick: ['fire_heavy', 0.85, 0.36],
-    longshot:  ['fire_heavy', 1.0, 0.32],
-    magnum:    ['fire_light', 0.80, 0.34],
-    mega:      ['fire_med', 0.88, 0.26],
-    bouncer:   ['fire_light', 1.22, 0.22],
-    piston:    ['fire_heavy', 1.15, 0.30],
-    seeker:    ['fire_heavy', 0.70, 0.42],   // IT tag cannon: deep suppressed WHUMP
-    lobber:    ['boom_low', 2.4, 0.3],       // "thoomp"
-    quad:      ['boom_low', 2.6, 0.26],
+    pistol:    ['fire_light', 1.05, 0.55],
+    smg:       ['fire_med', 1.10, 0.40],
+    blaster:   ['fire_med', 0.95, 0.48],
+    burst:     ['fire_light', 1.18, 0.44],
+    scatter:   ['fire_heavy', 1.05, 0.55],
+    boomstick: ['fire_heavy', 0.85, 0.65],
+    longshot:  ['fire_heavy', 1.0, 0.58],
+    magnum:    ['fire_light', 0.80, 0.60],
+    mega:      ['fire_med', 0.88, 0.48],
+    bouncer:   ['fire_light', 1.22, 0.40],
+    piston:    ['fire_heavy', 1.15, 0.55],
+    seeker:    ['fire_heavy', 0.70, 0.72],   // IT tag cannon: deep suppressed WHUMP
+    lobber:    ['boom_low', 2.4, 0.5],       // "thoomp"
+    quad:      ['boom_low', 2.6, 0.45],
   };
 
   return {
@@ -319,7 +320,10 @@ SKY.SFX = (function () {
       if (master) master.gain.value = SKY.TUNING.audio.master * sfxVol();
       if (musicBus) musicBus.gain.value = musVol();
     },
-    taunt()   { tone(392, 392, 0.12, 'square', 0.2); tone(523, 523, 0.14, 'square', 0.2, 0.13); },
+    taunt()   { if (sample('taunt', 0.35, SKY.U.rand(0.94, 1.08))) return;
+                tone(392, 392, 0.12, 'square', 0.12); },
+    /* match-end crowd */
+    cheer()   { sample('cheer', 0.45); },
     honk()    { tone(220, 220, 0.35, 'sawtooth', 0.4); tone(277, 277, 0.35, 'sawtooth', 0.35); tone(220, 220, 0.4, 'sawtooth', 0.4, 0.5); tone(277, 277, 0.4, 'sawtooth', 0.35, 0.5); },
     rumble()  { noise(0.6, 140, 0.4); tone(70, 35, 0.5, 'sine', 0.35); },
     thunder() { if (sample('thunder_smp', 0.5, 0.85)) { noise(0.9, 220, 0.2, 'lowpass', 0.1); return; }
@@ -347,14 +351,15 @@ SKY.SFX = (function () {
                 tone(1320, 1760, 0.07, 'square', 0.14); },
     crown()   { if (sample('crown', 0.36)) return;
                 [660, 880, 1100].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.2, i * 0.08)); },
-    overtime(){ tone(220, 110, 0.5, 'sawtooth', 0.28); tone(330, 165, 0.5, 'sawtooth', 0.2, 0.1); },
+    overtime(){ if (sample('alarm', 0.4)) return;
+                tone(220, 110, 0.5, 'sine', 0.18); },
     airCannon(){ if (sample('aircannon', 0.45, 1.2)) return;
                 noise(0.32, 420, 0.4); },
     hit(p, dist) { const a = att(dist);
                 if (a < 0.06) return;
                 if (sample('hit', (0.3 + p * 0.22) * a, 1.15 - p * 0.25)) return;
                 tone(130 + p * 90, 40, 0.16, 'sine', (0.3 + p * 0.2) * a); },
-    jump()    { tone(300, 430, 0.08, 'sine', 0.1); },
+    jump()    { noise(0.05, 650, 0.05, 'bandpass'); },   // soft push-off puff
     land(i)   { if (sample('land', SKY.U.clamp(i, 0, 1) * 0.32, SKY.U.rand(0.95, 1.1))) return;
                 noise(0.09, 320, SKY.U.clamp(i, 0, 1) * 0.2); },
     pad()     { if (sample('pad', 0.4, 1.35)) return;
@@ -367,10 +372,8 @@ SKY.SFX = (function () {
     jammed()  { if (sample('dry', 0.44, 0.7)) { sample('dry', 0.32, 0.55, 0.09); return; }
                 tone(230, 150, 0.05, 'square', 0.16);
                 tone(170, 110, 0.07, 'square', 0.13, 0.09); },
-    scream(loud) { // comedic falling whistle
-      const v = loud ? 0.4 : 0.18;
-      tone(900, 200, 0.9, 'sawtooth', v);
-      tone(1350, 300, 0.9, 'sine', v * 0.5);
+    scream(loud) { // falling: a rush of wind, not the old sawtooth siren
+      noise(0.8, 750, loud ? 0.2 : 0.1, 'bandpass');
     },
     ko(loud)  { const v = loud ? 0.42 : 0.26;
                 if (sample('ko', v, 0.95)) return;

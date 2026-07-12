@@ -881,6 +881,8 @@ SKY.Effects = (function () {
       tip.getWorldPosition(vm.tipWorld);
       return vm.tipWorld;
     },
+    /* the camera-mounted first-person groups (replay greenscreen layers) */
+    vmGroups() { return [vm.group, vm.hook].filter(Boolean); },
 
     shake(amp) { shakeAmp = Math.min(shakeAmp + amp, 3); },
     cannonPop,

@@ -192,6 +192,8 @@ SKY.Game = (function () {
       if (crownMesh) { scene.remove(crownMesh); crownMesh = null; }
       if (api.mode === 'crown' || api.mode === 'spark') crownMesh = buildCrownMesh();
       api.roundNum = 0;
+      api._archived = false;
+      SKY.Replay.wipe();      // ONE recording per match — every round, start to end
       SKY.HUD.hideMenu();
       api.startRound(true);
     },
@@ -204,13 +206,13 @@ SKY.Game = (function () {
     },
 
     startRound(fromMenu) {
-      SKY.Replay.wipe();                          // fresh clip buffer per round
       SKY.Pickups.clear();
       SKY.Sparks.clear();
       api.sparkFrenzy = false; api.lootT = undefined;
       SKY.Map.resetRound();                       // rebuild if overtime crumbled it
       api.overtime = false;
       api.roundNum++;
+      SKY.Replay.mark('R' + api.roundNum);       // round tick on the replay timeline
       const spawns = SKY.World.spawnPoints;
       api.pawns.forEach((p, i) => {
         p.lives = SKY.TUNING.game.lives;
@@ -357,6 +359,11 @@ SKY.Game = (function () {
 
     toMenu() {
       if (SKY.Replay.active) SKY.Replay.close();
+      // quitting mid-match still banks the recording — nothing is lost
+      if (!api._archived && api.pawns.length && SKY.Replay.frameCount() > 120) {
+        api._archived = true;
+        SKY.Demos.archiveMatch(api.winner || null);
+      }
       SKY.Replay.wipe();
       SKY.Pickups.clear();
       SKY.Sparks.clear();
@@ -878,7 +885,11 @@ SKY.Game = (function () {
 
     /* display/state part of a round ending (host computes, clients replay) */
     netRoundEnd(winner, champion) {
-      SKY.Demos.archiveRound(winner);          // match history (offline only)
+      // the FULL match recording lands in history once, when the match ends
+      if (champion && !api._archived) {
+        api._archived = true;
+        SKY.Demos.archiveMatch(winner);
+      }
       api.winner = winner;
       api.state = champion ? 'matchend' : 'roundend';
       api.restartT = champion ? 12 : SKY.TUNING.game.roundRestartDelay;
@@ -893,6 +904,7 @@ SKY.Game = (function () {
           payout = SKY.Profile.matchReward(winner === api.player, api.player.koCount || 0);
         }
         SKY.HUD.showMatchEnd(winner, payout);
+        SKY.SFX.cheer();
       } else {
         // CS:GO-style banner up top; the arena stays live underneath
         const stars = winner

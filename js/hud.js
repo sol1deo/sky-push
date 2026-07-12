@@ -84,7 +84,11 @@ SKY.HUD = (function () {
   }
   window.addEventListener('click', ddClose);
   window.addEventListener('resize', ddClose);
-  window.addEventListener('wheel', () => ddClose(), { passive: true });
+  window.addEventListener('wheel', (e) => {
+    // scrolling INSIDE the popup scrolls the options — don't close it
+    if (e.target.closest && e.target.closest('.dd-pop')) return;
+    ddClose();
+  }, { passive: true });
 
   const api = {
     botCount: 3,

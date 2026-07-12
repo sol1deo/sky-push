@@ -57,6 +57,7 @@
     SKY.TUNING.camera.baseFov, window.innerWidth / window.innerHeight, 0.08, 500);
   camera.rotation.order = 'YXZ';
   scene.add(camera);   // required: the viewmodel is parented to the camera
+  SKY.DBG = { renderer, scene, camera };   // test-harness handles (CDP checks)
 
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);

@@ -310,8 +310,11 @@
   .demo-name { font-size:11px; font-weight:600; color:var(--dim); }
   .demo-name.me { color:var(--txt); }
   .demo-name small { color:var(--faint); font-size:9px; margin-left:3px; }
-  .demo-row .sel-btn { position:absolute; right:2px; top:50%; transform:translateY(-50%);
-    border:1px solid var(--line); }
+  .demo-row { padding-right:118px; }
+  .demo-btns { position:absolute; right:2px; top:50%; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:5px; }
+  .demo-btns .sel-btn { border:1px solid var(--line); }
+  .demo-save.saved { color:var(--brand); border-color:var(--brand); }
 
   .sel-row { margin-top:16px; display:flex; gap:6px; justify-content:center; align-items:center; }
   .sel-row .lbl { font-size:10px; font-weight:600; letter-spacing:.2em; color:var(--faint);
@@ -761,14 +764,39 @@
   #rp-hint { position:absolute; left:50%; bottom:86px; transform:translateX(-50%);
     font-size:9.5px; font-weight:500; letter-spacing:.2em; text-transform:uppercase;
     color:var(--faint); text-shadow:0 1px 3px rgba(0,0,0,.5); white-space:nowrap; }
-  #rp-bar { position:absolute; left:50%; bottom:22px; transform:translateX(-50%);
-    display:flex; gap:14px; align-items:center; background:var(--bg);
-    backdrop-filter:blur(18px); border:1px solid var(--line); border-radius:10px;
-    padding:11px 16px; pointer-events:auto; animation:rpbarin .3s cubic-bezier(.34,1.56,.64,1); }
+  #rp-bar { position:absolute; left:50%; bottom:18px; transform:translateX(-50%);
+    width:min(1180px, calc(100vw - 44px));
+    display:flex; gap:14px; align-items:flex-end; background:var(--bg);
+    backdrop-filter:blur(18px); border:1px solid var(--line); border-radius:12px;
+    padding:12px 18px; pointer-events:auto; animation:rpbarin .3s cubic-bezier(.34,1.56,.64,1); }
   @keyframes rpbarin { from { opacity:0; transform:translateX(-50%) translateY(14px); } }
-  #replay-ov.ui-hidden #rp-bar, #replay-ov.ui-hidden #rp-top, #replay-ov.ui-hidden #rp-hint {
-    opacity:0; pointer-events:none; }
-  #rp-bar, #rp-top, #rp-hint { transition:opacity .2s; }
+  #replay-ov.ui-hidden #rp-bar, #replay-ov.ui-hidden #rp-top, #replay-ov.ui-hidden #rp-hint,
+  #replay-ov.ui-hidden .rp-panel { opacity:0; pointer-events:none; }
+  #rp-bar, #rp-top, #rp-hint, .rp-panel { transition:opacity .2s; }
+
+  /* side panels */
+  .rp-panel { position:absolute; top:50%; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:14px; background:var(--bg);
+    backdrop-filter:blur(18px); border:1px solid var(--line); border-radius:12px;
+    padding:14px; pointer-events:auto; width:172px; }
+  #rp-left { left:18px; }
+  #rp-right { right:18px; width:224px; }
+  .rp-sec { display:flex; flex-direction:column; gap:7px; }
+  .rp-sec small { font-size:8.5px; font-weight:800; letter-spacing:.24em;
+    text-transform:uppercase; color:var(--faint); }
+  .rp-col { display:flex; flex-direction:column; gap:2px; }
+  .rp-col .rp-pill { text-align:left; }
+  .rp-col .rp-pill i { float:right; font-style:normal; opacity:.4; font-size:9px; }
+  .rp-row { display:flex; gap:2px; flex-wrap:wrap; }
+  .rp-row .rp-pill { flex:1; padding:7px 6px; text-align:center; }
+  #rp-player { display:flex; gap:2px; align-items:center; }
+  #rp-player #rp-pname { flex:1; text-align:center; font-size:11px; font-weight:800;
+    font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #rp-exit { border:1px solid var(--line2); text-align:center; }
+  #rp-greenpanel { display:flex; flex-direction:column; gap:5px; }
+  .rp-keeplbl { font-size:8.5px; font-weight:700; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--faint); }
+  #rp-keeps .rp-pill.sel { background:#38d267; color:#08130b; }
   #rp-play { position:relative; flex:none; width:34px; height:34px; border-radius:50%;
     background:#fff; border:none; cursor:pointer;
     transition:transform .16s cubic-bezier(.34,1.56,.64,1); }
@@ -780,18 +808,27 @@
   #rp-play.playing .ico { width:9px; height:11px; border-top:none; border-bottom:none;
     border-left:3px solid #0d0f13; border-right:3px solid #0d0f13; margin-left:0; }
   #rp-time { font-size:11px; font-weight:600; color:var(--dim);
-    font-variant-numeric:tabular-nums; min-width:92px; text-align:center; }
-  #rp-track { position:relative; width:250px; height:22px; cursor:pointer; }
-  #rp-track::before { content:''; position:absolute; left:0; right:0; top:10px; height:2px;
-    background:rgba(255,255,255,.14); border-radius:1px; }
-  #rp-fill { position:absolute; left:0; top:10px; height:2px; background:#fff;
-    border-radius:1px; }
-  #rp-handle { position:absolute; top:11px; left:0; width:11px; height:11px;
-    border-radius:50%; background:#fff; transform:translate(-50%,-50%);
+    font-variant-numeric:tabular-nums; min-width:92px; text-align:center;
+    align-self:center; }
+  /* the BIG timeline: keyframe lane on top, scrub lane below */
+  #rp-timeline { position:relative; flex:1; min-width:0; }
+  #rp-keys { position:relative; height:18px; pointer-events:none;
+    border-bottom:1px solid var(--line2); }
+  #rp-track { position:relative; height:26px; cursor:pointer; }
+  #rp-track::before { content:''; position:absolute; left:0; right:0; top:12px; height:3px;
+    background:rgba(255,255,255,.14); border-radius:2px; }
+  #rp-fill { position:absolute; left:0; top:12px; height:3px; background:#fff;
+    border-radius:2px; }
+  #rp-handle { position:absolute; top:13px; left:0; width:13px; height:13px;
+    border-radius:50%; background:#fff; transform:translate(-50%,-50%); z-index:2;
     transition:scale .15s cubic-bezier(.34,1.56,.64,1); }
-  #rp-track:hover #rp-handle { scale:1.4; }
-  #rp-keys { position:absolute; inset:0; pointer-events:none; }
-  .rp-kf { position:absolute; top:10px; width:9px; height:9px; background:#ffd34d;
+  #rp-track:hover #rp-handle { scale:1.35; }
+  #rp-marks { position:absolute; inset:0; pointer-events:none; }
+  .rp-mark { position:absolute; top:4px; bottom:4px; width:2px;
+    background:rgba(255,211,77,.55); transform:translateX(-50%); }
+  .rp-mark span { position:absolute; left:4px; top:-1px; font-size:8px; font-weight:800;
+    letter-spacing:.14em; color:rgba(255,211,77,.8); white-space:nowrap; }
+  .rp-kf { position:absolute; top:8px; width:10px; height:10px; background:#ffd34d;
     transform:translate(-50%,-50%) rotate(45deg); border-radius:1px; z-index:2;
     pointer-events:auto; cursor:grab; border:1px solid rgba(0,0,0,.35);
     animation:kfpop .3s cubic-bezier(.34,1.56,.64,1) backwards; }
@@ -800,17 +837,15 @@
   @keyframes kfpop { from { transform:translate(-50%,-50%) rotate(45deg) scale(0); } }
   .rp-disabled { opacity:.3; pointer-events:none; }
 
-  /* DoF mini-panel above the bar */
-  #rp-dofpanel { position:absolute; left:50%; bottom:112px; transform:translateX(-50%);
-    display:flex; gap:20px; align-items:center; background:var(--bg);
-    backdrop-filter:blur(18px); border:1px solid var(--line); border-radius:8px;
-    padding:9px 16px; pointer-events:auto; }
-  #replay-ov.ui-hidden #rp-dofpanel { opacity:0; pointer-events:none; }
-  .rp-dofrow { display:flex; gap:10px; align-items:center; font-size:10px;
-    font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); }
-  .rp-dofrow input[type=range] { width:110px; accent-color:#fff; }
-  .rp-dofrow b { min-width:38px; text-align:right; color:var(--txt);
-    font-variant-numeric:tabular-nums; font-size:11px; }
+  /* slider rows (DoF / shake) */
+  .rp-dofrow { display:flex; gap:8px; align-items:center; font-size:9.5px;
+    font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--dim); }
+  .rp-dofrow span { width:52px; flex:none; }
+  .rp-dofrow input[type=range] { flex:1; min-width:0; accent-color:#fff; }
+  .rp-dofrow b { min-width:36px; text-align:right; color:var(--txt);
+    font-variant-numeric:tabular-nums; font-size:10.5px; }
+  #rp-dofpanel { display:flex; flex-direction:column; gap:6px; }
+  #rp-dofpanel.hidden { display:none; }
 
   /* POV crosshair (toggle in the bar) */
   #rp-cross { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -1073,41 +1108,73 @@
     <div class="l v" style="top:0"></div><div class="l v" style="bottom:0"></div>
   </div>
   <div id="rp-hint">hold lmb — look · wasd + e/q — fly · space — play · k — keyframe (drag / del / right-click) · wheel on timeline — zoom · , . — frame step · h — hide ui · esc — exit</div>
-  <div id="rp-dofpanel" class="hidden">
-    <div class="rp-dofrow" id="rp-focrow" style="display:none"><span>Focus</span>
-      <input type="range" id="rp-foc" min="0" max="1" step="0.001" value="0.59"><b id="rp-focv">10m</b></div>
-    <div class="rp-dofrow"><span>Aperture</span>
-      <input type="range" id="rp-blur" min="0.05" max="1" step="0.01" value="0.5"><b id="rp-blurv">f/2.4</b></div>
-    <div class="rp-dofrow"><span>Bokeh</span>
-      <input type="range" id="rp-bok" min="0.2" max="2.5" step="0.05" value="1"><b id="rp-bokv">100%</b></div>
+
+  <!-- LEFT: camera / player / keyframes -->
+  <div id="rp-left" class="rp-panel">
+    <div class="rp-sec"><small>Camera</small>
+      <div class="rp-col" id="rp-cams"></div>
+    </div>
+    <div class="rp-sec"><small>Player</small>
+      <div id="rp-player">
+        <button class="rp-pill" id="rp-prev">‹</button>
+        <span id="rp-pname"></span>
+        <button class="rp-pill" id="rp-next">›</button>
+      </div>
+      <div class="rp-col">
+        <button class="rp-pill sel" id="rp-namebtn" title="show player nicknames">Names</button>
+        <button class="rp-pill" id="rp-hudbtn" title="show the full game HUD (POV camera)">HUD</button>
+        <button class="rp-pill" id="rp-crossbtn" title="POV crosshair">⌖ Crosshair</button>
+      </div>
+    </div>
+    <div class="rp-sec"><small>Keyframes</small>
+      <div class="rp-col">
+        <button class="rp-pill" id="rp-addkf">+ Key <i>K</i></button>
+        <button class="rp-pill rp-disabled" id="rp-delkf">Delete</button>
+        <button class="rp-pill" id="rp-clearkf">Clear all</button>
+      </div>
+    </div>
+    <button class="rp-pill" id="rp-exit">✕ Exit</button>
   </div>
+
+  <!-- RIGHT: lens / layers / shake -->
+  <div id="rp-right" class="rp-panel">
+    <div class="rp-sec"><small>Depth of field</small>
+      <div class="rp-row" id="rp-dof"></div>
+      <div id="rp-dofpanel" class="hidden">
+        <div class="rp-dofrow" id="rp-focrow" style="display:none"><span>Focus</span>
+          <input type="range" id="rp-foc" min="0" max="1" step="0.001" value="0.59"><b id="rp-focv">10m</b></div>
+        <div class="rp-dofrow"><span>Aperture</span>
+          <input type="range" id="rp-blur" min="0.05" max="1" step="0.01" value="0.5"><b id="rp-blurv">f/2.4</b></div>
+        <div class="rp-dofrow"><span>Depth</span>
+          <input type="range" id="rp-rng" min="0" max="6" step="0.1" value="1.6"><b id="rp-rngv">1.6m</b></div>
+        <div class="rp-dofrow"><span>Bokeh</span>
+          <input type="range" id="rp-bok" min="0.2" max="2.5" step="0.05" value="1"><b id="rp-bokv">100%</b></div>
+      </div>
+    </div>
+    <div class="rp-sec"><small>Layers</small>
+      <div class="rp-row" id="rp-layers"></div>
+      <div id="rp-greenpanel" class="hidden">
+        <div class="rp-keeplbl">render (rest = green)</div>
+        <div class="rp-row" id="rp-keeps"></div>
+      </div>
+    </div>
+    <div class="rp-sec"><small>Handheld shake</small>
+      <div class="rp-dofrow"><span>Amount</span>
+        <input type="range" id="rp-shake" min="0" max="1" step="0.01" value="0"><b id="rp-shakev">off</b></div>
+      <div class="rp-dofrow"><span>Speed</span>
+        <input type="range" id="rp-shakespd" min="0.3" max="3" step="0.05" value="1"><b id="rp-shakespdv">100%</b></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM: transport + the big timeline (keys ride ABOVE the scrub line) -->
   <div id="rp-bar">
     <button id="rp-play"><span class="ico"></span></button>
     <div id="rp-time">0:00.0 / 0:00.0</div>
-    <div id="rp-track"><div id="rp-fill"></div><div id="rp-handle"></div><div id="rp-keys"></div></div>
-    <div class="rp-sep"></div>
+    <div id="rp-timeline">
+      <div id="rp-keys"></div>
+      <div id="rp-track"><div id="rp-marks"></div><div id="rp-fill"></div><div id="rp-handle"></div></div>
+    </div>
     <div class="rp-group" id="rp-speeds"></div>
-    <div class="rp-sep"></div>
-    <div class="rp-group" id="rp-cams"></div>
-    <div class="rp-sep"></div>
-    <div id="rp-player">
-      <button class="rp-pill" id="rp-prev">‹</button>
-      <span id="rp-pname"></span>
-      <button class="rp-pill" id="rp-next">›</button>
-      <button class="rp-pill" id="rp-crossbtn" title="POV crosshair">⌖</button>
-      <button class="rp-pill sel" id="rp-namebtn" title="show player nicknames">Names</button>
-      <button class="rp-pill" id="rp-hudbtn" title="show the full game HUD (POV camera)">HUD</button>
-    </div>
-    <div class="rp-sep"></div>
-    <div class="rp-group" id="rp-dof"></div>
-    <div class="rp-sep"></div>
-    <div class="rp-group">
-      <button class="rp-pill" id="rp-addkf">+ Key</button>
-      <button class="rp-pill rp-disabled" id="rp-delkf">Del</button>
-      <button class="rp-pill" id="rp-clearkf">Clear</button>
-    </div>
-    <div class="rp-sep"></div>
-    <button class="rp-pill" id="rp-exit">Exit</button>
   </div>
 </div>
 
@@ -1125,7 +1192,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 43</div>
+  <div id="build-foot" class="rail-foot">prototype · build 44</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1400,36 +1467,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=43"></script>
-<script src="js/profile.js?v=43"></script>
-<script src="js/utils.js?v=43"></script>
-<script src="js/gfx.js?v=43"></script>
-<script src="js/mapdata.js?v=43"></script>
-<script src="js/audio.js?v=43"></script>
-<script src="js/settings.js?v=43"></script>
-<script src="js/input.js?v=43"></script>
-<script src="js/world.js?v=43"></script>
-<script src="js/effects.js?v=43"></script>
-<script src="js/map.js?v=43"></script>
-<script src="js/characters.js?v=43"></script>
-<script src="js/pawn.js?v=43"></script>
-<script src="js/weapons.js?v=43"></script>
-<script src="js/loot.js?v=43"></script>
-<script src="js/pickups.js?v=43"></script>
-<script src="js/sparks.js?v=43"></script>
-<script src="js/grenades.js?v=43"></script>
-<script src="js/grapple.js?v=43"></script>
-<script src="js/bots.js?v=43"></script>
-<script src="js/hud.js?v=43"></script>
-<script src="js/game.js?v=43"></script>
-<script src="js/attract.js?v=43"></script>
-<script src="js/net.js?v=43"></script>
-<script src="js/dof.js?v=43"></script>
-<script src="js/replay.js?v=43"></script>
-<script src="js/demos.js?v=43"></script>
-<script src="js/locker.js?v=43"></script>
-<script src="js/assets.js?v=43"></script>
-<script src="js/editor.js?v=43"></script>
-<script src="js/main.js?v=43"></script>
+<script src="js/config.js?v=44"></script>
+<script src="js/profile.js?v=44"></script>
+<script src="js/utils.js?v=44"></script>
+<script src="js/gfx.js?v=44"></script>
+<script src="js/mapdata.js?v=44"></script>
+<script src="js/audio.js?v=44"></script>
+<script src="js/settings.js?v=44"></script>
+<script src="js/input.js?v=44"></script>
+<script src="js/world.js?v=44"></script>
+<script src="js/effects.js?v=44"></script>
+<script src="js/map.js?v=44"></script>
+<script src="js/characters.js?v=44"></script>
+<script src="js/pawn.js?v=44"></script>
+<script src="js/weapons.js?v=44"></script>
+<script src="js/loot.js?v=44"></script>
+<script src="js/pickups.js?v=44"></script>
+<script src="js/sparks.js?v=44"></script>
+<script src="js/grenades.js?v=44"></script>
+<script src="js/grapple.js?v=44"></script>
+<script src="js/bots.js?v=44"></script>
+<script src="js/hud.js?v=44"></script>
+<script src="js/game.js?v=44"></script>
+<script src="js/attract.js?v=44"></script>
+<script src="js/net.js?v=44"></script>
+<script src="js/dof.js?v=44"></script>
+<script src="js/replay.js?v=44"></script>
+<script src="js/demos.js?v=44"></script>
+<script src="js/locker.js?v=44"></script>
+<script src="js/assets.js?v=44"></script>
+<script src="js/editor.js?v=44"></script>
+<script src="js/main.js?v=44"></script>
 </body>
 </html>
