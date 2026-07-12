@@ -478,7 +478,13 @@ SKY.Weapons = (function () {
   const pendingCannon = [];
   function tryFireAirCannon(pawn, pawns) {
     const C = SKY.TUNING.cannon;
-    if (pawn.acCd > 0 || !pawn.alive || pawn.tauntT > 0 || pawn.ragdoll) return false;
+    if (pawn.acCd > 0 || !pawn.alive || pawn.tauntT > 0) return false;
+    // knocked back (heavy-hit jam or ragdolling): the cannon is jammed too —
+    // same CLUNK as the hook, so a clean yeet can't be cannon-recovered either
+    if (pawn.ragdoll || pawn.hookLockT > 0) {
+      if (pawn.isLocal) SKY.SFX.jammed();
+      return false;
+    }
     if (SKY.Game.roundTime < 0.75) return false;
     pawn.acCd = C.cooldown * pawn.mods.cdMult;
     pendingCannon.push({ pawn, t: C.fireDelay || 0 });
@@ -550,6 +556,8 @@ SKY.Weapons = (function () {
     }
     SKY.Effects.muzzle(ori, W.color, false, W.kick);
     SKY.SFX.fire(m.w, m.tier / 3, W.kick * 0.6, listenDist(ori));
+    // remote pawns don't tick cooldowns here — raise their gun arm anyway
+    if (pawn.avatar && pawn.avatar.hotFor) pawn.avatar.hotFor(0.9);
   }
 
   return {

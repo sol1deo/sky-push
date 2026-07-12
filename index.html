@@ -380,7 +380,8 @@
   #dm-bonus img { width:44px; height:24px; object-fit:contain; }
   #dm-bonus #dmb-name { font-size:12px; font-weight:800; letter-spacing:.08em; color:#ffd34d; }
   #loadout-ov { position:absolute; inset:0; display:flex; align-items:center;
-    justify-content:center; background:rgba(8,10,14,.55); z-index:40; }
+    justify-content:center; background:rgba(8,10,14,.55); z-index:40;
+    pointer-events:auto; }   /* #hud is pointer-events:none — re-enable clicks */
   #loadout-ov.hidden { display:none; }
   .loadout-panel { background:var(--bg2); border:1px solid var(--line);
     border-radius:14px; padding:22px 26px; backdrop-filter:blur(14px);
@@ -514,6 +515,8 @@
 
   /* ---------- replay / match editor ---------- */
   body.replaying #hud, body.replaying #pause-ov, body.replaying #menu { display:none !important; }
+  /* replay POV with the HUD toggle on: bring the full game HUD back */
+  body.replaying.rp-hud #hud { display:block !important; }
   #replay-ov { position:absolute; inset:0; z-index:24; pointer-events:none; color:var(--txt); }
   #rp-top { position:absolute; top:20px; left:50%; transform:translateX(-50%); display:flex;
     gap:10px; align-items:center; font-size:11px; font-weight:700; letter-spacing:.3em;
@@ -672,6 +675,7 @@
   .map-edit { margin-left:8px; opacity:.45; font-weight:400; }
   .custom-map:hover .map-edit { opacity:1; }
   .map-edit:hover { color:#ffd34d; }
+  .map-del:hover { color:#ff5a4a; }
   #editor-ov select, #editor-ov option { background:#14181f; color:var(--txt); }
   #ed-side { position:absolute; right:0; top:52px; bottom:40px; width:250px;
     display:flex; flex-direction:column;
@@ -830,8 +834,10 @@
   <div id="rp-dofpanel" class="hidden">
     <div class="rp-dofrow" id="rp-focrow" style="display:none"><span>Focus</span>
       <input type="range" id="rp-foc" min="0" max="1" step="0.001" value="0.59"><b id="rp-focv">10m</b></div>
-    <div class="rp-dofrow"><span>Blur</span>
-      <input type="range" id="rp-blur" min="0.05" max="1" step="0.01" value="0.5"><b id="rp-blurv">50%</b></div>
+    <div class="rp-dofrow"><span>Aperture</span>
+      <input type="range" id="rp-blur" min="0.05" max="1" step="0.01" value="0.5"><b id="rp-blurv">f/2.4</b></div>
+    <div class="rp-dofrow"><span>Bokeh</span>
+      <input type="range" id="rp-bok" min="0.2" max="2.5" step="0.05" value="1"><b id="rp-bokv">100%</b></div>
   </div>
   <div id="rp-bar">
     <button id="rp-play"><span class="ico"></span></button>
@@ -847,6 +853,8 @@
       <span id="rp-pname"></span>
       <button class="rp-pill" id="rp-next">›</button>
       <button class="rp-pill" id="rp-crossbtn" title="POV crosshair">⌖</button>
+      <button class="rp-pill sel" id="rp-namebtn" title="show player nicknames">Names</button>
+      <button class="rp-pill" id="rp-hudbtn" title="show the full game HUD (POV camera)">HUD</button>
     </div>
     <div class="rp-sep"></div>
     <div class="rp-group" id="rp-dof"></div>
@@ -872,7 +880,7 @@
     <button class="rail-btn" id="tab-editor">Editor</button>
     <button class="rail-btn" id="open-settings">Settings</button>
     <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
-    <div class="rail-foot">prototype · build 39</div>
+    <div class="rail-foot">prototype · build 40</div>
   </div>
   <div id="menu-panel">
   <div class="card" style="text-align:center;">
@@ -1045,6 +1053,7 @@
     <button class="ed-btn" id="ed-addspawn">+ Spawn</button>
     <button class="ed-btn" id="ed-additem">+ Item</button>
     <button class="ed-btn sel" id="ed-anim">Anim</button>
+    <button class="ed-btn" id="ed-coll" title="show the game's real collision boxes">Coll</button>
     <span class="ed-flex"></span>
     <button class="ed-btn" id="ed-new">New</button>
     <select class="ed-btn" id="ed-load"><option value="">open map…</option></select>
@@ -1052,6 +1061,7 @@
     <input type="file" id="ed-import" accept=".json" class="hidden">
     <button class="ed-btn" id="ed-save">Save</button>
     <button class="ed-btn" id="ed-export">Export</button>
+    <button class="ed-btn" id="ed-delete" title="delete this map and its backups">Delete</button>
     <button class="ed-btn ed-primary" id="ed-test">▶ Test</button>
     <button class="ed-btn" id="ed-exit">Exit</button>
   </div>
@@ -1123,36 +1133,36 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=39"></script>
-<script src="js/profile.js?v=39"></script>
-<script src="js/utils.js?v=39"></script>
-<script src="js/gfx.js?v=39"></script>
-<script src="js/mapdata.js?v=39"></script>
-<script src="js/audio.js?v=39"></script>
-<script src="js/settings.js?v=39"></script>
-<script src="js/input.js?v=39"></script>
-<script src="js/world.js?v=39"></script>
-<script src="js/effects.js?v=39"></script>
-<script src="js/map.js?v=39"></script>
-<script src="js/characters.js?v=39"></script>
-<script src="js/pawn.js?v=39"></script>
-<script src="js/weapons.js?v=39"></script>
-<script src="js/loot.js?v=39"></script>
-<script src="js/pickups.js?v=39"></script>
-<script src="js/sparks.js?v=39"></script>
-<script src="js/grenades.js?v=39"></script>
-<script src="js/grapple.js?v=39"></script>
-<script src="js/bots.js?v=39"></script>
-<script src="js/hud.js?v=39"></script>
-<script src="js/game.js?v=39"></script>
-<script src="js/attract.js?v=39"></script>
-<script src="js/net.js?v=39"></script>
-<script src="js/dof.js?v=39"></script>
-<script src="js/replay.js?v=39"></script>
-<script src="js/demos.js?v=39"></script>
-<script src="js/locker.js?v=39"></script>
-<script src="js/assets.js?v=39"></script>
-<script src="js/editor.js?v=39"></script>
-<script src="js/main.js?v=39"></script>
+<script src="js/config.js?v=40"></script>
+<script src="js/profile.js?v=40"></script>
+<script src="js/utils.js?v=40"></script>
+<script src="js/gfx.js?v=40"></script>
+<script src="js/mapdata.js?v=40"></script>
+<script src="js/audio.js?v=40"></script>
+<script src="js/settings.js?v=40"></script>
+<script src="js/input.js?v=40"></script>
+<script src="js/world.js?v=40"></script>
+<script src="js/effects.js?v=40"></script>
+<script src="js/map.js?v=40"></script>
+<script src="js/characters.js?v=40"></script>
+<script src="js/pawn.js?v=40"></script>
+<script src="js/weapons.js?v=40"></script>
+<script src="js/loot.js?v=40"></script>
+<script src="js/pickups.js?v=40"></script>
+<script src="js/sparks.js?v=40"></script>
+<script src="js/grenades.js?v=40"></script>
+<script src="js/grapple.js?v=40"></script>
+<script src="js/bots.js?v=40"></script>
+<script src="js/hud.js?v=40"></script>
+<script src="js/game.js?v=40"></script>
+<script src="js/attract.js?v=40"></script>
+<script src="js/net.js?v=40"></script>
+<script src="js/dof.js?v=40"></script>
+<script src="js/replay.js?v=40"></script>
+<script src="js/demos.js?v=40"></script>
+<script src="js/locker.js?v=40"></script>
+<script src="js/assets.js?v=40"></script>
+<script src="js/editor.js?v=40"></script>
+<script src="js/main.js?v=40"></script>
 </body>
 </html>

@@ -87,13 +87,15 @@ SKY.Pickups = (function () {
   }
 
   /* deep saturated beacon colors — the shared rarity hues wash out to white
-     under additive glow, so pickups use their own punchier set */
-  const BEACON = { starter: '#8a9cb8', common: '#8a9cb8', rare: '#1f7dff', epic: '#d92cff' };
+     under additive glow, so pickups use their own punchier set. Commons get
+     the same treatment in plain WHITE (the old grey glow read as "no glow"
+     and the item looked like it was just floating). */
+  const BEACON = { starter: '#ffffff', common: '#ffffff', rare: '#1f7dff', epic: '#d92cff' };
 
   function buildVisual(item) {
     const grp = new THREE.Group();
-    const rcolor = BEACON[item.rarity] || '#8a9cb8';
-    const strong = item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.3;
+    const rcolor = BEACON[item.rarity] || '#ffffff';
+    const strong = item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.5;
     if (item.kind === 'weapon') {
       const m = SKY.Effects.buildWeaponMesh(item.id);
       m.scale.setScalar(2.1);
@@ -117,8 +119,8 @@ SKY.Pickups = (function () {
     glow.scale.set(gs, gs, 1);
     glow.position.y = 1.0;
     grp.add(glow);
-    // rare/epic drops get a subtle light pillar you can spot across the map
-    if (strong > 0.5) {
+    // every drop gets the light pillar (white for commons, hue for rare/epic)
+    if (strong > 0.4) {
       const beam = new THREE.Mesh(
         new THREE.CylinderGeometry(0.12, 0.17, 5, 8, 1, true),
         new THREE.MeshBasicMaterial({

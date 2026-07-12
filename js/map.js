@@ -1392,6 +1392,181 @@ SKY.Map = (function () {
     return boxes;
   }
 
+  /* =============================================================
+   * MESH-FIT PROP COLLISION (prop setting `coll: 'mesh'`)
+   * Voxelize the model's actual triangles into a small set of boxes in the
+   * prop's LOCAL (unscaled, unrotated) frame, then greedily merge filled
+   * cells. Ramps, stacked crates and openings collide like they LOOK
+   * instead of as one giant bounding box. Shared with the editor's
+   * collision display via SKY.Map.propCollisionLocal.
+   * ============================================================= */
+  const _pm = new THREE.Matrix4();
+  const _pa = new THREE.Vector3(), _pb = new THREE.Vector3(), _pc = new THREE.Vector3();
+  const _pe1 = new THREE.Vector3(), _pe2 = new THREE.Vector3(), _pp = new THREE.Vector3();
+
+  /* matrix of `node` relative to `root` (root's own transform excluded) */
+  function relMatrix(node, root, m) {
+    m.identity();
+    for (let n = node; n && n !== root; n = n.parent) {
+      n.updateMatrix();
+      m.premultiply(n.matrix);
+    }
+    return m;
+  }
+
+  function collMeshes(obj) {
+    const meshes = [];
+    obj.traverse((o) => {
+      if (o.isMesh && o.geometry && o.geometry.attributes.position &&
+          o.name !== 'edmarker' && o.name !== 'edcoll' && o.name !== 'nocoll') meshes.push(o);
+    });
+    return meshes;
+  }
+
+  /* local-frame bounds — same corner-transform recipe as Box3.setFromObject,
+     so the 'box' mode here matches what the game builds */
+  function localBounds(obj, meshes) {
+    const box = new THREE.Box3();
+    const corner = _pa;
+    for (const mesh of meshes) {
+      relMatrix(mesh, obj, _pm);
+      if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+      const bb = mesh.geometry.boundingBox;
+      for (let k = 0; k < 8; k++) {
+        corner.set(k & 1 ? bb.max.x : bb.min.x,
+                   k & 2 ? bb.max.y : bb.min.y,
+                   k & 4 ? bb.max.z : bb.min.z).applyMatrix4(_pm);
+        box.expandByPoint(corner);
+      }
+    }
+    return box;
+  }
+
+  function voxelBoxes(obj, meshes) {
+    const bounds = localBounds(obj, meshes);
+    if (bounds.isEmpty()) return null;
+    const size = bounds.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (!(maxDim > 0.05)) return null;
+    // grid: ~16 cells across the largest side, cells never thinner than 14 cm
+    const cellT = SKY.U.clamp(maxDim / 16, 0.14, 1.0);
+    const nx = SKY.U.clamp(Math.ceil(size.x / cellT), 1, 24);
+    const ny = SKY.U.clamp(Math.ceil(size.y / cellT), 1, 24);
+    const nz = SKY.U.clamp(Math.ceil(size.z / cellT), 1, 24);
+    const cx = size.x / nx, cy = size.y / ny, cz = size.z / nz;
+    const fill = new Uint8Array(nx * ny * nz);
+    const at = (x, y, z) => x + nx * (y + ny * z);
+    const minCell = Math.max(0.02, Math.min(cx, cy, cz));
+    const mark = (p) => {
+      const ix = SKY.U.clamp(Math.floor((p.x - bounds.min.x) / cx), 0, nx - 1);
+      const iy = SKY.U.clamp(Math.floor((p.y - bounds.min.y) / cy), 0, ny - 1);
+      const iz = SKY.U.clamp(Math.floor((p.z - bounds.min.z) / cz), 0, nz - 1);
+      fill[at(ix, iy, iz)] = 1;
+    };
+    // sample every triangle's surface at ~half-cell steps: thin ramps and
+    // walls fill their cells without a full tri-box intersection test
+    let tris = 0;
+    for (const mesh of meshes) {
+      relMatrix(mesh, obj, _pm);
+      const pos = mesh.geometry.attributes.position;
+      const idx = mesh.geometry.index;
+      const n = idx ? idx.count : pos.count;
+      tris += n / 3;
+      if (tris > 80000) return null;   // absurd poly count — keep the box
+      for (let i = 0; i + 2 < n; i += 3) {
+        _pa.fromBufferAttribute(pos, idx ? idx.getX(i) : i).applyMatrix4(_pm);
+        _pb.fromBufferAttribute(pos, idx ? idx.getX(i + 1) : i + 1).applyMatrix4(_pm);
+        _pc.fromBufferAttribute(pos, idx ? idx.getX(i + 2) : i + 2).applyMatrix4(_pm);
+        const e = Math.max(_pa.distanceTo(_pb), _pb.distanceTo(_pc), _pc.distanceTo(_pa));
+        const steps = SKY.U.clamp(Math.ceil(e / (minCell * 0.5)), 1, 40);
+        _pe1.copy(_pb).sub(_pa);
+        _pe2.copy(_pc).sub(_pa);
+        for (let u = 0; u <= steps; u++) {
+          for (let v = 0; v <= steps - u; v++) {
+            _pp.copy(_pa).addScaledVector(_pe1, u / steps).addScaledVector(_pe2, v / steps);
+            mark(_pp);
+          }
+        }
+      }
+    }
+    // flood-fill from the outside: air the player can never reach (sealed
+    // crate interiors) becomes solid — fewer, fatter boxes after the merge.
+    // Rooms/arches stay open: their openings connect them to the outside.
+    const open = new Uint8Array(fill.length);
+    const stack = [];
+    const tryOpen = (x, y, z) => {
+      const ii = at(x, y, z);
+      if (fill[ii] || open[ii]) return;
+      open[ii] = 1;
+      stack.push(x, y, z);
+    };
+    for (let y = 0; y < ny; y++) for (let z = 0; z < nz; z++) { tryOpen(0, y, z); tryOpen(nx - 1, y, z); }
+    for (let x = 0; x < nx; x++) for (let z = 0; z < nz; z++) { tryOpen(x, 0, z); tryOpen(x, ny - 1, z); }
+    for (let x = 0; x < nx; x++) for (let y = 0; y < ny; y++) { tryOpen(x, y, 0); tryOpen(x, y, nz - 1); }
+    while (stack.length) {
+      const z = stack.pop(), y = stack.pop(), x = stack.pop();
+      if (x > 0) tryOpen(x - 1, y, z);
+      if (x + 1 < nx) tryOpen(x + 1, y, z);
+      if (y > 0) tryOpen(x, y - 1, z);
+      if (y + 1 < ny) tryOpen(x, y + 1, z);
+      if (z > 0) tryOpen(x, y, z - 1);
+      if (z + 1 < nz) tryOpen(x, y, z + 1);
+    }
+    for (let i = 0; i < fill.length; i++) if (!fill[i] && !open[i]) fill[i] = 1;
+
+    // greedy merge: grow each unvisited filled cell along x, then z, then y
+    const visited = new Uint8Array(fill.length);
+    const boxes = [];
+    for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const i0 = at(x, y, z);
+      if (!fill[i0] || visited[i0]) continue;
+      let x1 = x;
+      while (x1 + 1 < nx && fill[at(x1 + 1, y, z)] && !visited[at(x1 + 1, y, z)]) x1++;
+      let z1 = z;
+      growZ: while (z1 + 1 < nz) {
+        for (let xi = x; xi <= x1; xi++) {
+          const ii = at(xi, y, z1 + 1);
+          if (!fill[ii] || visited[ii]) break growZ;
+        }
+        z1++;
+      }
+      let y1 = y;
+      growY: while (y1 + 1 < ny) {
+        for (let zi = z; zi <= z1; zi++) for (let xi = x; xi <= x1; xi++) {
+          const ii = at(xi, y1 + 1, zi);
+          if (!fill[ii] || visited[ii]) break growY;
+        }
+        y1++;
+      }
+      for (let zi = z; zi <= z1; zi++) for (let yi = y; yi <= y1; yi++)
+        for (let xi = x; xi <= x1; xi++) visited[at(xi, yi, zi)] = 1;
+      boxes.push({
+        c: new THREE.Vector3(
+          bounds.min.x + (x + x1 + 1) / 2 * cx,
+          bounds.min.y + (y + y1 + 1) / 2 * cy,
+          bounds.min.z + (z + z1 + 1) / 2 * cz),
+        s: new THREE.Vector3((x1 - x + 1) * cx, (y1 - y + 1) * cy, (z1 - z + 1) * cz),
+      });
+    }
+    if (!boxes.length || boxes.length > 48) return null;   // degenerate/too fragmented
+    return boxes;
+  }
+
+  /* collision boxes for a prop in its LOCAL frame (no rotation, no scale).
+     mode 'mesh' -> voxel fit (falls back to the plain bounds when the model
+     is degenerate); anything else -> one bounding box. */
+  function propCollisionLocal(obj, mode) {
+    const meshes = collMeshes(obj);
+    if (!meshes.length) return [];
+    if (mode === 'mesh') {
+      const v = voxelBoxes(obj, meshes);
+      if (v) return v;
+    }
+    const b = localBounds(obj, meshes);
+    if (b.isEmpty()) return [];
+    return [{ c: b.getCenter(new THREE.Vector3()), s: b.getSize(new THREE.Vector3()) }];
+  }
+
   /* -------- interactable doors -------- */
   function setDoor(i, open) {
     const d = doors[i];
@@ -1560,10 +1735,11 @@ SKY.Map = (function () {
           if (panelBox.isEmpty()) panelBox = null;
           else hinge = panel.getWorldPosition(new THREE.Vector3());
         }
+        const collMode = pr.coll || 'box';
         let carved = null;
         if (okBox && wantSolid) {
           if (doorIdx >= 0) { if (panel) carved = carveOpenings(obj, box, panel); }
-          else if (/door|arch|gate/.test(nm)) carved = carveOpenings(obj, box, null);
+          else if (collMode !== 'mesh' && /door|arch|gate/.test(nm)) carved = carveOpenings(obj, box, null);
         }
         obj.rotation.set(rot[0], rot[1], rot[2]);
         obj.updateMatrixWorld(true);
@@ -1603,7 +1779,19 @@ SKY.Map = (function () {
             solid: wantSolid && closedOpts ? SKY.World.addSolid(closedOpts) : null,
           };
         } else if (wantSolid && okBox) {
-          if (/stairs/.test(nm)) addStairRamp(obj, c, s);
+          if (collMode === 'mesh') {
+            // mesh-fit: voxelized boxes in local frame -> scaled/rotated OBBs
+            const sc = pr.scale || 1;
+            const boxes = propCollisionLocal(obj, 'mesh');
+            for (const b of boxes) {
+              const lc = b.c.clone().multiplyScalar(sc)
+                .applyQuaternion(obj.quaternion).add(obj.position);
+              SKY.World.addSolid({ x: lc.x, y: lc.y, z: lc.z,
+                sx: b.s.x * sc, sy: b.s.y * sc, sz: b.s.z * sc,
+                rotX: rot[0], rotY: rot[1], rotZ: rot[2] });
+            }
+            if (!boxes.length) SKY.World.addSolid(solidOpts);
+          } else if (/stairs/.test(nm)) addStairRamp(obj, c, s);
           else if (carved) for (const b of carved) SKY.World.addSolid(toSolid(b.c, b.s));
           else SKY.World.addSolid(solidOpts);
         }
@@ -1788,7 +1976,7 @@ SKY.Map = (function () {
   }
 
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
-           setDoor, tryInteract,
+           setDoor, tryInteract, propCollisionLocal,
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; } };
 })();

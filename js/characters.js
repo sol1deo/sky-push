@@ -18,6 +18,11 @@ SKY.Characters = (function () {
   const _v2 = new THREE.Vector3();
   const _up = new THREE.Vector3(0, 1, 0);
   const _q = new THREE.Quaternion();
+  // armed-pose temps (world-space bone correctives)
+  const _wa = new THREE.Vector3(), _wb = new THREE.Vector3(), _ad = new THREE.Vector3();
+  const _wq = new THREE.Quaternion(), _pq = new THREE.Quaternion();
+  const _cq = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
+  const _qi = new THREE.Quaternion();
 
   function hash(str) {
     let h = 0;
@@ -262,6 +267,8 @@ SKY.Characters = (function () {
       this.bTorso = bone('Torso');
       this.bHead = bone('Head');
       this.bHandR = bone('Fist.R');
+      this.bUpArmR = bone('UpperArm.R');
+      this.bLoArmR = bone('LowerArm.R');
 
       // third-person gun in the right fist (orientation measured on the rig)
       this.gunHolder = new THREE.Group();
@@ -349,6 +356,67 @@ SKY.Characters = (function () {
       const pitch = SKY.U.clamp(p.pitch, -1.2, 1.2);
       if (this.bTorso) this.bTorso.rotation.x += pitch * 0.4;
       if (this.bHead) this.bHead.rotation.x += pitch * 0.35;
+
+      this._armAim(dt);
+    }
+
+    /* remote players don't tick weapon cooldowns locally — net fire events
+       poke this so their avatars raise the gun while shooting */
+    hotFor(t) { this._hotT = Math.max(this._hotT || 0, t); }
+
+    /* ==================== armed pose (GLTF rig) ====================
+     * The UACP clips are UNARMED (arms hang in idle / pump while running),
+     * so the held gun dangled at the hip and muzzle flashes appeared at the
+     * eye fallback — "they shoot from their heads". This layers a weapon
+     * carry onto the animated pose every frame, rig-agnostic: measure the
+     * arm's CURRENT world direction, rotate it onto the aim line.
+     *   calm  -> ready carry, muzzle ~35° below the aim line
+     *   hot   -> (firing / charging / zoomed) locked onto the exact aim
+     * Legs/torso keep playing the clips the user likes. */
+    _armAim(dt) {
+      const p = this.pawn;
+      if (!this.bUpArmR || !this.bLoArmR || !this.bHandR) return;
+      // taunts and the slide tuck own the whole body
+      const want = (this.emoteT > 0 || p.sliding) ? 0 : 1;
+      this._aimW = SKY.U.damp(this._aimW === undefined ? want : this._aimW, want, 10, dt);
+      const w = this._aimW;
+      if (w < 0.03) return;
+      if (p.pbCd > 0 || (p.chargeT || 0) > 0 || p.zoomed) this._hotT = 0.9;
+      else this._hotT = Math.max(0, (this._hotT || 0) - dt);
+      this._hotW = SKY.U.damp(this._hotW || 0, this._hotT > 0 ? 1 : 0, 9, dt);
+      const pitch = SKY.U.clamp(p.pitch, -1.2, 1.2);
+      const drop = (1 - this._hotW) * 0.62;      // ready-carry muzzle drop
+      this.root.updateMatrixWorld(true);
+      // upper arm aims a touch lower than the forearm -> natural elbow bend
+      SKY.U.dirFromYawPitch(p.yaw, SKY.U.clamp(pitch - drop - 0.35, -1.45, 1.45), _ad);
+      this._alignSeg(this.bUpArmR, this.bLoArmR, _ad, w);
+      SKY.U.dirFromYawPitch(p.yaw, pitch - drop, _ad);
+      this._alignSeg(this.bLoArmR, this.bHandR, _ad, w);
+      // fist: the gun barrel lives along the fist's +Y (gunHolder x=+90°)
+      this.bHandR.getWorldQuaternion(_wq);
+      _wa.set(0, 1, 0).applyQuaternion(_wq);
+      _cq.setFromUnitVectors(_wa, _ad);
+      this._applyWorldCorr(this.bHandR, _cq, w);
+    }
+
+    /* rotate `bone` so the segment bone->childBone points along dir */
+    _alignSeg(bone, childBone, dir, w) {
+      bone.getWorldPosition(_wa);
+      childBone.getWorldPosition(_wb);
+      _wb.sub(_wa);
+      if (_wb.lengthSq() < 1e-8) return;
+      _cq.setFromUnitVectors(_wb.normalize(), dir);
+      this._applyWorldCorr(bone, _cq, w);
+    }
+
+    /* apply a WORLD-space corrective quaternion to a bone's local rotation:
+       L' = P⁻¹ · corr · P · L, blended by weight w */
+    _applyWorldCorr(bone, corrQ, w) {
+      if (w < 1) corrQ.slerp(_qi.identity(), 1 - w);
+      bone.parent.getWorldQuaternion(_pq);
+      _q2.copy(_pq).invert().multiply(corrQ).multiply(_pq);
+      bone.quaternion.premultiply(_q2);
+      bone.updateMatrixWorld(true);   // the next link measures fresh matrices
     }
 
     setWeapon(kind) {

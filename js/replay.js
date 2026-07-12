@@ -101,11 +101,16 @@ SKY.Replay = (function () {
       if (p.sliding) f |= 4;
       if (p.fellScreamed) f |= 8;
       if (p.tauntT > 0) f |= 16;
+      const g = p.grapple;
       const d = {
         p: [p.pos.x, p.pos.y, p.pos.z],
         v: [p.vel.x, p.vel.y, p.vel.z],
         yaw: p.yaw, pit: p.pitch, h: p.height, e: p.eyeHeight,
         w: Math.max(0, WK.indexOf(p.weapon)), f,
+        am: p.ammo,                    // POV HUD ammo readout
+        // grapple rope (attach point + slack length) so playback draws hooks
+        gp: g && g.point ? [+g.point.x.toFixed(2), +g.point.y.toFixed(2),
+                            +g.point.z.toFixed(2), +(g.len || 0).toFixed(1)] : null,
         tv: p.tumbleVel.lengthSq() > 0.01
           ? [p.tumbleVel.x, p.tumbleVel.y, p.tumbleVel.z] : null,
         rag: null,
@@ -161,8 +166,11 @@ SKY.Replay = (function () {
   let pathDriven = false;          // camera was on the key path last frame
   let holdLook = false;            // LMB held = mouse captured for looking
   let crossOn = false;             // POV crosshair
+  let namesOn = true;              // player nickname sprites
+  let povHud = false;              // POV: full game HUD overlay
+  let hudWasOn = false;            // restore combat() when the HUD drops
   let dof = 0;                     // 0 off · 1 auto · 2 manual focus
-  let dofFocus = 10, dofBlur = 0.5, dofAutoF = 10;
+  let dofFocus = 10, dofBlur = 0.5, dofAutoF = 10, dofBokeh = 1;
 
   function makeGhost(r) {
     const stub = {
@@ -172,7 +180,21 @@ SKY.Replay = (function () {
       yaw: 0, pitch: 0, height: 1.8, eyeHeight: 1.62,
       grounded: true, sliding: false, alive: true, fellScreamed: false,
       ragdoll: null, weapon: 'pistol',
+      grapple: null,                  // rope replayed from the gp snapshots
+      // enough pawn surface for SKY.HUD.update / Weapons.computePush so the
+      // POV camera can show the real game HUD (values not in the recording
+      // fall back to calm defaults)
+      slots: { 1: null, 2: 'pistol' }, activeSlot: 2, ammo: 8,
+      reloadT: 0, chargeT: 0, pbCd: 0, acCd: 0, grappleCd: 0,
+      nades: null, sparks: 0, koCount: 0, lives: 3, roundWins: 0,
+      zoomed: false, eliminated: false,
+      mods: { speedMult: 1, jumpMult: 1, cdMult: 1, knockResist: 1,
+              grappleRangeMult: 1, grappleCdMult: 1, magMult: 1, gravMult: 1, powerMult: 1 },
+      abilities: { doubleJump: false, dash: false, pound: false },
       speedH() { return Math.hypot(this.vel.x, this.vel.z); },
+      speed3() { return this.vel.length(); },
+      eyePos(out) { return out.set(this.pos.x, this.pos.y + this.eyeHeight, this.pos.z); },
+      midPos(out) { return out.set(this.pos.x, this.pos.y + this.height * 0.5, this.pos.z); },
     };
     stub.avatar = SKY.Characters.create(stub, scene);
     return { stub, av: stub.avatar, rag: false, taunted: false };
@@ -274,6 +296,18 @@ SKY.Replay = (function () {
       if (b.tv) s.tumbleVel.set(b.tv[0], b.tv[1], b.tv[2]);
       else s.tumbleVel.set(0, 0, 0);
       s.weapon = WK[b.w] || 'pistol';
+      // POV HUD mirrors: weapon slots + recorded ammo
+      s.slots[1] = s.weapon !== 'pistol' ? s.weapon : null;
+      s.activeSlot = s.weapon === 'pistol' ? 2 : 1;
+      s.ammo = b.am !== undefined ? b.am
+        : (SKY.TUNING.weapons[s.weapon] || SKY.TUNING.weapons.pistol).mag;
+      // grapple rope replay (drawn by Grapple.updateVisuals in frame())
+      const gp = b.gp || a.gp;
+      if (gp && s.alive) {
+        if (!s.grapple) s.grapple = { point: new THREE.Vector3(), len: 0, t: 0 };
+        s.grapple.point.set(gp[0], gp[1], gp[2]);
+        s.grapple.len = gp[3] || 0;
+      } else s.grapple = null;
       const taunt = !!(b.f & 16);
       if (taunt && !g.taunted) g.av.playEmote();
       g.taunted = taunt;
@@ -296,7 +330,7 @@ SKY.Replay = (function () {
         }
         g.av._poseProxy();
         if (g.av.nameSpr) {
-          g.av.nameSpr.visible = true;
+          g.av.nameSpr.visible = namesOn;
           g.av.nameSpr.position.set(g.av.pts[1].x, g.av.pts[1].y + 0.8, g.av.pts[1].z);
         }
       } else {
@@ -309,7 +343,7 @@ SKY.Replay = (function () {
       if (s.alive) {
         if (g.rag) { g.av.root.visible = false; g.av.proxyRoot.visible = !hidden; }
         else { g.av.root.visible = !hidden; g.av.proxyRoot.visible = false; }
-        if (g.av.nameSpr) g.av.nameSpr.visible = !hidden;
+        if (g.av.nameSpr) g.av.nameSpr.visible = !hidden && namesOn;
       }
     });
   }
@@ -416,6 +450,9 @@ SKY.Replay = (function () {
     kf.sort((x, y) => x.t - y.t);
     selKf = kf.indexOf(k);
     renderKf();
+    // dropping a key while free-flying means "I'm building a camera path" —
+    // switch to KEYS so playback actually follows it (paused = still free-fly)
+    if (camMode === 'free') setCam('keys');
     // note: adding a key does NOT hijack the camera — keep flying freely.
   }
   function deleteKf(i) {
@@ -471,25 +508,32 @@ SKY.Replay = (function () {
 
   function autoFocusTick(rdt) {
     if (dof !== 1 || !ghosts.length) return;
-    let target = dofAutoF;
-    if (camMode === 'pov' && ghosts[sel]) {
-      // focus on whoever the POV player is looking at (nearest ghost ahead)
-      SKY.U.dirFromYawPitch(ghosts[sel].stub.yaw, ghosts[sel].stub.pitch, _v);
-      let best = 1e9;
-      ghosts.forEach((g, i) => {
-        if (i === sel || !g.stub.alive) return;
-        _v2.set(g.stub.pos.x, g.stub.pos.y + g.stub.height * 0.6, g.stub.pos.z)
-           .sub(camera.position);
-        const d = _v2.length();
-        if (d > 0.5 && _v2.normalize().dot(_v) > 0.5 && d < best) best = d;
-      });
-      target = best < 1e9 ? best : 14;
-    } else if (ghosts[sel]) {
+    // real-camera CENTER AF: focus the character nearest the middle of the
+    // frame; nobody there -> the world under the crosshair; still nothing ->
+    // hold the last focus (no snapping to infinity)
+    _v.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    let target = -1, bestDot = 0.9;                 // ~26° cone around center
+    ghosts.forEach((g, i) => {
+      if (!g.stub.alive) return;
+      if (camMode === 'pov' && i === sel) return;   // never AF on your own head
+      _v2.set(g.stub.pos.x, g.stub.pos.y + g.stub.height * 0.6, g.stub.pos.z)
+         .sub(camera.position);
+      const d = _v2.length();
+      if (d < 0.4) return;
+      const dot = _v2.multiplyScalar(1 / d).dot(_v);
+      if (dot > bestDot) { bestDot = dot; target = d; }
+    });
+    if (target < 0 && camMode === 'orbit' && ghosts[sel]) {
       const s = ghosts[sel].stub;
-      _v.set(s.pos.x, s.pos.y + s.height * 0.6, s.pos.z);
-      target = camera.position.distanceTo(_v);
+      _v2.set(s.pos.x, s.pos.y + s.height * 0.6, s.pos.z);
+      target = camera.position.distanceTo(_v2);
     }
-    dofAutoF = SKY.U.damp(dofAutoF, SKY.U.clamp(target, 0.5, 120), 6, rdt);
+    if (target < 0) {
+      const hit = SKY.World.raycast(camera.position, _v, 180);
+      if (hit) target = hit.t;
+    }
+    if (target < 0) target = dofAutoF;
+    dofAutoF = SKY.U.damp(dofAutoF, SKY.U.clamp(target, 0.5, 150), 8, rdt);
   }
 
   /* ---------------- UI ---------------- */
@@ -555,7 +599,9 @@ SKY.Replay = (function () {
       cams: $('rp-cams'), pname: $('rp-pname'), delkf: $('rp-delkf'),
       dof: $('rp-dof'), dofpanel: $('rp-dofpanel'), focrow: $('rp-focrow'),
       foc: $('rp-foc'), focv: $('rp-focv'), blur: $('rp-blur'), blurv: $('rp-blurv'),
+      bok: $('rp-bok'), bokv: $('rp-bokv'),
       crossbtn: $('rp-crossbtn'), cross: $('rp-cross'),
+      namebtn: $('rp-namebtn'), hudbtn: $('rp-hudbtn'),
     };
     ui.speeds.innerHTML = SPEEDS.map(s =>
       `<button class="rp-pill${s === 1 ? ' sel' : ''}" data-s="${s}">${s}×</button>`).join('');
@@ -586,13 +632,27 @@ SKY.Replay = (function () {
       dofFocus = focSliderToM(+ui.foc.value);
       ui.focv.textContent = dofFocus < 10 ? dofFocus.toFixed(1) + 'm' : Math.round(dofFocus) + 'm';
     });
-    ui.blur.addEventListener('input', () => {
-      dofBlur = +ui.blur.value;
-      ui.blurv.textContent = Math.round(dofBlur * 100) + '%';
+    // aperture reads as an f-number (small f = shallow depth = more blur)
+    const fLabel = () => { ui.blurv.textContent = 'f/' + (1.2 / dofBlur).toFixed(1); };
+    ui.blur.addEventListener('input', () => { dofBlur = +ui.blur.value; fLabel(); });
+    fLabel();
+    ui.bok.addEventListener('input', () => {
+      dofBokeh = +ui.bok.value;
+      ui.bokv.textContent = Math.round(dofBokeh * 100) + '%';
     });
     ui.crossbtn.addEventListener('click', () => {
       crossOn = !crossOn;
       ui.crossbtn.classList.toggle('sel', crossOn);
+    });
+    ui.namebtn.addEventListener('click', () => {
+      namesOn = !namesOn;
+      ui.namebtn.classList.toggle('sel', namesOn);
+      for (const g of ghosts) if (g.av.nameSpr) g.av.nameSpr.visible = namesOn && g.stub.alive;
+    });
+    ui.hudbtn.addEventListener('click', () => {
+      povHud = !povHud;
+      ui.hudbtn.classList.toggle('sel', povHud);
+      if (povHud && camMode !== 'pov') setCam('pov');   // the HUD only makes sense in POV
     });
     $('rp-prev').addEventListener('click', () => setSel(sel - 1));
     $('rp-next').addEventListener('click', () => setSel(sel + 1));
@@ -656,12 +716,24 @@ SKY.Replay = (function () {
     });
 
     /* ----- cursor: always visible — HOLD LMB on the world to look ----- */
+    let dragLast = null;   // plain-mouse fallback when pointer lock is denied
     SKY.Input._canvas.addEventListener('mousedown', (e) => {
       if (api.active && e.button === 0 && !SKY.Input.locked) {
         holdLook = true;
+        dragLast = { x: e.clientX, y: e.clientY };
         SKY.Input.requestLock();
       }
     });
+    window.addEventListener('mousemove', (e) => {
+      // pointer lock can silently fail (browser cooldowns, permissions) —
+      // then holding LMB still looks around via ordinary mouse deltas
+      if (!api.active || !holdLook || SKY.Input.locked || !dragLast) return;
+      SKY.Input.yaw -= (e.clientX - dragLast.x) * 0.004;
+      SKY.Input.pitch = SKY.U.clamp(
+        SKY.Input.pitch - (e.clientY - dragLast.y) * 0.004, -1.55, 1.55);
+      dragLast = { x: e.clientX, y: e.clientY };
+    });
+    window.addEventListener('mouseup', () => { dragLast = null; });
 
     window.addEventListener('keydown', (e) => {
       if (!api.active) return;
@@ -692,11 +764,17 @@ SKY.Replay = (function () {
   function beginSession() {
     if (!WK) WK = Object.keys(SKY.TUNING.weapons);
     api.active = true;
+    // the menu's attract-mode cast would otherwise stand frozen inside the
+    // replay (its cleanup runs from Game.renderTick, which we replace)
+    SKY.Attract.stop();
     cur = 0; evi = 0;
     kf.length = 0; selKf = -1; dragObj = null;
     viewStart = 0; viewEnd = api.duration;
     crossOn = false;
+    povHud = false; hudWasOn = false;
     ui.crossbtn.classList.remove('sel');
+    ui.hudbtn.classList.remove('sel');
+    ui.namebtn.classList.toggle('sel', namesOn);
     setDof(0);
     dofAutoF = 10;
     document.body.classList.add('replaying');
@@ -705,6 +783,7 @@ SKY.Replay = (function () {
     SKY.Effects.setViewmodelVisible(false);
     SKY.SFX.setWind(0); SKY.SFX.setSlide(false);
     ghosts = roster.map(makeGhost);
+    api._stubList = ghosts.map(g => g.stub);
     setSel(0);
     setSpeed(1);
     savedYaw = SKY.Input.yaw; savedPitch = SKY.Input.pitch;
@@ -787,10 +866,16 @@ SKY.Replay = (function () {
       if (!api.active) return;
       api.active = false;
       document.body.classList.remove('replaying');
+      document.body.classList.remove('rp-hud');
+      hudWasOn = false;
       ui.root.classList.add('hidden');
       setPlaying(false);
-      for (const g of ghosts) g.av.dispose();
+      for (const g of ghosts) {
+        SKY.Grapple.disposeRope(g.stub);   // replayed ropes live on the stubs
+        g.av.dispose();
+      }
       ghosts = [];
+      api._stubList = null;
       killDarts();
       // put mover meshes back where the live sim has them
       for (const m of SKY.World.movers) if (m.mesh) m.mesh.position.copy(m.c);
@@ -840,6 +925,10 @@ SKY.Replay = (function () {
       SKY.Effects.tick(rdt);
       cameraTick(rdt);
       autoFocusTick(rdt);
+      // grapple ropes replayed from the snapshots (must run after the camera)
+      if (api._stubList && api._stubList.length) {
+        SKY.Grapple.updateVisuals(api._stubList, camera);
+      }
       // POV shows the player's viewmodel (weapon in hand)
       const povGhost = camMode === 'pov' && ghosts[sel] && ghosts[sel].stub.alive
         ? ghosts[sel] : null;
@@ -847,9 +936,26 @@ SKY.Replay = (function () {
         const s = povGhost.stub;
         SKY.Effects.ensureWeapon(s.weapon);
         SKY.Effects.setViewmodelVisible(true);
+        SKY.Effects.setHands(!!s.grapple);   // hook arm up while roped
         SKY.Effects.viewmodelMotion(rdt, s.speedH(), s.grounded, s.vel.y, s.sliding, -1);
       } else {
         SKY.Effects.setViewmodelVisible(false);
+        SKY.Effects.setHands(false);
+      }
+      // POV + HUD toggle: drive the real game HUD off the ghost's snapshot
+      if (povGhost && povHud) {
+        const G = SKY.Game;
+        document.body.classList.add('rp-hud');
+        SKY.HUD.combat(true);
+        hudWasOn = true;
+        const sp = G.player, ss = G.state, sr = G.roundTime;
+        G.player = povGhost.stub; G.state = 'playing'; G.roundTime = T;
+        try { SKY.HUD.update(rdt); } catch (e) { /* HUD must never kill playback */ }
+        G.player = sp; G.state = ss; G.roundTime = sr;
+      } else if (hudWasOn) {
+        hudWasOn = false;
+        document.body.classList.remove('rp-hud');
+        SKY.HUD.combat(false);
       }
       uiTick();
     },
@@ -858,7 +964,7 @@ SKY.Replay = (function () {
     render(renderer, sc, cam) {
       const d = effectiveDof();
       if (!d || d.blur <= 0.001) return false;
-      SKY.DoF.render(renderer, sc, cam, d.focus, d.blur);
+      SKY.DoF.render(renderer, sc, cam, d.focus, d.blur, dofBokeh);
       return true;
     },
   };

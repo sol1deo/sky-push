@@ -151,12 +151,53 @@ SKY.Editor = (function () {
         if (!obj || !holder.parent) return;
         holder.remove(ph);
         holder.add(obj);
+        if (entry) { entry.inner = obj; updateCollVis(entry, true); }
         if (entry && objects[sel] === entry && selBox) selBox.update();
         refreshOutliner();
       }, pr.fx);
     }
     return holder;
   }
+
+  /* ---- collision display: green wireframes = the game's ACTUAL solids ----
+     Computed by the same code the game uses (SKY.Map.propCollisionLocal),
+     so what you see in the editor is exactly what you collide with. */
+  let collOn = false;
+  let collMat = null;
+  function updateCollVis(o, invalidate) {
+    if (!o || o.kind !== 'prop' || !o.mesh) return;
+    if (o.collVis) {
+      if (o.collVis.parent) o.collVis.parent.remove(o.collVis);
+      o.collVis = null;
+    }
+    if (invalidate) o._collBoxes = null;
+    const d = o.data;
+    const show = (collOn || objects[sel] === o) && d.solid !== false;
+    if (!show || !o.inner) return;
+    const mode = d.coll || 'box';
+    if (!o._collBoxes || o._collMode !== mode) {
+      o._collMode = mode;
+      o._collBoxes = SKY.Map.propCollisionLocal(o.inner, mode);
+    }
+    if (!o._collBoxes.length) return;
+    if (!collMat) {
+      collMat = new THREE.MeshBasicMaterial({
+        color: 0x35ff8a, wireframe: true, transparent: true, opacity: 0.5, depthTest: false });
+    }
+    const g = new THREE.Group();
+    g.name = 'edcoll';
+    for (const b of o._collBoxes) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(b.s.x, b.s.y, b.s.z), collMat);
+      m.name = 'edcoll';
+      m.position.copy(b.c);
+      m.renderOrder = 5;
+      m.raycast = () => {};   // display only — never steals viewport clicks
+      g.add(m);
+    }
+    o.inner.add(g);   // inherits the holder's position/rotation/scale
+    o.collVis = g;
+  }
+  function refreshCollVis(invalidate) { for (const o of objects) updateCollVis(o, invalidate); }
 
   function rebuild(keepSel) {
     const oldSel = keepSel ? sel : -1;
@@ -386,6 +427,7 @@ SKY.Editor = (function () {
       group.add(b);
       mboxes.push(b);
     }
+    refreshCollVis();   // the selected prop always shows its real collision
   }
 
   function select(i) {
@@ -811,6 +853,15 @@ SKY.Editor = (function () {
       h += numRow('Rot Y°', (d.r ? d.r[1] : 0) * 180 / Math.PI, 'pr1', 5);
       h += numRow('Scale', d.scale || 1, 'pscale', 0.1);
       h += `<div class="ed-row"><span>Solid</span><input type="checkbox" data-k="psolid"${d.solid !== false ? ' checked' : ''}></div>`;
+      if (d.solid !== false) {
+        h += `<div class="ed-row"><span>Collision</span><select data-k="pcoll">
+          <option value=""${!d.coll ? ' selected' : ''}>box (whole bounds)</option>
+          <option value="mesh"${d.coll === 'mesh' ? ' selected' : ''}>mesh (fits the shape)</option>
+        </select></div>
+        <div class="ed-hint">MESH builds collision from the model's real shape —
+        ramps, stacked crates and openings become walkable/passable. The green
+        wireframe (shown on selection, or COLL up top) is the exact result.</div>`;
+      }
       const isDoor = d.door !== undefined ? d.door : /door-rotate/.test(d.asset || '');
       h += `<div class="ed-row"><span>Door <small>use key opens</small></span>
         <input type="checkbox" data-k="pdoor"${isDoor ? ' checked' : ''}></div>`;
@@ -818,10 +869,8 @@ SKY.Editor = (function () {
       if ((d.asset || '').startsWith('fx:')) {
         const fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
         h += `<div class="ed-row"><span>Color</span><input type="color" data-k="fxcolor" value="${fx.color}"></div>`;
-        if (fx.power !== undefined) {
-          h += numRow('Intensity', fx.power, 'fxpower', 0.1)
-            + numRow('Range', fx.range, 'fxrange', 1);
-        }
+        if (fx.power !== undefined) h += numRow('Intensity', fx.power, 'fxpower', 0.1);
+        if (fx.range !== undefined) h += numRow('Range', fx.range, 'fxrange', 1);
         if (fx.alpha !== undefined) h += numRow('Haze', fx.alpha, 'fxalpha', 0.02);
         if (fx.width !== undefined) {
           h += numRow('Width', fx.width, 'fxwidth', 0.5) + numRow('Height', fx.height, 'fxheight', 1);
@@ -940,7 +989,8 @@ SKY.Editor = (function () {
     else if (k === 'pr0') { d.r = d.r || [0, 0, 0]; d.r[0] = num * Math.PI / 180; }
     else if (k === 'pr2') { d.r = d.r || [0, 0, 0]; d.r[2] = num * Math.PI / 180; }
     else if (k === 'pscale') d.scale = Math.max(0.05, num);
-    else if (k === 'psolid') d.solid = e.target.checked;
+    else if (k === 'psolid') { d.solid = e.target.checked; updateCollVis(o); syncInspector(); }
+    else if (k === 'pcoll') { d.coll = e.target.value || null; updateCollVis(o, true); }
     else if (k === 'pdoor') d.door = e.target.checked;
     else if (k.indexOf('fx') === 0 && o.kind === 'prop') {
       d.fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
@@ -1007,6 +1057,7 @@ SKY.Editor = (function () {
   function rebuildProp(o) {
     if (o.kind !== 'prop') return;
     const i = objects.indexOf(o);
+    o.inner = null; o.collVis = null; o._collBoxes = null;   // reloads async
     group.remove(o.mesh);
     o.mesh = buildPropMesh(o.data, o);
     group.add(o.mesh);
@@ -1067,8 +1118,12 @@ SKY.Editor = (function () {
     push();
     SKY.Assets.embed(def, assetId);
     const airy = /crane|site-fence/.test(assetId);
+    // fx decor defaults non-solid — except the planes, which are real cover
+    const solidFx = /^fx:plane/.test(assetId);
+    // new props default to MESH collision — the shape you see is what you hit
     const pr = { asset: assetId, p: [+_v.x.toFixed(2), +_v.y.toFixed(2), +_v.z.toFixed(2)],
-      r: [0, 0, 0], scale: 1, solid: !assetId.startsWith('fx:') && !airy };
+      r: [0, 0, 0], scale: 1,
+      solid: (!assetId.startsWith('fx:') || solidFx) && !airy, coll: 'mesh' };
     def.props.push(pr);
     rebuild();
     select(objects.findIndex(o => o.data === pr));
@@ -1282,6 +1337,18 @@ SKY.Editor = (function () {
     $('ed-new').onclick = () => { api.active = false; open(null); };
     $('ed-save').onclick = save;
     $('ed-export').onclick = exportJson;
+    $('ed-delete').onclick = () => {
+      if (!def) return;
+      const stored = SKY.MapData.draftMeta(def.id) || SKY.MapData.autosaveOf(def.id);
+      if (!stored) { status('nothing saved to delete — this map only exists here'); return; }
+      if (!confirm('Delete map "' + def.name + '"?\nThis removes the map and its backups for good.')) return;
+      clearTimeout(autosaveTimer);   // a pending autosave would resurrect it
+      dirty = false;
+      SKY.MapData.deleteDraft(def.id);
+      api.active = false;
+      open(null);                    // fresh blank map
+      status('map deleted');
+    };
     $('ed-test').onclick = testPlay;
     $('ed-addblock').onclick = addBlock;
     $('ed-addground').onclick = addGround;
@@ -1292,6 +1359,12 @@ SKY.Editor = (function () {
       previewOn = !previewOn;
       e.target.classList.toggle('sel', previewOn);
       if (!previewOn) for (const o of objects) syncMeshFromData(o);
+    };
+    $('ed-coll').onclick = (e) => {
+      collOn = !collOn;
+      e.target.classList.toggle('sel', collOn);
+      refreshCollVis();
+      status(collOn ? 'showing the game\'s real collision boxes (green)' : '');
     };
     ui.loadSel.onchange = () => {
       const id = ui.loadSel.value;

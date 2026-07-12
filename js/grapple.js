@@ -79,12 +79,10 @@ SKY.Grapple = (function () {
     if (!pawn.alive) return false;
     if (pawn.grapple) { release(pawn); return false; }   // press again = detach
     // heavy knock jammed the hook (pawn.hookLockT, set in applyKnockback) —
-    // this also blocks the ragdoll-escape below, so a clean yeet STICKS
+    // this also blocks the ragdoll-escape below, so a clean yeet STICKS.
+    // Feedback is a mechanical jam CLUNK, not text — reads instantly mid-air.
     if (pawn.hookLockT > 0) {
-      if (pawn.isLocal) {
-        SKY.SFX.grapMiss();
-        SKY.HUD.subMsg('Hook jammed!', 0.7);
-      }
+      if (pawn.isLocal) SKY.SFX.jammed();
       return false;
     }
     // ONE hook per airtime — land (or take a hit) to refill
@@ -281,7 +279,9 @@ SKY.Grapple = (function () {
   function updateVisuals(pawns, camera) {
     for (const pawn of pawns) {
       const g = pawn.grapple;
-      if (!g) { if (pawn._rope) pawn._rope.visible = false; continue; }
+      // dead pawns keep no rope (net-replicated grapples have no tick to
+      // release them — the alive flag is the reliable signal)
+      if (!g || !pawn.alive) { if (pawn._rope) pawn._rope.visible = false; continue; }
 
       // rope start: the HOOK-GUN tip for the local player, hand-ish for others
       if (pawn.isLocal) {

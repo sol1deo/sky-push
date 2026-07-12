@@ -81,6 +81,62 @@ SKY.GFX = (function () {
     'building-sample-house-c', 'building-sample-tower-a', 'building-sample-tower-b',
     'building-sample-tower-c', 'building-block', 'building-door', 'building-window',
     'building-window-awnings', 'building-steps-wide', 'building-corner'];
+  // Kenney Nature Kit — trees/bushes/rocks/paths/fences (folder: nature/,
+  // self-contained GLBs; the kit is a miniature 1-unit grid -> ×4)
+  const NATURE_NAMES = ['tree_default', 'tree_oak', 'tree_detailed', 'tree_fat',
+    'tree_simple', 'tree_tall', 'tree_thin', 'tree_small', 'tree_blocks', 'tree_cone',
+    'tree_plateau', 'tree_default_fall', 'tree_oak_fall', 'tree_pineDefaultA',
+    'tree_pineTallA', 'tree_pineTallB', 'tree_pineRoundA', 'tree_pineRoundC',
+    'tree_pineSmallA', 'tree_palm', 'tree_palmTall', 'tree_palmShort', 'tree_palmBend',
+    'tree_palmDetailedTall', 'plant_bush', 'plant_bushDetailed', 'plant_bushLarge',
+    'plant_bushSmall', 'grass', 'grass_large', 'flower_purpleA', 'flower_redA',
+    'flower_yellowA', 'mushroom_red', 'rock_largeA', 'rock_largeC', 'rock_tallA',
+    'rock_tallD', 'rock_smallA', 'rock_smallD', 'stone_largeA', 'stone_tallB',
+    'stump_round', 'stump_square', 'log', 'log_large', 'log_stack',
+    'ground_pathStraight', 'ground_pathBend', 'ground_pathCross', 'ground_pathTile',
+    'ground_pathRocks', 'fence_simple', 'fence_planks', 'fence_gate', 'fence_bend',
+    'bridge_wood', 'bridge_stone', 'bridge_stoneRound', 'statue_column', 'statue_head',
+    'statue_obelisk', 'statue_block', 'campfire_logs', 'campfire_stones', 'sign',
+    'pot_large', 'canoe', 'cactus_short', 'cactus_tall'];
+  // Kenney Pirate Kit — ships (walkable decks!), palms, sea props (folder: pirate/)
+  const PIRATE_NAMES = ['ship-pirate-large', 'ship-pirate-medium', 'ship-pirate-small',
+    'ship-large', 'ship-medium', 'ship-small', 'ship-ghost', 'ship-wreck',
+    'boat-row-large', 'boat-row-small', 'palm-straight', 'palm-bend',
+    'palm-detailed-straight', 'palm-detailed-bend', 'barrel', 'chest', 'crate',
+    'crate-bottles', 'bottle', 'bottle-large', 'cannon', 'cannon-mobile', 'cannon-ball',
+    'flag-pirate', 'flag-pirate-high', 'mast-ropes', 'structure-platform',
+    'structure-platform-dock', 'structure-platform-small', 'tower-complete-small',
+    'tower-watch', 'rocks-a', 'rocks-sand-a', 'rocks-sand-c', 'patch-sand',
+    'patch-sand-foliage', 'hole', 'tool-paddle'];
+  // Kenney Watercraft Pack — modern boats, yachts & big ships (folder: boats/)
+  const BOAT_NAMES = ['boat-speed-a', 'boat-speed-c', 'boat-speed-e', 'boat-speed-g',
+    'boat-sail-a', 'boat-sail-b', 'boat-fishing-small', 'boat-house-a', 'boat-house-c',
+    'boat-tug-a', 'boat-fan', 'ship-cargo-a', 'ship-cargo-b', 'ship-large', 'ship-small',
+    'ship-ocean-liner', 'ship-ocean-liner-small', 'buoy', 'buoy-flag',
+    'cargo-container-a', 'cargo-pile-a'];
+  // Kenney City Kit Roads — roads/pavement/street lights (folder: roads/, ×4)
+  const ROAD_NAMES = ['road-straight', 'road-bend', 'road-curve', 'road-crossroad',
+    'road-intersection', 'road-crossing', 'road-end', 'road-roundabout', 'road-side',
+    'road-straight-half', 'road-curve-pavement', 'road-bend-sidewalk', 'road-square',
+    'tile-low', 'tile-high', 'tile-slant', 'bridge-pillar', 'light-curved',
+    'light-square', 'light-curved-double', 'construction-barrier', 'construction-cone'];
+  // Kenney Survival Kit — camp/beach props (folder: camp/, ×4)
+  const CAMP_NAMES = ['tent', 'tent-canvas', 'structure-canvas', 'campfire-pit',
+    'campfire-stand', 'campfire-fishing-stand', 'bedroll', 'bedroll-packed', 'box',
+    'box-large', 'box-open', 'bucket', 'barrel-open', 'resource-planks',
+    'resource-wood', 'resource-stone', 'metal-panel', 'floor-old', 'fence-fortified',
+    'tool-axe', 'tool-pickaxe'];
+  // new packs load generically; prefixes keep the flat prop registry
+  // collision-free ('ship-large' exists in pirate AND watercraft). lambert:
+  // swap PBR materials for Lambert — untextured Standard colors wash out
+  // pastel under ACES (the mint-tree bug); same fix the characters use.
+  const EXTRA_PACKS = [
+    { dir: 'nature', prefix: 'nat-', names: NATURE_NAMES, folder: 'nature', scale: 4, lambert: true },
+    { dir: 'pirate', prefix: 'pir-', names: PIRATE_NAMES, folder: 'pirate sea', scale: 1, lambert: true },
+    { dir: 'boats', prefix: 'sea-', names: BOAT_NAMES, folder: 'boats & ships', scale: 1, lambert: true },
+    { dir: 'roads', prefix: 'rd-', names: ROAD_NAMES, folder: 'roads & park', scale: 4, lambert: true },
+    { dir: 'camp', prefix: 'camp-', names: CAMP_NAMES, folder: 'camping', scale: 4, lambert: true },
+  ];
 
   /* toy-style character cast (Quaternius UACP) — each GLB carries its own
      17 animation clips. tint = the "main outfit" material recolored to the
@@ -206,10 +262,11 @@ SKY.GFX = (function () {
   function loadProps() {
     let pending = PROP_NAMES.length + KIT_NAMES.length + BUILD_NAMES.length +
       CITY_NAMES.length + SITE_NAMES.length + FURN_NAMES.length + MOD_NAMES.length;
+    for (const p of EXTRA_PACKS) pending += p.names.length;
     const settle = () => { if (--pending === 0) groupDone(); };
-    const store = (name) => (g) => {
+    const store = (name, scale, lambert) => (g) => {
       let root = g.scene || g.scenes[0];
-      const k = PACK_SCALE[name];
+      const k = scale !== undefined ? scale : PACK_SCALE[name];
       if (k && k !== 1) {
         const inner = new THREE.Group();
         inner.scale.setScalar(k);
@@ -218,11 +275,32 @@ SKY.GFX = (function () {
         wrap.add(inner);
         root = wrap;
       }
+      const lambertCache = {};
       root.traverse((o) => {
         if (!o.isMesh) return;
         o.castShadow = true; o.receiveShadow = true;
-        // guard against metallic-black imports (no env map in this renderer)
         const mats = Array.isArray(o.material) ? o.material : [o.material];
+        if (lambert) {
+          // flat-color kits: PBR-without-envmap washes the palette to pastel
+          const conv = mats.map((src) => {
+            const key = src.uuid;
+            if (!lambertCache[key]) {
+              const m = new THREE.MeshLambertMaterial({
+                color: src.color ? src.color.clone() : 0xffffff,
+              });
+              if (src.map) m.map = src.map;
+              // untextured factors are sRGB-authored (Asset Forge quirk) —
+              // read as linear they wash out (the mint-tree bug); convert
+              else m.color.convertSRGBToLinear();
+              m.name = src.name || '';
+              lambertCache[key] = m;
+            }
+            return lambertCache[key];
+          });
+          o.material = Array.isArray(o.material) ? conv : conv[0];
+          return;
+        }
+        // guard against metallic-black imports (no env map in this renderer)
         for (const m of mats) {
           if (m && m.metalness !== undefined && m.metalness > 0.3) {
             m.metalness = 0.1; m.roughness = Math.max(m.roughness || 0, 0.7);
@@ -252,6 +330,12 @@ SKY.GFX = (function () {
     }
     for (const name of MOD_NAMES) {
       gl().load('assets/models/mod/' + name + '.glb', store(name), undefined, settle);
+    }
+    for (const p of EXTRA_PACKS) {
+      for (const name of p.names) {
+        gl().load('assets/models/' + p.dir + '/' + name + '.glb',
+          store(p.prefix + name, p.scale, p.lambert), undefined, settle);
+      }
     }
   }
 
@@ -348,11 +432,16 @@ SKY.GFX = (function () {
       return t ? t.clone(true) : null;
     },
     propNames() {
-      return PROP_NAMES.concat(KIT_NAMES, BUILD_NAMES, CITY_NAMES,
+      let out = PROP_NAMES.concat(KIT_NAMES, BUILD_NAMES, CITY_NAMES,
         SITE_NAMES, FURN_NAMES, MOD_NAMES);
+      for (const p of EXTRA_PACKS) out = out.concat(p.names.map(n => p.prefix + n));
+      return out;
     },
     /* editor asset-panel folder for a pack prop */
     propFolder(name) {
+      for (const p of EXTRA_PACKS) {
+        if (name.indexOf(p.prefix) === 0) return p.folder;
+      }
       if (SITE_NAMES.indexOf(name) >= 0) return 'construction';
       if (FURN_NAMES.indexOf(name) >= 0) return 'interior';
       if (MOD_NAMES.indexOf(name) >= 0) return 'buildings';

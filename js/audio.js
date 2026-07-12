@@ -350,6 +350,11 @@ SKY.SFX = (function () {
     grapple() { if (sample('grapple', 0.3, 1.5)) return;
                 noise(0.14, 2200, 0.18, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.14); },
     grapMiss(){ tone(300, 180, 0.07, 'square', 0.12); },
+    /* heavy-knock jam: a dead mechanical double-clunk — the hook/cannon
+       refusing to fire (replaces the old "Hook jammed!" text) */
+    jammed()  { if (sample('dry', 0.44, 0.7)) { sample('dry', 0.32, 0.55, 0.09); return; }
+                tone(230, 150, 0.05, 'square', 0.16);
+                tone(170, 110, 0.07, 'square', 0.13, 0.09); },
     scream(loud) { // comedic falling whistle
       const v = loud ? 0.4 : 0.18;
       tone(900, 200, 0.9, 'sawtooth', v);

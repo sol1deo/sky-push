@@ -127,10 +127,11 @@ SKY.TUNING = {
     },
     mega: {
       label: 'MEGA RIFLE', short: 'MEGA', icon: '🌀', rarity: 'epic', color: '#c39bff',
-      desc: 'The rifle, but angry. Faster, harder, meaner.',
+      desc: 'The rifle, but angry. Faster, harder, meaner. Scoped.',
       cooldown: 0.12, auto: true, mag: 24, reloadTime: 1.6, range: 100,
       projSpeed: 68, projGravity: 1,
-      pellets: 1, spreadDeg: 0.9, zoomSpreadDeg: 0.35, zoomFov: 60,
+      // the model carries a scope — RMB uses it (milder zoom than the sniper)
+      pellets: 1, spreadDeg: 0.9, zoomSpreadDeg: 0.25, zoomFov: 34, scope: true,
       baseKnockback: 4.3, speedMult: 0.6, airborneBonus: 1.35, slideBonus: 1.35,
       headshotMult: 2.0, upFactor: 0.32, maxKnockback: 31, selfRecoil: 0.3, kick: 0.6, kickPitch: 0.006,
     },

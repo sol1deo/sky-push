@@ -19,6 +19,16 @@ because these creators are great:
   (https://kenney.nl/assets/building-kit), CC0.
 - **City buildings** (`models/city/`) — "City Kit (Commercial)" by **Kenney**
   (https://kenney.nl/assets/city-kit-commercial), CC0.
+- **Nature / park** (`models/nature/`) — "Nature Kit" by **Kenney**
+  (https://kenney.nl/assets/nature-kit), CC0.
+- **Pirate ships & sea props** (`models/pirate/`) — "Pirate Kit" by **Kenney**
+  (https://kenney.nl/assets/pirate-kit), CC0.
+- **Boats, yachts & ships** (`models/boats/`) — "Watercraft Kit" by **Kenney**
+  (https://kenney.nl/assets/watercraft-kit), CC0.
+- **Roads & pavement** (`models/roads/`) — "City Kit (Roads)" by **Kenney**
+  (https://kenney.nl/assets/city-kit-roads), CC0.
+- **Camping props** (`models/camp/`) — "Survival Kit" by **Kenney**
+  (https://kenney.nl/assets/survival-kit), CC0.
 
 ## Audio
 

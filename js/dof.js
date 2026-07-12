@@ -34,11 +34,15 @@ SKY.DoF = (function () {
       float c = cocAt(vUv);
       vec3 acc = texture2D(tDiffuse, vUv).rgb;
       float wsum = 1.0;
+      // bright samples weigh more, so highlights bloom into bokeh discs
       #define TAP(ox, oy) { \
         vec2 off = vec2(ox, oy * uAspect) * c; \
         float cd = cocAt(vUv + off); \
         float w = clamp(cd / max(c, 1e-5), 0.15, 1.0); \
-        acc += texture2D(tDiffuse, vUv + off).rgb * w; \
+        vec3 smp = texture2D(tDiffuse, vUv + off).rgb; \
+        float lum = dot(smp, vec3(0.299, 0.587, 0.114)); \
+        w *= 1.0 + lum * lum * 1.6; \
+        acc += smp * w; \
         wsum += w; }
       TAP( 0.9435,  0.2793) TAP(-0.8320,  0.4384) TAP( 0.2170, -0.9296)
       TAP(-0.2493, -0.6152) TAP( 0.6262,  0.6459) TAP(-0.5698, -0.2263)
@@ -88,14 +92,15 @@ SKY.DoF = (function () {
 
   return {
     /* renders scene->target->screen with DoF. focus in meters,
-       strength 0..1 (aperture feel), camera supplies near/far. */
-    render(renderer, scene, camera, focus, strength) {
+       strength 0..1 (aperture feel), bokeh scales the max blur disc,
+       camera supplies near/far. */
+    render(renderer, scene, camera, focus, strength, bokeh) {
       ensure(renderer);
       mat.uniforms.uNear.value = camera.near;
       mat.uniforms.uFar.value = camera.far;
       mat.uniforms.uFocus.value = Math.max(0.3, focus);
       mat.uniforms.uAperture.value = strength * 0.09;
-      mat.uniforms.uMaxCoc.value = 0.012 + strength * 0.014;
+      mat.uniforms.uMaxCoc.value = (0.012 + strength * 0.014) * (bokeh || 1);
       renderer.setRenderTarget(rt);
       renderer.render(scene, camera);
       renderer.setRenderTarget(null);

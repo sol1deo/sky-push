@@ -924,11 +924,18 @@ SKY.Net = (function () {
     if (p.crouching) flags |= 8;
     if (p.alive) flags |= 16;
     if (p._acting) flags |= 32;   // interact hold
-    return [p.netId,
+    const s = [p.netId,
       +p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2),
       +p.vel.x.toFixed(2), +p.vel.y.toFixed(2), +p.vel.z.toFixed(2),
       +p.yaw.toFixed(3), +p.pitch.toFixed(3), flags, p.weapon, p.sparks || 0,
       p.respawnSeq || 0];   // echoed so the host can drop pre-respawn states
+    // grapple rope (attach point + rope length) so everyone SEES the hook
+    if (p.grapple && p.grapple.point) {
+      const g = p.grapple;
+      s.push(+g.point.x.toFixed(2), +g.point.y.toFixed(2), +g.point.z.toFixed(2),
+             +(g.len || 0).toFixed(1));
+    }
+    return s;
   }
 
   function startPing() {
@@ -981,6 +988,7 @@ SKY.Net = (function () {
       pawn.netTarget = {
         x: s[1], y: s[2], z: s[3], vx: s[4], vy: s[5], vz: s[6],
         yaw: s[7], pitch: s[8], flags: s[9], weapon: s[10], age: 0,
+        gp: s.length > 16 ? [s[13], s[14], s[15], s[16]] : null,   // grapple rope
       };
     }
     if (fromHost) {
@@ -1024,6 +1032,17 @@ SKY.Net = (function () {
     p.height = (p.crouching || p.sliding) ? SKY.TUNING.move.crouchHeight : SKY.TUNING.move.standHeight;
     p.weapon = t.weapon;
     p._acting = !!(t.flags & 32);
+    // display-only grapple rope (their client runs the physics; we just draw):
+    // Grapple.updateVisuals picks pawn.grapple up and renders the tube
+    if (t.gp) {
+      if (!p.grapple || !p.grapple.netVis) {
+        p.grapple = { point: new THREE.Vector3(), len: 0, t: 0, netVis: true };
+      }
+      p.grapple.point.set(t.gp[0], t.gp[1], t.gp[2]);
+      p.grapple.len = t.gp[3] || 0;
+    } else if (p.grapple && p.grapple.netVis) {
+      p.grapple = null;
+    }
     const rag = !!(t.flags & 4);
     if (rag && !p.ragdoll) p.ragdoll = { mode: 'air', t: 0 };
     else if (!rag && p.ragdoll) {

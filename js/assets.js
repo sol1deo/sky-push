@@ -117,6 +117,10 @@ SKY.Assets = (function () {
     { id: 'fx:groundfog',  name: 'ground fog' },
     { id: 'fx:haze',       name: 'haze' },
     { id: 'fx:airvent',    name: 'air vent', folder: 'gadgets' },
+    { id: 'fx:sea',        name: 'sea (real waves)', folder: 'water' },
+    { id: 'fx:rope',       name: 'hanging rope', folder: 'gadgets' },
+    { id: 'fx:plane',      name: 'prop plane', folder: 'planes' },
+    { id: 'fx:planewreck', name: 'crashed plane', folder: 'planes' },
   ];
   /* per-type option defaults (merged with the prop's fx settings) */
   const FX_OPTS = {
@@ -130,6 +134,11 @@ SKY.Assets = (function () {
     haze:       { color: '#dde6f2', alpha: 0.1, size: 9 },
     // roof updraft: power = lift force, range = column height (m)
     airvent:    { color: '#9fd8ff', power: 40, range: 10 },
+    // vertex-animated swell field: power = wave height, range = wave length
+    sea:        { color: '#155a9e', power: 0.5, range: 18, size: 140 },
+    rope:       { color: '#d8c49a', range: 8 },   // range = rope length (m)
+    plane:      { color: '#d0483e' },
+    planewreck: { color: '#8a92a0' },
   };
 
   function buildFx(name, fx) {
@@ -287,8 +296,189 @@ SKY.Assets = (function () {
       const mk = marker(new THREE.CylinderGeometry(1.35, 1.35, o.range, 12, 1, true), col);
       mk.position.y = o.range / 2 + 1.3;
       g.add(mk);
+    } else if (name === 'sea') {
+      // REAL water: a vertex-animated swell field with recomputed normals —
+      // sun glints roll across actual moving geometry, not a scrolled texture
+      const size = Math.max(20, o.size);
+      const segs = SKY.U.clamp(Math.round(size / 3), 24, 48);
+      const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+      geo.rotateX(-Math.PI / 2);
+      const basePos = geo.attributes.position.array.slice();
+      const sea = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+        color: col.clone().convertSRGBToLinear(),   // hex picker is sRGB
+        shininess: 55, specular: 0x4a6a88,
+        transparent: true, opacity: 0.96,
+      }));
+      sea.receiveShadow = true;
+      const amp = Math.max(0, o.power);
+      const kw = (Math.PI * 2) / Math.max(4, o.range);
+      const pos = geo.attributes.position;
+      sea.onBeforeRender = () => {
+        const t = performance.now() * 0.0009;
+        const a = pos.array;
+        for (let i = 0; i < pos.count; i++) {
+          const x = basePos[i * 3], z = basePos[i * 3 + 2];
+          a[i * 3 + 1] = basePos[i * 3 + 1] + amp * (
+            Math.sin(x * kw + t * 1.9) * 0.55 +
+            Math.sin(z * kw * 0.8 + t * 1.4) * 0.3 +
+            Math.sin((x + z) * kw * 0.45 - t * 2.3) * 0.35);
+        }
+        pos.needsUpdate = true;
+        geo.computeVertexNormals();
+      };
+      g.add(sea);
+    } else if (name === 'rope') {
+      // crane-style hanging rope: sagging tube + knot, swaying gently.
+      // Hangs DOWN from where you place it — put it on a crane arm / mast.
+      const len = Math.max(1, o.range);
+      const swayG = new THREE.Group();
+      const pts = [];
+      for (let i = 0; i <= 8; i++) {
+        const t = i / 8;
+        pts.push(new THREE.Vector3(Math.sin(t * Math.PI) * len * 0.035, -t * len, 0));
+      }
+      const rope = new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.04, 6),
+        lam(col.clone().convertSRGBToLinear()));
+      rope.castShadow = true;
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 6),
+        lam(new THREE.Color(col).multiplyScalar(0.7)));
+      knot.position.y = -len;
+      const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.16, 8), lam(0x2c3140));
+      swayG.add(rope, knot);
+      g.add(swayG, mount);
+      const phase = Math.random() * Math.PI * 2;
+      rope.onBeforeRender = () => {
+        const t = performance.now() * 0.0007 + phase;
+        swayG.rotation.z = Math.sin(t) * 0.055;
+        swayG.rotation.x = Math.cos(t * 0.8) * 0.045;
+      };
+    } else if (name === 'plane' || name === 'planewreck') {
+      buildPlane(g, col.clone().convertSRGBToLinear(), name === 'planewreck');
     }
     return g;
+  }
+
+  /* stylized bush plane from primitives (same flat-color look as the packs).
+     wreck=true = crashed: nose buried, tail torn off, wing snapped, scorch +
+     drifting smoke. Roughly 8m wingspan; nose points -Z. */
+  function buildPlane(g, col, wreck) {
+    const lam = (c, e) => new THREE.MeshLambertMaterial({ color: c, emissive: e || 0x000000 });
+    const bodyM = lam(col);
+    const trimM = lam(0xf2f4f6);
+    const darkM = lam(0x2c3140);
+    const glassM = new THREE.MeshLambertMaterial({
+      color: 0x9fd0e8, emissive: 0x24404e, transparent: true, opacity: 0.85 });
+    const shadowed = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
+    const box = (w, h, d, mat, x, y, z, parent) => {
+      const q = shadowed(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat));
+      q.position.set(x, y, z);
+      (parent || g).add(q);
+      return q;
+    };
+
+    // main body group (so the wreck can tilt/sink it as one piece)
+    const body = new THREE.Group();
+    g.add(body);
+    box(1.3, 1.25, 2.6, bodyM, 0, 1.35, -0.4, body);                   // cabin
+    box(1.15, 1.0, 1.3, bodyM, 0, 1.28, -2.2, body);                   // nose
+    const windshield = box(1.1, 0.55, 0.7, glassM, 0, 1.95, -1.35, body);
+    windshield.rotation.x = 0.35;
+    box(0.55, 0.5, 0.35, darkM, 0, 1.2, -2.95, body);                  // engine face
+    // wing (full span on top; the wreck snaps the right half off)
+    const wingL = box(3.6, 0.14, 1.5, trimM, -2.35, 2.1, -0.55, body);
+    const wingR = box(3.6, 0.14, 1.5, trimM, 2.35, 2.1, -0.55, body);
+    // wing struts
+    for (const sx of [-1.6, 1.6]) {
+      const st = box(0.09, 1.15, 0.09, darkM, sx, 1.45, -0.3, body);
+      st.rotation.z = sx > 0 ? 0.45 : -0.45;
+    }
+    // tail boom + fin + stabilizer (separate group so the wreck can rip it off)
+    const tail = new THREE.Group();
+    box(0.62, 0.62, 2.9, bodyM, 0, 1.45, 2.3, tail);
+    box(0.12, 1.25, 0.95, bodyM, 0, 2.35, 3.4, tail);                  // fin
+    box(2.3, 0.1, 0.8, trimM, 0, 1.75, 3.45, tail);                    // h-stab
+    g.add(tail);
+    // propeller: spinner cone + 2 blades — spins on the intact plane
+    const prop = new THREE.Group();
+    prop.position.set(0, 1.28, -2.92);
+    const spinner = shadowed(new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.4, 10), trimM));
+    spinner.rotation.x = -Math.PI / 2;
+    spinner.position.z = -0.15;
+    prop.add(spinner);
+    for (const s of [1, -1]) {
+      const blade = box(0.16, 1.15, 0.06, darkM, 0, s * 0.62, 0, prop);
+      if (wreck) blade.rotation.x = s * 0.8;                            // bent blades
+    }
+    body.add(prop);
+    // landing gear
+    const gear = [];
+    for (const sx of [-0.75, 0.75]) {
+      const strut = box(0.08, 0.6, 0.08, darkM, sx, 0.55, -1.4, body);
+      const wheel = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.18, 10), darkM));
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(sx, 0.28, -1.4);
+      body.add(wheel);
+      gear.push(strut, wheel);
+    }
+
+    if (!wreck) {
+      const hub = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.1, 8), darkM));
+      hub.onBeforeRender = () => { prop.rotation.z += 0.55; };          // idle prop spin
+      prop.add(hub);
+      return;
+    }
+
+    // ---- the crash ----
+    body.rotation.set(0.14, 0.1, 0.1);
+    body.position.y = -0.42;                                            // nose dug in
+    // right wing snapped off, planted in the ground beside the hull
+    body.remove(wingR);
+    wingR.position.set(3.6, 0.55, 0.6);
+    wingR.rotation.set(0.2, 0.7, 1.15);
+    g.add(wingR);
+    // tail section torn off, lying rolled over behind
+    tail.position.set(1.3, -0.55, 1.6);
+    tail.rotation.set(-0.1, 0.55, 0.8);
+    // scorched ground + debris
+    const scorch = new THREE.Mesh(new THREE.CircleGeometry(3.4, 20),
+      new THREE.MeshLambertMaterial({ color: 0x17191f, transparent: true, opacity: 0.75 }));
+    scorch.name = 'nocoll';   // decal — keep it out of the collision build
+    scorch.rotation.x = -Math.PI / 2;
+    scorch.position.y = 0.03;
+    scorch.receiveShadow = true;
+    g.add(scorch);
+    for (let i = 0; i < 6; i++) {
+      const d = box(SKY.U.rand(0.2, 0.55), SKY.U.rand(0.1, 0.3), SKY.U.rand(0.2, 0.5),
+        i % 2 ? darkM : bodyM,
+        SKY.U.rand(-2.8, 2.8), 0.12, SKY.U.rand(-2.5, 2.8));
+      d.rotation.y = SKY.U.rand(0, Math.PI);
+    }
+    // lazy smoke column off the engine
+    const smokes = [];
+    for (let i = 0; i < 3; i++) {
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6),
+        new THREE.MeshBasicMaterial({
+          map: SKY.U.blobTexture(), color: 0x3a3f47, transparent: true,
+          opacity: 0.4, depthWrite: false, side: THREE.DoubleSide,
+        }));
+      s.name = 'nocoll';   // drifting smoke must not inflate the collision
+      s.position.set(0.2, 1.4, -2.4);
+      g.add(s);
+      smokes.push({ m: s, off: i / 3 });
+    }
+    smokes[0].m.onBeforeRender = () => {
+      const t = performance.now() * 0.00025;
+      for (const sm of smokes) {
+        const k = (t + sm.off) % 1;
+        sm.m.position.y = 1.2 + k * 4.2;
+        sm.m.position.x = 0.2 + Math.sin((k + sm.off) * 5) * 0.5;
+        const sc = 0.8 + k * 2.2;
+        sm.m.scale.set(sc, sc, 1);
+        sm.m.material.opacity = 0.38 * (1 - k) + 0.05;
+        sm.m.rotation.z += 0.0012;
+      }
+    };
   }
 
   /* built-in "pack" folder: read-only props from the shipped asset pack
@@ -307,7 +497,8 @@ SKY.Assets = (function () {
           id: 'gfx:' + n,
           folder: SKY.GFX.propFolder ? SKY.GFX.propFolder(n) : 'pack',
           type: 'model', builtin: true, thumb: null,
-          name: n.replace(/^Prop_/, '').replace(/_/g, ' ').replace(/-/g, ' ').toLowerCase(),
+          name: n.replace(/^Prop_/, '').replace(/^(nat|pir|sea|rd|camp)-/, '')
+            .replace(/_/g, ' ').replace(/-/g, ' ').toLowerCase(),
         };
         packCache[n] = it;
       }
