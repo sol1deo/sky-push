@@ -13,9 +13,57 @@ SKY.AccountUI = (function () {
   const A = () => SKY.Account;
   let mode = 'in';            // modal: 'in' | 'up'
   let userChkT = null;
+  let iconRig = null;
+
+  /* banner value -> css background (preset id or an uploaded image url) */
+  function bannerCss(b) {
+    if (b && /^https?:/.test(b)) return `#12151d url(${b}) center/cover no-repeat`;
+    return A().BANNERS[b] || A().BANNERS.sky;
+  }
+
+  /* render the cast as PORTRAITS for avatar presets (cache: SKY._charIcons).
+     Async-ish: returns false until the character pack is in; callers just
+     re-render when it lands. */
+  function ensureCharIcons() {
+    if (!SKY.GFX || !SKY.GFX.charReady || !SKY.GFX.charReady()) return false;
+    SKY._charIcons = SKY._charIcons || {};
+    const chars = (SKY.Profile && SKY.Profile.CHARS) || [];
+    let made = false;
+    for (const cd of chars) {
+      if (SKY._charIcons[cd.id]) continue;
+      const inst = SKY.GFX.charInstance(0, cd.id);
+      if (!inst) continue;
+      try {
+        if (!iconRig) {
+          const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+          r.setSize(72, 72); r.setPixelRatio(1);
+          r.outputEncoding = THREE.sRGBEncoding;
+          const sc = new THREE.Scene();
+          sc.add(new THREE.HemisphereLight(0xe8f0ff, 0x3a4150, 1.25));
+          const key = new THREE.DirectionalLight(0xffffff, 1.3);
+          key.position.set(0.8, 1.6, 2);
+          sc.add(key);
+          iconRig = { r, sc, cam: new THREE.PerspectiveCamera(30, 1, 0.01, 50) };
+        }
+        const root = inst.root;
+        iconRig.sc.add(root);
+        const h = inst.height || 1.8;
+        // head-and-shoulders framing, straight-on (UACP faces +Z) — the
+        // camera sits at FACE height or the icons are all scalp
+        iconRig.cam.position.set(0, h * 0.76, h * 0.95);
+        iconRig.cam.lookAt(0, h * 0.74, 0);
+        iconRig.r.render(iconRig.sc, iconRig.cam);
+        SKY._charIcons[cd.id] = iconRig.r.domElement.toDataURL();
+        iconRig.sc.remove(root);
+        made = true;
+      } catch (e) {}
+    }
+    return made;
+  }
 
   /* ---------------- nav ---------------- */
   function refreshNav() {
+    ensureCharIcons();
     const acct = A();
     const nick = $('nav-nick');
     const fr = $('nav-friends');
@@ -102,6 +150,7 @@ SKY.AccountUI = (function () {
       $('pf-signin').onclick = () => openModal('in');
       return;
     }
+    ensureCharIcons();
     const p = acct.profile();
     const banners = acct.BANNERS;
     const online = {};
@@ -121,17 +170,20 @@ SKY.AccountUI = (function () {
       </div>`;
     };
     el.innerHTML = `
-      <div class="pf-banner" style="background:${banners[p.banner] || banners.sky}">
-        <span class="pav pav-big">${p.avatar && p.avatar.indexOf('e:') === 0 ? p.avatar.slice(2)
-          : p.avatar ? `<img src="${p.avatar}" alt="">` : '🙂'}</span>
+      <div class="pf-banner" style="background:${bannerCss(p.banner)}">
+        ${SKY.U.avatarHtml(p.avatar, '#ffd34d', p.username, 'pav-big')}
         <div class="pf-uname">${esc(p.username)}<small>⬡ ${SKY.Profile ? SKY.Profile.coins() : 0} · member since ${new Date(p.created_at).toLocaleDateString()}</small></div>
       </div>
       <div class="pf-sec">Banner</div>
       <div class="pf-row">${Object.keys(banners).map(b =>
-        `<div class="pf-sw${p.banner === b ? ' sel' : ''}" data-banner="${b}" style="background:${banners[b]}" title="${b}"></div>`).join('')}</div>
+        `<div class="pf-sw${p.banner === b ? ' sel' : ''}" data-banner="${b}" style="background:${banners[b]}" title="${b}"></div>`).join('')}
+        <label class="fr-btn" style="cursor:pointer">UPLOAD…<input id="pf-bn-file" type="file" accept="image/*" style="display:none"></label></div>
       <div class="pf-sec">Avatar</div>
-      <div class="pf-row">${acct.AVATARS.map(a =>
-        `<span class="pav pav-mid pf-av-opt${p.avatar === 'e:' + a ? ' sel' : ''}" data-av="e:${a}">${a}</span>`).join('')}
+      <div class="pf-row">${acct.AVATARS.map(a => {
+        const url = SKY._charIcons && SKY._charIcons[a.slice(2)];
+        return `<span class="pav pav-mid pf-av-opt${p.avatar === a ? ' sel' : ''}" data-av="${a}">${
+          url ? `<img src="${url}" alt="">` : ''}</span>`;
+      }).join('')}
         <label class="fr-btn" style="cursor:pointer">UPLOAD…<input id="pf-av-file" type="file" accept="image/*" style="display:none"></label>
       </div>
       <div class="pf-sec">Bio</div>
@@ -159,6 +211,10 @@ SKY.AccountUI = (function () {
     const avf = $('pf-av-file');
     if (avf) avf.onchange = async (e) => {
       if (e.target.files[0]) { await acct.uploadAvatar(e.target.files[0]); renderPanel(); }
+    };
+    const bnf = $('pf-bn-file');
+    if (bnf) bnf.onchange = async (e) => {
+      if (e.target.files[0]) { await acct.uploadBanner(e.target.files[0]); renderPanel(); }
     };
     $('pf-bio').onchange = (e) => acct.updateProfile({ bio: e.target.value.slice(0, 120) });
     $('pf-signout').onclick = async () => { await acct.signOut(); renderPanel(); refreshNav(); };
@@ -188,9 +244,9 @@ SKY.AccountUI = (function () {
     const acct = A();
     const p = await acct.fetchProfile(userId);
     if (!p) return;
-    $('fp-banner').style.background = acct.BANNERS[p.banner] || acct.BANNERS.sky;
-    $('fp-av').innerHTML = p.avatar && p.avatar.indexOf('e:') === 0 ? p.avatar.slice(2)
-      : p.avatar ? `<img src="${p.avatar}" alt="">` : '🙂';
+    $('fp-banner').style.background = bannerCss(p.banner);
+    $('fp-av').outerHTML = SKY.U.avatarHtml(p.avatar, '#8a94a8', p.username, 'pav-big')
+      .replace('class="pav', 'id="fp-av" class="pav');
     $('fp-name').textContent = p.username;
     $('fp-bio').textContent = p.bio || '';
     const fr = acct.friends().find(f => f.id === userId);

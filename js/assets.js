@@ -755,10 +755,10 @@ SKY.Assets = (function () {
     const fallbackFish = (scale) => {
       const f = new THREE.Group();
       const body = new THREE.Mesh(new THREE.ConeGeometry(0.14 * scale, 0.55 * scale, 6), lam(col));
-      body.rotation.x = -Math.PI / 2;   // nose toward -Z (the game's forward)
+      body.rotation.x = Math.PI / 2;    // nose toward +Z (matches the pack models)
       const tail = new THREE.Mesh(new THREE.ConeGeometry(0.1 * scale, 0.25 * scale, 4), lam(col));
-      tail.rotation.x = Math.PI / 2;
-      tail.position.z = 0.35 * scale;
+      tail.rotation.x = -Math.PI / 2;
+      tail.position.z = -0.35 * scale;
       f.add(body, tail);
       return f;
     };
@@ -818,9 +818,11 @@ SKY.Assets = (function () {
         const bobP = t * sw.bobF + sw.bob;
         sw.f.position.set(Math.cos(a) * sw.r,
           Math.sin(bobP) * sw.bobA, Math.sin(a) * sw.r);
-        // velocity along the circle is (-sin a, cos a) — face it, -Z forward
+        // velocity along the circle is (-sin a, cos a); the Quaternius
+        // creatures swim along their OWN +Z, so yaw = atan2(vx, vz) = -a
+        // (the old π−a had every fish cruising tail-first)
         sw.f.rotation.order = 'YXZ';
-        sw.f.rotation.y = Math.PI - a;
+        sw.f.rotation.y = -a;
         // bank INTO the turn + pitch with the vertical bob = alive, not a
         // model on a carousel rail
         sw.f.rotation.z = -0.28;

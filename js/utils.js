@@ -31,6 +31,11 @@ SKY.U = {
   avatarHtml(av, color, name, cls) {
     const c = 'pav' + (cls ? ' ' + cls : '');
     if (av && av.indexOf('e:') === 0) return `<span class="${c}">${av.slice(2)}</span>`;
+    // 'c:<CharId>' = rendered character portrait (AccountUI fills the cache;
+    // until it exists, fall through to the initial disc)
+    if (av && av.indexOf('c:') === 0 && window.SKY && SKY._charIcons && SKY._charIcons[av.slice(2)]) {
+      return `<span class="${c}"><img src="${SKY._charIcons[av.slice(2)]}" alt=""></span>`;
+    }
     if (av && /^https?:/.test(av)) return `<span class="${c}"><img src="${av}" alt=""></span>`;
     const ch = String(name || '?').replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase() || '?';
     return `<span class="${c} pav-d" style="background:${color || '#8a94a8'}">${ch}</span>`;

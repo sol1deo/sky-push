@@ -77,9 +77,11 @@ SKY.World = (function () {
      * grid: (segs+1)² heights over a size×size square centered on (x,z).
      * Pawns/ragdolls collide by height sample; raycast marches the ray.  */
     addTerrain(t) {
+      const sx = t.sx !== undefined ? t.sx : t.size;
+      const sz = t.sz !== undefined ? t.sz : t.size;
       const T = {
-        x: t.x, z: t.z, size: t.size, segs: t.segs,
-        cell: t.size / t.segs,
+        x: t.x, z: t.z, sx, sz, segs: t.segs,
+        cellX: sx / t.segs, cellZ: sz / t.segs,
         h: t.heights,               // Float32Array, row-major, (segs+1)²
         y: t.y || 0,                // base height offset
         mesh: t.mesh || null,
@@ -91,8 +93,8 @@ SKY.World = (function () {
     terrainHeight(x, z) {
       let best = -Infinity;
       for (const T of api.terrains) {
-        const lx = (x - T.x + T.size / 2) / T.cell;
-        const lz = (z - T.z + T.size / 2) / T.cell;
+        const lx = (x - T.x + T.sx / 2) / T.cellX;
+        const lz = (z - T.z + T.sz / 2) / T.cellZ;
         if (lx < 0 || lz < 0 || lx > T.segs || lz > T.segs) continue;
         const ix = Math.min(T.segs - 1, Math.floor(lx));
         const iz = Math.min(T.segs - 1, Math.floor(lz));

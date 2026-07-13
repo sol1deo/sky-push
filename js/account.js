@@ -37,8 +37,11 @@ SKY.Account = (function () {
     candy:    'linear-gradient(120deg,#5a1a4a 0%,#ff5db1 60%,#ffd8e8 100%)',
     gold:     'linear-gradient(120deg,#2a1f05 0%,#aa7d00 55%,#ffd34d 100%)',
   };
-  const AVATARS = ['🙂', '😎', '🤠', '👻', '🐸', '🐱', '🦊', '🐼', '🤖', '👽',
-    '🍕', '⚡', '🔥', '💀', '👑', '🎯'];
+  // presets = the game's own cast, rendered as portraits ('c:<CharId>');
+  // players can also upload a custom image
+  const AVATARS = ['Casual_Male', 'Casual_Female', 'BlueSoldier_Male',
+    'BlueSoldier_Female', 'Worker_Male', 'Chef_Male', 'Cowboy_Female',
+    'Pirate_Female', 'Suit_Male', 'Ninja_Male'].map(id => 'c:' + id);
 
   let sb = null;
   let session = null;
@@ -128,6 +131,27 @@ SKY.Account = (function () {
       const { error } = await sb.from('profiles').update(patch).eq('id', session.user.id);
       if (!error) { Object.assign(profile, patch); changed(); }
       return !error;
+    },
+    /* wide custom banner image -> storage -> profiles.banner = url */
+    async uploadBanner(file) {
+      if (!api.isLoggedIn() || !file) return false;
+      const img = await new Promise((res, rej) => {
+        const i = new Image();
+        i.onload = () => res(i); i.onerror = rej;
+        i.src = URL.createObjectURL(file);
+      });
+      const c = document.createElement('canvas');
+      c.width = 640; c.height = 170;
+      // cover-crop to the banner aspect
+      const scale = Math.max(640 / img.width, 170 / img.height);
+      const w = img.width * scale, hh = img.height * scale;
+      c.getContext('2d').drawImage(img, (640 - w) / 2, (170 - hh) / 2, w, hh);
+      const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+      const path = session.user.id + '/banner-' + Date.now() + '.jpg';
+      const { error } = await sb.storage.from('avatars').upload(path, blob, { upsert: true });
+      if (error) return false;
+      const { data } = sb.storage.from('avatars').getPublicUrl(path);
+      return api.updateProfile({ banner: data.publicUrl });
     },
     async uploadAvatar(file) {
       if (!api.isLoggedIn() || !file) return false;

@@ -983,6 +983,10 @@
     font-size:8px; letter-spacing:.04em; text-align:center; color:#fff;
     background:rgba(10,12,16,.55); border-radius:0 0 6px 6px; padding:1px 0;
     opacity:0; transition:opacity .1s; pointer-events:none; }
+  /* terrain texture SLOT swatches carry their slot number */
+  .ed-swatch.tslot i { position:absolute; left:3px; top:2px; font-style:normal;
+    font-size:9px; font-weight:800; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.8); }
+  .ed-mini.sel { color:#ffd34d; border-color:#ffd34d; }
   .ed-swatch:hover::after { opacity:1; }
   .ed-swatch:hover { border-color:rgba(255,255,255,.5); }
   .ed-swatch.sel { border-color:#ffd34d; box-shadow:0 0 0 1px #ffd34d; }
@@ -1045,6 +1049,7 @@
     border-radius:999px; padding:6px 12px; font-family:inherit; font-size:11px;
     font-weight:700; cursor:pointer; margin-right:8px; }
   #nav-friends b { color:var(--brand); }
+  #nav-friends svg { vertical-align:-2px; margin-right:2px; }
   #nav-friends.online b { color:#49e07f; }
   /* player avatar chip — replaces the colored ● markers everywhere */
   .pav { display:inline-flex; align-items:center; justify-content:center;
@@ -1470,12 +1475,12 @@
     <button class="nav-tab" id="tab-editor">Editor</button>
     <button class="nav-tab" id="open-settings">Settings</button>
     <div id="nav-right">
-      <button id="nav-friends" class="hidden" title="friends online">👥 <b id="nav-friends-n">0</b></button>
+      <button id="nav-friends" class="hidden" title="friends online"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M15.8 14.6c2.2.4 3.7 2 4.2 4.4"/></svg> <b id="nav-friends-n">0</b></button>
       <button id="nav-nick" title="click to change your name">…</button>
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 46</div>
+  <div id="build-foot" class="rail-foot">prototype · build 50</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1813,40 +1818,40 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=49"></script>
-<script src="js/profile.js?v=49"></script>
-<script src="js/account.js?v=49"></script>
-<script src="js/accountui.js?v=49"></script>
-<script src="js/utils.js?v=49"></script>
-<script src="js/gfx.js?v=49"></script>
-<script src="js/mapdata.js?v=49"></script>
-<script src="js/audio.js?v=49"></script>
-<script src="js/settings.js?v=49"></script>
-<script src="js/input.js?v=49"></script>
-<script src="js/world.js?v=49"></script>
-<script src="js/effects.js?v=49"></script>
-<script src="js/map.js?v=49"></script>
-<script src="js/characters.js?v=49"></script>
-<script src="js/pawn.js?v=49"></script>
-<script src="js/weapons.js?v=49"></script>
-<script src="js/loot.js?v=49"></script>
-<script src="js/pickups.js?v=49"></script>
-<script src="js/sparks.js?v=49"></script>
-<script src="js/grenades.js?v=49"></script>
-<script src="js/grapple.js?v=49"></script>
-<script src="js/bots.js?v=49"></script>
-<script src="js/hud.js?v=49"></script>
-<script src="js/game.js?v=49"></script>
-<script src="js/attract.js?v=49"></script>
-<script src="js/net.js?v=49"></script>
-<script src="js/dof.js?v=49"></script>
+<script src="js/config.js?v=50"></script>
+<script src="js/profile.js?v=50"></script>
+<script src="js/account.js?v=50"></script>
+<script src="js/accountui.js?v=50"></script>
+<script src="js/utils.js?v=50"></script>
+<script src="js/gfx.js?v=50"></script>
+<script src="js/mapdata.js?v=50"></script>
+<script src="js/audio.js?v=50"></script>
+<script src="js/settings.js?v=50"></script>
+<script src="js/input.js?v=50"></script>
+<script src="js/world.js?v=50"></script>
+<script src="js/effects.js?v=50"></script>
+<script src="js/map.js?v=50"></script>
+<script src="js/characters.js?v=50"></script>
+<script src="js/pawn.js?v=50"></script>
+<script src="js/weapons.js?v=50"></script>
+<script src="js/loot.js?v=50"></script>
+<script src="js/pickups.js?v=50"></script>
+<script src="js/sparks.js?v=50"></script>
+<script src="js/grenades.js?v=50"></script>
+<script src="js/grapple.js?v=50"></script>
+<script src="js/bots.js?v=50"></script>
+<script src="js/hud.js?v=50"></script>
+<script src="js/game.js?v=50"></script>
+<script src="js/attract.js?v=50"></script>
+<script src="js/net.js?v=50"></script>
+<script src="js/dof.js?v=50"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=49"></script>
-<script src="js/vidrender.js?v=49"></script>
-<script src="js/demos.js?v=49"></script>
-<script src="js/locker.js?v=49"></script>
-<script src="js/assets.js?v=49"></script>
-<script src="js/editor.js?v=49"></script>
-<script src="js/main.js?v=49"></script>
+<script src="js/replay.js?v=50"></script>
+<script src="js/vidrender.js?v=50"></script>
+<script src="js/demos.js?v=50"></script>
+<script src="js/locker.js?v=50"></script>
+<script src="js/assets.js?v=50"></script>
+<script src="js/editor.js?v=50"></script>
+<script src="js/main.js?v=50"></script>
 </body>
 </html>

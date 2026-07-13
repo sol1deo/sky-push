@@ -1916,11 +1916,12 @@ SKY.Map = (function () {
 
   function buildTerrain(tr) {
     const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128);
-    const size = Math.max(4, tr.size || 60);
+    const sx = Math.max(4, tr.sx !== undefined ? tr.sx : (tr.size || 60));
+    const sz = Math.max(4, tr.sz !== undefined ? tr.sz : (tr.size || 60));
     const n = (segs + 1) * (segs + 1);
     const heights = SKY.MapData.decodeHeights(tr.h, n);
     const splat = SKY.MapData.decodeSplat(tr.splat, n);
-    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+    const geo = new THREE.PlaneGeometry(sx, sz, segs, segs);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = heights[i];
@@ -1930,7 +1931,20 @@ SKY.Map = (function () {
     mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
     mesh.receiveShadow = true;
     group.add(mesh);
-    SKY.World.addTerrain({ x: tr.p[0], z: tr.p[2], size, segs, heights, y: tr.p[1], mesh });
+    // base skirt (blocks converted to terrain keep their solid body): a box
+    // from p.y - base up to p.y, visual + side/bottom collision
+    if (tr.base && tr.base > 0.05) {
+      const t0 = (SKY.GFX && SKY.GFX.texture) ? SKY.GFX.texture((tr.texs || ['sand'])[0], 1) : null;
+      const bmat = t0 ? new THREE.MeshLambertMaterial({ map: t0 })
+        : new THREE.MeshLambertMaterial({ color: 0xb9a887 });
+      const box = new THREE.Mesh(new THREE.BoxGeometry(sx, tr.base, sz), bmat);
+      box.position.set(tr.p[0], tr.p[1] - tr.base / 2, tr.p[2]);
+      box.receiveShadow = box.castShadow = true;
+      group.add(box);
+      SKY.World.addSolid({ x: tr.p[0], y: tr.p[1] - tr.base / 2, z: tr.p[2],
+        sx, sy: tr.base, sz });
+    }
+    SKY.World.addTerrain({ x: tr.p[0], z: tr.p[2], sx, sz, segs, heights, y: tr.p[1], mesh });
     return mesh;
   }
 

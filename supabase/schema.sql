@@ -18,7 +18,7 @@ create table if not exists public.profiles (
   username   citext unique not null
              check (char_length(username) between 3 and 14
                     and username::text ~ '^[A-Za-z0-9_]+$'),
-  avatar     text not null default 'e:🙂',   -- 'e:<emoji>' preset or storage URL
+  avatar     text not null default 'c:Casual_Male', -- 'c:<char>' portrait, 'e:<emoji>' or image URL
   banner     text not null default 'sky',    -- preset banner id (client-side list)
   bio        text not null default '' check (char_length(bio) <= 120),
   coins      int  not null default 300,
