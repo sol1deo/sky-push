@@ -38,15 +38,35 @@ SKY.World = (function () {
      * A square column under the sea surface: swim physics + the underwater
      * screen/audio treatment key off "is this point inside a water volume". */
     addWater(w) {
-      api.waters.push({
+      const W = {
         x: w.x, z: w.z, half: w.half, level: w.level,
         depth: w.depth !== undefined ? w.depth : 60,   // how far down it stays water
+        amp: w.amp || 0, kw: w.kw || 0,                // wave field (visual match)
+        currents: w.currents || null,                  // seeded danger/escape jets
         opts: w.opts || {},
-      });
+      };
+      api.waters.push(W);
+      return W;
     },
-    waterAt(x, y, z) {
+    /* the VISUAL wave height at (x,z) — same formula/clock the sea mesh
+       animates with. Display-only (per-client clock): the camera's
+       "am I underwater" test uses it; PHYSICS always uses the flat level
+       so every peer simulates identically. */
+    surfaceAt(w, x, z) {
+      if (!w.amp || !w.kw) return w.level;
+      const t = performance.now() * 0.0009;
+      const lx = x - w.x, lz = z - w.z, kw = w.kw;
+      const h =
+        Math.sin(lx * kw + t * 1.9) * 0.55 +
+        Math.sin(lz * kw * 0.8 + t * 1.4) * 0.3 +
+        Math.sin((lx + lz) * kw * 0.45 - t * 2.3) * 0.35 +
+        Math.sin(lx * kw * 2.3 - t * 3.1) * Math.sin(lz * kw * 2.1 + t * 2.6) * 0.14;
+      return w.level + w.amp * h;
+    },
+    waterAt(x, y, z, waves) {
       for (const w of api.waters) {
-        if (y > w.level || y < w.level - w.depth) continue;
+        const top = waves ? api.surfaceAt(w, x, z) : w.level;
+        if (y > top || y < w.level - w.depth) continue;
         if (Math.abs(x - w.x) > w.half || Math.abs(z - w.z) > w.half) continue;
         return w;
       }

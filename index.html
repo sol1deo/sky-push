@@ -1124,6 +1124,21 @@
   .lob-player { display:flex; align-items:center; gap:8px; }
   .lob-player .fr-btn { margin-left:auto; }
 
+  /* oxygen bar (head under water) */
+  #o2 { position:absolute; left:50%; bottom:26%; transform:translateX(-50%);
+    display:flex; align-items:center; gap:9px; }
+  #o2 b { font-size:11px; font-weight:800; letter-spacing:.1em; color:#bfe9ff;
+    text-shadow:0 1px 3px rgba(0,0,0,.6); }
+  #o2 span { width:190px; height:9px; border-radius:6px; overflow:hidden;
+    background:rgba(0,0,0,.45); border:1px solid rgba(191,233,255,.35); display:block; }
+  #o2 i { display:block; height:100%; width:100%;
+    background:linear-gradient(90deg,#49b8e0,#bfe9ff); transition:width .12s linear; }
+  #o2.low b { color:var(--danger); animation:o2pulse .5s ease-in-out infinite; }
+  #o2.low i { background:linear-gradient(90deg,#e04949,#ff9a9a); }
+  @keyframes o2pulse { 50% { opacity:.35; } }
+  /* underwater depth-darkness layer (JS drives opacity) */
+  #uw-ov .uwd { position:absolute; inset:0; background:#020d18; opacity:0; }
+
   /* ============ underwater overlay (camera below a sea surface) ============ */
   #uw-ov { position:fixed; inset:0; z-index:4; pointer-events:none; overflow:hidden;
     background:
@@ -1297,6 +1312,8 @@
     <div class="rb-sub"><span id="rb-time"></span><span id="rb-extra"></span></div>
   </div>
   <div id="respawn-ov" class="hidden"></div>
+  <!-- oxygen while your head is under water -->
+  <div id="o2" class="hidden"><b>O²</b><span><i id="o2-fill"></i></span></div>
   <div id="spec-ov" class="hidden"></div>
   <div id="scoreboard" class="hidden">
     <h3>Scoreboard</h3>
@@ -1796,40 +1813,40 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=48"></script>
-<script src="js/profile.js?v=48"></script>
-<script src="js/account.js?v=48"></script>
-<script src="js/accountui.js?v=48"></script>
-<script src="js/utils.js?v=48"></script>
-<script src="js/gfx.js?v=48"></script>
-<script src="js/mapdata.js?v=48"></script>
-<script src="js/audio.js?v=48"></script>
-<script src="js/settings.js?v=48"></script>
-<script src="js/input.js?v=48"></script>
-<script src="js/world.js?v=48"></script>
-<script src="js/effects.js?v=48"></script>
-<script src="js/map.js?v=48"></script>
-<script src="js/characters.js?v=48"></script>
-<script src="js/pawn.js?v=48"></script>
-<script src="js/weapons.js?v=48"></script>
-<script src="js/loot.js?v=48"></script>
-<script src="js/pickups.js?v=48"></script>
-<script src="js/sparks.js?v=48"></script>
-<script src="js/grenades.js?v=48"></script>
-<script src="js/grapple.js?v=48"></script>
-<script src="js/bots.js?v=48"></script>
-<script src="js/hud.js?v=48"></script>
-<script src="js/game.js?v=48"></script>
-<script src="js/attract.js?v=48"></script>
-<script src="js/net.js?v=48"></script>
-<script src="js/dof.js?v=48"></script>
+<script src="js/config.js?v=49"></script>
+<script src="js/profile.js?v=49"></script>
+<script src="js/account.js?v=49"></script>
+<script src="js/accountui.js?v=49"></script>
+<script src="js/utils.js?v=49"></script>
+<script src="js/gfx.js?v=49"></script>
+<script src="js/mapdata.js?v=49"></script>
+<script src="js/audio.js?v=49"></script>
+<script src="js/settings.js?v=49"></script>
+<script src="js/input.js?v=49"></script>
+<script src="js/world.js?v=49"></script>
+<script src="js/effects.js?v=49"></script>
+<script src="js/map.js?v=49"></script>
+<script src="js/characters.js?v=49"></script>
+<script src="js/pawn.js?v=49"></script>
+<script src="js/weapons.js?v=49"></script>
+<script src="js/loot.js?v=49"></script>
+<script src="js/pickups.js?v=49"></script>
+<script src="js/sparks.js?v=49"></script>
+<script src="js/grenades.js?v=49"></script>
+<script src="js/grapple.js?v=49"></script>
+<script src="js/bots.js?v=49"></script>
+<script src="js/hud.js?v=49"></script>
+<script src="js/game.js?v=49"></script>
+<script src="js/attract.js?v=49"></script>
+<script src="js/net.js?v=49"></script>
+<script src="js/dof.js?v=49"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=48"></script>
-<script src="js/vidrender.js?v=48"></script>
-<script src="js/demos.js?v=48"></script>
-<script src="js/locker.js?v=48"></script>
-<script src="js/assets.js?v=48"></script>
-<script src="js/editor.js?v=48"></script>
-<script src="js/main.js?v=48"></script>
+<script src="js/replay.js?v=49"></script>
+<script src="js/vidrender.js?v=49"></script>
+<script src="js/demos.js?v=49"></script>
+<script src="js/locker.js?v=49"></script>
+<script src="js/assets.js?v=49"></script>
+<script src="js/editor.js?v=49"></script>
+<script src="js/main.js?v=49"></script>
 </body>
 </html>

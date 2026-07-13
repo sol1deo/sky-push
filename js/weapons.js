@@ -526,6 +526,8 @@ SKY.Weapons = (function () {
 
       let force = C.baseKnockback + pawn.speed3() * C.speedMult;
       force *= 1 - 0.5 * (dist / C.range);
+      // UNDERWATER the cannon is a WATER JET — much harder shove
+      if (pawn.inWater) force *= 1.75;
       _imp.copy(_b).multiplyScalar(force);
       _imp.y += force * C.upFactor;
       const wasAirborne = !p.grounded;
@@ -539,7 +541,10 @@ SKY.Weapons = (function () {
       if (p.isLocal) SKY.Effects.shake(SKY.TUNING.camera.shakeHitTaken);
     }
 
-    pawn.vel.addScaledVector(_dir, -C.selfRecoil);
+    // underwater self-kick is HUGE: the cannon doubles as jet propulsion —
+    // the sea's escape tool (fire at a current / the depths to launch out)
+    pawn.vel.addScaledVector(_dir, -C.selfRecoil * (pawn.inWater ? 2.0 : 1));
+    if (pawn.inWater) pawn._uwHitT = 0.6;   // let the jet impulse actually carry
     if (pawn.vel.y > 1) pawn.grounded = false;
     pawn._cannonT = 0.7;     // third-person hands show the cannon briefly
     SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone());

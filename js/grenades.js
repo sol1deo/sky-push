@@ -117,7 +117,11 @@ SKY.Grenades = (function () {
       const N = SKY.TUNING.grenades[n.type];
       n.fuse -= dt;
       if (!n.resting) {
-        n.vel.y -= 20 * dt;
+        // underwater: thick drag + slow sink instead of a clean arc
+        if (SKY.World.waterAt && SKY.World.waterAt(n.pos.x, n.pos.y, n.pos.z)) {
+          n.vel.multiplyScalar(1 / (1 + 2.8 * dt));
+          n.vel.y -= 4.5 * dt;
+        } else n.vel.y -= 20 * dt;
         _v.copy(n.vel).multiplyScalar(dt);
         const len = _v.length();
         if (len > 1e-6) {

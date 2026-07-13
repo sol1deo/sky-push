@@ -348,9 +348,11 @@ SKY.Characters = (function () {
       this.wasGrounded = p.grounded;
 
       // pick the dominant locomotion state
+      const swim = (p.inWater || p._netSwim) && !p.grounded;
       let want = 'idle';
       if (this.emoteT > 0) { this.emoteT -= dt; want = 'dance'; }
       else if (p.sliding) want = 'slide';
+      else if (swim) want = (spd + Math.abs(p.vel.y)) > 1.2 ? 'run' : 'idle';  // paddle
       else if (!p.grounded) want = 'air';
       else if (p.crouching) want = 'crouch';
       else if (spd > 0.6) want = 'run';
@@ -362,8 +364,10 @@ SKY.Characters = (function () {
         const w = a.getEffectiveWeight();
         a.setEffectiveWeight(w + (target - w) * Math.min(1, 10 * dt));
       }
-      // stride speed follows actual velocity
-      if (A.run) A.run.timeScale = SKY.U.clamp(spd / 5.5, 0.7, 2.1);
+      // stride speed follows actual velocity (swimming paddles slower)
+      if (A.run) A.run.timeScale = swim
+        ? SKY.U.clamp((spd + Math.abs(p.vel.y)) / 4.5, 0.5, 1.3)
+        : SKY.U.clamp(spd / 5.5, 0.7, 2.1);
       // hold poses: Jump pauses at its apex, Roll freezes in the tuck,
       // SitDown freezes half-way down = the crouch squat
       if (A.air && A.air.time > this.airApex && !p.grounded) A.air.time = this.airApex;
@@ -656,7 +660,13 @@ SKY.Characters = (function () {
       this.root.visible = true;
 
       const root = this.root;
+      root.rotation.order = 'YXZ';        // yaw first, then the swim pitch
       root.position.copy(p.pos);
+      // SWIMMING: prone, face-down glide (fast) or half-upright tread (slow);
+      // remote pawns carry the state in the net flags (p._netSwim)
+      const swimming = (p.inWater || p._netSwim) && !p.grounded;
+      this._swimW = SKY.U.damp(this._swimW || 0, swimming ? 1 : 0, 6, dt);
+      root.position.y += this._swimW * 0.5;   // float the prone body up
 
       // stand-up rise + crouch squash (the rigged model has a real slide
       // pose, so it only uses the scale for the stand-up rise)
@@ -676,7 +686,9 @@ SKY.Characters = (function () {
         this.facingVel -= this.facingVel * 7 * dt;
         this.facingYaw += this.facingVel * dt;
         root.rotation.y = this.facingYaw;
-        root.rotation.x = SKY.U.damp(root.rotation.x, 0, 10, dt);
+        const swimSpd = Math.hypot(p.vel.x, p.vel.z) + Math.abs(p.vel.y);
+        const tilt = this._swimW * (swimSpd > 2.2 ? 1.15 : 0.45);
+        root.rotation.x = SKY.U.damp(root.rotation.x, -tilt, 8, dt);
         root.rotation.z = SKY.U.damp(root.rotation.z, 0, 10, dt);
       }
 
@@ -696,9 +708,9 @@ SKY.Characters = (function () {
         L.hip.rotation.x = SKY.U.damp(L.hip.rotation.x, 1.15, 10, dt);
         Rr.hip.rotation.x = SKY.U.damp(Rr.hip.rotation.x, 0.9, 10, dt);
         L.knee.rotation.x = Rr.knee.rotation.x = -0.3;
-      } else if (p.grounded) {
-        this.phase += dt * spd * 1.8;
-        const swing = Math.sin(this.phase) * SKY.U.clamp(spd * 0.1, 0, 0.9);
+      } else if (p.grounded || this._swimW > 0.5) {
+        this.phase += dt * Math.max(spd, this._swimW > 0.5 ? 4.5 : 0) * 1.8;
+        const swing = Math.sin(this.phase) * SKY.U.clamp(Math.max(spd, this._swimW > 0.5 ? 5 : 0) * 0.1, 0, 0.9);
         L.hip.rotation.x = swing;
         Rr.hip.rotation.x = -swing;
         L.knee.rotation.x = -Math.max(0, -Math.sin(this.phase - 0.6)) * 0.9;

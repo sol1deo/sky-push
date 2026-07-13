@@ -1223,6 +1223,9 @@ SKY.Editor = (function () {
             + numRow('Sink rate', fx.gravity, 'fxgrav', 0.05)
             + numRow('Swim speed ×', fx.speed, 'fxspeed', 0.05)
             + numRow('Jump out ×', fx.jumpOut, 'fxjumpout', 0.1)
+            + numRow('Oxygen s', fx.oxygen !== undefined ? fx.oxygen : 12, 'fxoxy', 1)
+            + numRow('Currents', fx.currents !== undefined ? fx.currents : 10, 'fxcurn', 1)
+            + numRow('Current power', fx.currentPower !== undefined ? fx.currentPower : 26, 'fxcurp', 2)
             + `<div class="ed-hint">WATER: players SWIM inside it (forward dives where
             you look, SPACE up / CTRL down, SPACE at the surface jumps out).
             Shallow areas over a sculpted seabed pick up the SHALLOW TINT and
@@ -1432,6 +1435,9 @@ SKY.Editor = (function () {
       else if (k === 'fxgrav') d.fx.gravity = SKY.U.clamp(num, -1, 2);
       else if (k === 'fxspeed') d.fx.speed = SKY.U.clamp(num, 0.1, 3);
       else if (k === 'fxjumpout') d.fx.jumpOut = SKY.U.clamp(num, 0, 3);
+      else if (k === 'fxoxy') d.fx.oxygen = SKY.U.clamp(num, 2, 120);
+      else if (k === 'fxcurn') d.fx.currents = SKY.U.clamp(Math.round(num), 0, 60);
+      else if (k === 'fxcurp') d.fx.currentPower = SKY.U.clamp(num, 0, 120);
       markDirty();
       rebuildProp(o);
       return;

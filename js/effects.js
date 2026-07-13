@@ -71,28 +71,60 @@ SKY.Effects = (function () {
       gravity: 9, life: 0.6, size: 0.5 + k * 0.3 });
   }
 
-  let uwOn = false, uwFog = null, uwBubbleT = 0;
+  /* a single directed streak particle (current jets etc.) */
+  function stream(pos, dir, speed, color) {
+    spawn({
+      pos: pos.clone(),
+      vel: new THREE.Vector3(
+        dir.x * speed + SKY.U.rand(-0.6, 0.6),
+        dir.y * speed + SKY.U.rand(-0.6, 0.6),
+        dir.z * speed + SKY.U.rand(-0.6, 0.6)),
+      life: SKY.U.rand(0.5, 0.9), size: SKY.U.rand(0.22, 0.45), color,
+      gravity: 0, drag: 0.3, opacity: 0.5,
+    });
+  }
+
+  let uwOn = false, uwFog = null, uwBubbleT = 0, uwBaseCol = null, uwDarkEl = null;
   function underwater(vol, dt) {
     const on = !!vol;
+    const el = document.getElementById('uw-ov');
     if (on !== uwOn) {
       uwOn = on;
-      const el = document.getElementById('uw-ov');
       if (el) el.classList.toggle('hidden', !on);
       if (SKY.SFX.setUnderwater) SKY.SFX.setUnderwater(on);
       if (on) {
-        const col = new THREE.Color((vol.opts && vol.opts.color) || '#155a9e')
+        uwBaseCol = new THREE.Color((vol.opts && vol.opts.color) || '#155a9e')
           .lerp(new THREE.Color('#06121f'), 0.25);
-        uwFog = new THREE.Fog(col, 1.5, 55);
+        uwFog = new THREE.Fog(uwBaseCol.clone(), 1.5, 55);
         uwFog.__uw = true;
         uwFog.__saved = scene.fog;
         scene.fog = uwFog;
+        if (el && !uwDarkEl) {
+          uwDarkEl = document.createElement('i');
+          uwDarkEl.className = 'uwd';
+          el.appendChild(uwDarkEl);
+        }
       } else if (scene.fog && scene.fog.__uw) {
         scene.fog = scene.fog.__saved || null;   // map reloads replace fog anyway
         uwFog = null;
       }
     }
-    // lazy bubbles drifting up past the camera
     if (on && camera) {
+      // depth + the creator's light dial drive the murk: deeper = darker,
+      // shorter sight; a midnight map is nearly black down there
+      const depth = Math.max(0, vol.level - camera.position.y);
+      const light = SKY.U.clamp(SKY.Map.lightMul ? SKY.Map.lightMul() : 1, 0.05, 2);
+      if (uwFog) {
+        const dk = SKY.U.clamp01(depth / 26);
+        uwFog.far = SKY.U.lerp(52, 13, dk) * SKY.U.clamp(0.45 + light * 0.55, 0.4, 1.2);
+        uwFog.color.copy(uwBaseCol)
+          .multiplyScalar(SKY.U.clamp(0.25 + light * 0.75, 0.1, 1.15) * (1 - dk * 0.72));
+      }
+      if (uwDarkEl) {
+        uwDarkEl.style.opacity = SKY.U.clamp(
+          0.12 + (depth / 30) * 0.55 + (1 - Math.min(1, light)) * 0.35, 0, 0.85);
+      }
+      // lazy bubbles drifting up past the camera
       uwBubbleT -= dt;
       if (uwBubbleT <= 0) {
         uwBubbleT = 0.33;
@@ -761,7 +793,7 @@ SKY.Effects = (function () {
   /* ================================================================= */
   return {
     shakeOffset: shakeOff,
-    splash, underwater,
+    splash, underwater, stream,
 
     init(sc, cam) {
       scene = sc; camera = cam;

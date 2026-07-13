@@ -21,8 +21,8 @@ window.SKY = window.SKY || {};
 
 SKY.Account = (function () {
   /* ======================= PASTE YOUR KEYS HERE ======================= */
-  const SUPA_URL = '';
-  const SUPA_ANON = '';
+  const SUPA_URL = 'https://vtzxdqlijmesriqfewiv.supabase.co';
+  const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0enhkcWxpam1lc3JpcWZld2l2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM5Mzc2NTMsImV4cCI6MjA5OTUxMzY1M30.hT5URR4IEbqg5ePl2QxvhKakLMisW6Tc5jfLoBDQG14';
   /* ==================================================================== */
 
   const $ = (id) => document.getElementById(id);

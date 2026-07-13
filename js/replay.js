@@ -110,6 +110,7 @@ SKY.Replay = (function () {
       if (p.sliding) f |= 4;
       if (p.fellScreamed) f |= 8;
       if (p.tauntT > 0) f |= 16;
+      if (p.inWater || p._netSwim) f |= 32;   // swim pose for playback ghosts
       const g = p.grapple;
       const d = {
         p: [p.pos.x, p.pos.y, p.pos.z],
@@ -342,6 +343,7 @@ SKY.Replay = (function () {
       s.grounded = !!(b.f & 2);
       s.sliding = !!(b.f & 4);
       s.fellScreamed = !!(b.f & 8);
+      s.inWater = !!(b.f & 32);
       s.pos.set(SKY.U.lerp(a.p[0], b.p[0], u), SKY.U.lerp(a.p[1], b.p[1], u), SKY.U.lerp(a.p[2], b.p[2], u));
       s.vel.set(b.v[0], b.v[1], b.v[2]);
       s.yaw = a.yaw + SKY.U.angDelta(a.yaw, b.yaw) * u;

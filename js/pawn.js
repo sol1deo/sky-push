@@ -109,6 +109,8 @@ window.SKY = window.SKY || {};
       // water (fx:sea volumes): the volume we're swimming in, or null
       this.inWater = null;
       this._wasWater = false;
+      this.oxygen = 1;        // 1 = full lungs; drains while the head is under
+      this._uwHitT = 0;       // post-hit window: water drag lets the shove carry
 
       this.cmd = { mx: 0, mz: 0, jumpHeld: false, jumpPressed: false, crouch: false, grappleHeld: false, yaw: 0, pitch: 0 };
     }
@@ -140,6 +142,7 @@ window.SKY = window.SKY || {};
       this.dashCd = Math.max(0, this.dashCd - dt);
       this.tauntT = Math.max(0, this.tauntT - dt);
       this.drawT = Math.max(0, this.drawT - dt);
+      this._uwHitT = Math.max(0, this._uwHitT - dt);
       this.timeSinceJump += dt;
 
       // reload completes
@@ -502,9 +505,27 @@ window.SKY = window.SKY || {};
       const T = SKY.TUNING.move;
       const o = this.inWater.opts || {};
       const surf = this.inWater.level;
-      // thick water: drag on everything, momentum dies fast
-      const drag = o.drag !== undefined ? o.drag : 1.7;
+      // thick water: drag on everything, momentum dies fast — EXCEPT while
+      // roped (the hook must work down here) or freshly shoved/jetting
+      let drag = o.drag !== undefined ? o.drag : 1.7;
+      if (this.grapple) drag *= 0.25;
+      if (this._uwHitT > 0) drag *= 0.12;
       this.vel.multiplyScalar(1 / (1 + drag * dt));
+      // CURRENTS: seeded jets that shove you around/down (30% rise = escape
+      // routes). The sea is supposed to be dangerous — ride or fight them.
+      const cur = this.inWater.currents;
+      if (cur) {
+        for (const c of cur) {
+          const dx = this.pos.x - c.x, dy = (this.pos.y + this.height * 0.5) - c.y,
+                dz = this.pos.z - c.z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 > c.r * c.r) continue;
+          const k = 1 - Math.sqrt(d2) / c.r * 0.55;
+          this.vel.x += c.dir.x * c.pow * k * dt;
+          this.vel.y += c.dir.y * c.pow * k * dt;
+          this.vel.z += c.dir.z * c.pow * k * dt;
+        }
+      }
       // a gentle idle sink (0 = perfectly neutral buoyancy)
       this.vel.y -= T.gravity * (o.gravity !== undefined ? o.gravity : 0.12) *
         this.mods.gravMult * dt;
@@ -601,6 +622,8 @@ window.SKY = window.SKY || {};
           SKY.Game.roundTime < SKY.TUNING.it.hideTime) return;
       const r = this.mods.knockResist;   // Heavyweight powerup reduces this
       this.vel.addScaledVector(impulse, r);
+      // underwater, drag would eat the shove instantly — knocks punch through
+      if (this.inWater) this._uwHitT = Math.max(this._uwHitT, 0.55);
       const m = impulse.length() * r;
       // light/medium hits refresh the air-hook — you can TRY to save yourself.
       // HEAVY hits JAM it instead: a clean yeet shouldn't be hooked back from.

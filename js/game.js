@@ -222,6 +222,7 @@ SKY.Game = (function () {
         p.eliminated = false; p.alive = true; p.deadT = 0; p.koCount = 0;
         p.crownTime = 0;
         p.lastHitBy = null; p.lastHitT = -99;
+        p.oxygen = 1;
         p.recentHits = []; p.dmStreak = 0;
         SKY.Grapple.release(p); p.grappleCd = 0; p.pbCd = 0; p.acCd = 0; p.dashCd = 0;
         p.tauntT = 0; p.zoomed = false;
@@ -539,6 +540,35 @@ SKY.Game = (function () {
       SKY.Grenades.tick(dt, api.pawns);
       SKY.Pickups.tick(dt);
       if (SKY.Net.authority) this.tickCrown(dt);
+
+      // OXYGEN: heads under the surface drain, everyone recovers fast above.
+      // Every client tracks all pawns (for the HUD); the AUTHORITY also turns
+      // an empty tank into a drown KO — deep water is supposed to kill.
+      for (const p of api.pawns) {
+        if (!p.alive || p.left) { p.oxygen = 1; continue; }
+        const wo = SKY.World.waterAt
+          ? SKY.World.waterAt(p.pos.x, p.pos.y + p.eyeHeight, p.pos.z) : null;
+        p._headUnder = !!wo;
+        if (wo) {
+          const secs = wo.opts && wo.opts.oxygen !== undefined ? wo.opts.oxygen : 12;
+          p.oxygen = Math.max(0, (p.oxygen === undefined ? 1 : p.oxygen) - dt / Math.max(2, secs));
+          if (SKY.Net.authority && api.state === 'playing' && p.oxygen <= 0) {
+            this.handleKO(p);          // drowned (no killer — same as a fall)
+            continue;
+          }
+        } else {
+          p.oxygen = Math.min(1, (p.oxygen === undefined ? 1 : p.oxygen) + dt / 1.6);
+        }
+      }
+      // low-oxygen warning beeps for the local player
+      const lp = api.player;
+      if (lp && lp.alive && lp.oxygen < 0.35) {
+        api._o2BeepT = (api._o2BeepT || 0) - dt;
+        if (api._o2BeepT <= 0) {
+          api._o2BeepT = 0.25 + lp.oxygen * 2;   // faster as it runs out
+          SKY.SFX.beep();
+        }
+      }
 
       // kill plane + respawns (host authoritative online)
       if (SKY.Net.authority) {
@@ -1001,10 +1031,12 @@ SKY.Game = (function () {
       const C = SKY.TUNING.camera;
       SKY.Map.tick(rdt, api.time);
       SKY.Effects.tick(rdt);
-      // camera below a sea surface = the full underwater treatment
+      // camera below a sea surface = the full underwater treatment.
+      // waves flag: the check follows the ANIMATED surface, so diving through
+      // a swell tints instantly instead of waiting for the flat level
       SKY.Effects.underwater(
         api.state !== 'menu' && SKY.World.waterAt
-          ? SKY.World.waterAt(camera.position.x, camera.position.y, camera.position.z)
+          ? SKY.World.waterAt(camera.position.x, camera.position.y, camera.position.z, true)
           : null, rdt);
       SKY.Pickups.visualTick(rdt);
       SKY.Sparks.visualTick(rdt);

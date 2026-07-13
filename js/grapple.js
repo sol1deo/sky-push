@@ -225,10 +225,14 @@ SKY.Grapple = (function () {
 
     // momentum reel: a near-vertical rope barely winches — climb by SWINGING
     // (tangential speed restores the full rate); dead-hanging goes nowhere
-    const rm = Math.max(G.hangReelMin,
+    let rm = Math.max(G.hangReelMin,
       SKY.U.clamp01(1.15 - _to.y),
       SKY.U.clamp01(pawn.vel.length() / G.swingSpeedFull));
-    g.len = Math.max(G.breakDist + 0.3, g.len - G.reelSpeed * rm * dt);
+    // underwater the winch works HARDER (water drag otherwise ate the rope —
+    // the hook is the other big escape tool down there)
+    if (pawn.inWater) rm = Math.max(rm, 0.85);
+    const reel = G.reelSpeed * (pawn.inWater ? 1.6 : 1);
+    g.len = Math.max(G.breakDist + 0.3, g.len - reel * rm * dt);
 
     // pendulum constraint: outside the rope length, pull back in and kill
     // outward velocity (this is what makes it swing instead of drag)
@@ -240,7 +244,7 @@ SKY.Grapple = (function () {
       pawn.grounded = false;
     }
     // gentle assist toward the point so short reels still feel powerful
-    pawn.vel.addScaledVector(_to, G.pullAccel * 0.35 * rm * dt);
+    pawn.vel.addScaledVector(_to, G.pullAccel * 0.35 * rm * (pawn.inWater ? 1.5 : 1) * dt);
   }
 
   /* rope mesh: fixed-topology tube whose vertices are rewritten in place

@@ -1936,6 +1936,7 @@ SKY.Map = (function () {
 
   function buildCustomMap(def) {
     const D = SKY.MapData;
+    lightMul = def.light !== undefined ? def.light : 1;
     SKY.World.killY = def.killY;
     SKY.World.crownHome = new THREE.Vector3(def.crown[0], def.crown[1], def.crown[2]);
     const M = D.MOODS[def.mood];
@@ -2023,12 +2024,64 @@ SKY.Map = (function () {
       // in pr.fx so every sea can feel different.
       if (a === 'fx:sea') {
         const sf = { ...(SKY.Assets ? SKY.Assets.fxDefaults('fx:sea') : {}), ...(pr.fx || {}) };
+        const half = (Math.max(20, sf.size) / 2) * (pr.scale || 1);
+        // CURRENTS: seeded jets — deterministic from the sea's position so
+        // every peer builds the same danger map. ~70% shove down/sideways
+        // (the killers), ~30% RISE (the escape routes, brighter particles).
+        const nCur = Math.max(0, Math.round(
+          sf.currents !== undefined ? sf.currents : half / 5));
+        const currents = [];
+        let cs = (Math.imul((pr.p[0] * 73 + pr.p[2] * 179 + 1) | 0, 2654435761) | 0) || 1;
+        const crnd = () => {
+          cs |= 0; cs = (cs + 0x6D2B79F5) | 0;
+          let t = Math.imul(cs ^ (cs >>> 15), 1 | cs);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        for (let ci = 0; ci < nCur; ci++) {
+          const cx = pr.p[0] + (crnd() * 2 - 1) * half * 0.85;
+          const cz = pr.p[2] + (crnd() * 2 - 1) * half * 0.85;
+          const fl = SKY.World.terrainHeight(cx, cz);
+          const floor = isFinite(fl) ? fl : pr.p[1] - 30;
+          const range = pr.p[1] - floor;
+          if (range < 4) { continue; }              // too shallow for a jet
+          const cy = floor + 1.5 + crnd() * (range - 3);
+          const rising = crnd() < 0.3;
+          const ang = crnd() * Math.PI * 2;
+          const dir = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang));
+          if (rising) { dir.multiplyScalar(0.35); dir.y = 1; }
+          else dir.y = -(0.35 + crnd() * 0.75);
+          dir.normalize();
+          currents.push({ x: cx, y: cy, z: cz, r: 3 + crnd() * 3, dir,
+            pow: (sf.currentPower !== undefined ? sf.currentPower : 26) * (0.75 + crnd() * 0.5),
+            rising });
+        }
         SKY.World.addWater({
-          x: pr.p[0], z: pr.p[2],
-          half: (Math.max(20, sf.size) / 2) * (pr.scale || 1),
-          level: pr.p[1],
+          x: pr.p[0], z: pr.p[2], half, level: pr.p[1],
+          amp: Math.max(0.01, sf.power || 0.5),
+          kw: (Math.PI * 2) / Math.max(4, sf.range || 18),
+          currents: currents.length ? currents : null,
           opts: sf,
         });
+        // current visuals: directed particle streams so jets READ underwater
+        if (currents.length && SKY.Effects.stream) {
+          let acc = 0;
+          tickers.push((dt) => {
+            acc += dt;
+            if (acc < 0.06) return;
+            acc = 0;
+            const cam = SKY.Game && SKY.Game.player ? SKY.Game.player.pos : null;
+            for (const c of currents) {
+              if (cam && Math.abs(cam.x - c.x) + Math.abs(cam.z - c.z) > 90) continue;
+              if (Math.random() > 0.5) continue;
+              _v.set(c.x + SKY.U.rand(-c.r, c.r) * 0.6,
+                     c.y + SKY.U.rand(-c.r, c.r) * 0.6,
+                     c.z + SKY.U.rand(-c.r, c.r) * 0.6);
+              SKY.Effects.stream(_v, c.dir, 5 + Math.random() * 4,
+                c.rising ? '#bfe9ff' : '#1e4258');
+            }
+          });
+        }
       }
       // AIR VENT: register the updraft column (pawn.tick applies the lift —
       // deterministic from the def, so every peer simulates it identically)
@@ -2178,9 +2231,12 @@ SKY.Map = (function () {
     eventCfg = null;
   }
 
+  let lightMul = 1;    // creator light dial — underwater darkness reads it
+
   /* ====================== lifecycle ====================== */
   function load(sc, id) {
     scene = sc;
+    lightMul = 1;
     if (group) scene.remove(group);
     group = new THREE.Group();
     scene.add(group);
@@ -2353,6 +2409,7 @@ SKY.Map = (function () {
 
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
            setDoor, tryInteract, propCollisionLocal, skyFollow, terrainMaterial,
+           lightMul() { return lightMul; },
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; },
            get rootGroup() { return group; } };

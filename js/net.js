@@ -993,6 +993,7 @@ SKY.Net = (function () {
     if (p.crouching) flags |= 8;
     if (p.alive) flags |= 16;
     if (p._acting) flags |= 32;   // interact hold
+    if (p.inWater) flags |= 64;   // swimming (third-person prone pose)
     const s = [p.netId,
       +p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2),
       +p.vel.x.toFixed(2), +p.vel.y.toFixed(2), +p.vel.z.toFixed(2),
@@ -1113,6 +1114,7 @@ SKY.Net = (function () {
     p.height = (p.crouching || p.sliding) ? SKY.TUNING.move.crouchHeight : SKY.TUNING.move.standHeight;
     p.weapon = t.weapon;
     p._acting = !!(t.flags & 32);
+    p._netSwim = !!(t.flags & 64);
     // display-only grapple rope (their client runs the physics; we just draw):
     // Grapple.updateVisuals picks pawn.grapple up and renders the tube
     if (t.gp) {

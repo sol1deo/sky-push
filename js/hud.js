@@ -530,6 +530,18 @@ SKY.HUD = (function () {
       const p = G.player;
       if (!p || G.state === 'menu') return;
 
+      // oxygen bar: shows while the head is under (or lungs not yet refilled)
+      const o2 = $('o2');
+      if (o2) {
+        const show = p.alive && (p._headUnder || (p.oxygen !== undefined && p.oxygen < 0.999));
+        o2.classList.toggle('hidden', !show);
+        if (show) {
+          const f = $('o2-fill');
+          if (f) f.style.width = Math.round(SKY.U.clamp01(p.oxygen) * 100) + '%';
+          o2.classList.toggle('low', p.oxygen < 0.35);
+        }
+      }
+
       const spd = p.speedH();
       const push = SKY.Weapons.computePush(p);
       setHTML(el.speedNum, spd.toFixed(1) + ' <small>m/s</small>');

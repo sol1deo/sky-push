@@ -126,6 +126,12 @@ SKY.Assets = (function () {
     { id: 'fx:school',     name: 'fish school (swims)', folder: 'sea life' },
     { id: 'fx:sharkpatrol', name: 'shark — ambient swimmer', folder: 'sea life' },
     { id: 'fx:monster',    name: 'sea monster (animated)', folder: 'sea life' },
+    { id: 'fx:whale',      name: 'whale — cruises around', folder: 'sea life' },
+    { id: 'fx:dolphin',    name: 'dolphin — swims laps', folder: 'sea life' },
+    { id: 'fx:manta',      name: 'manta ray — glides', folder: 'sea life' },
+    { id: 'fx:coral',      name: 'coral cluster', folder: 'sea decor' },
+    { id: 'fx:kelp',       name: 'kelp (sways)', folder: 'sea decor' },
+    { id: 'fx:seagrass',   name: 'seagrass patch', folder: 'sea decor' },
     { id: 'fx:rope',       name: 'hanging rope', folder: 'gadgets' },
     { id: 'fx:plane',      name: 'prop plane', folder: 'aviation' },
     { id: 'fx:planewreck', name: 'crashed plane', folder: 'aviation' },
@@ -153,8 +159,9 @@ SKY.Assets = (function () {
     //   deepAlpha/shallowAlpha + shallow tint + fade = the depth look
     //   drag/gravity/speed/jumpOut = swim feel (pawn physics reads these)
     sea:        { color: '#155a9e', power: 0.5, range: 18, size: 140,
-                  deepAlpha: 0.78, shallowAlpha: 0.35, shallow: '#5fd8cf', fade: 6,
-                  drag: 1.7, gravity: 0.12, speed: 0.65, jumpOut: 1 },
+                  deepAlpha: 0.9, shallowAlpha: 0.32, shallow: '#5fd8cf', fade: 10,
+                  drag: 1.7, gravity: 0.12, speed: 0.65, jumpOut: 1,
+                  oxygen: 12, currents: 10, currentPower: 26 },
     // SEA EVENTS — invisible markers in-game; the event system in map.js
     // fires them off the synced round clock. Shared knobs:
     //   start = seconds into the round · every = repeat period ·
@@ -182,6 +189,13 @@ SKY.Assets = (function () {
     school:     { color: '#8fd8ff', size: 8, count: 10, speed: 1 },
     sharkpatrol: { color: '#9fb6c8', size: 10, speed: 1 },
     monster:    { color: '#b98fe0', speed: 1 },
+    whale:      { color: '#7d95ac', size: 18, speed: 1 },
+    dolphin:    { color: '#9fc4d8', size: 12, speed: 1 },
+    manta:      { color: '#6a7f96', size: 10, speed: 1 },
+    // sea decor: size = footprint radius, count = pieces, seed = variation
+    coral:      { color: '#ff7aa8', size: 3, count: 7, seed: 1 },
+    kelp:       { color: '#3fa065', size: 2.5, count: 8, seed: 1, height: 6 },
+    seagrass:   { color: '#57b878', size: 3, count: 26, seed: 1 },
     rope:       { color: '#d8c49a', range: 8, sway: 1 },   // range = length (m); sway 0 = dead straight
     plane:      { color: '#d0483e' },
     planewreck: { color: '#8a92a0' },
@@ -369,7 +383,7 @@ SKY.Assets = (function () {
       const crest = base.clone().lerp(new THREE.Color(0.35, 0.55, 0.75), 0.3);
       const foam = new THREE.Color(0.85, 0.95, 1);
       const shallowCol = new THREE.Color(o.shallow || '#5fd8cf').convertSRGBToLinear();
-      const aDeep = SKY.U.clamp(o.deepAlpha !== undefined ? o.deepAlpha : 0.78, 0.05, 0.98);
+      const aDeep = SKY.U.clamp(o.deepAlpha !== undefined ? o.deepAlpha : 0.9, 0.05, 0.98);
       const aShallow = SKY.U.clamp(o.shallowAlpha !== undefined ? o.shallowAlpha : 0.35, 0.02, 0.98);
       const mat = new THREE.MeshPhongMaterial({
         color: 0xffffff, vertexColors: true,
@@ -389,9 +403,14 @@ SKY.Assets = (function () {
           sh.fragmentShader
             .replace('#include <color_fragment>',
               ['#include <color_fragment>',
+               // smoothstep = a real IN-BETWEEN band (linear saturated too fast)
                'float dk = clamp(vDeep, 0.0, 1.0);',
+               'dk = dk * dk * (3.0 - 2.0 * dk);',
                // shallows: lighter tint AND clearer water
                'diffuseColor.rgb = mix(uShallowCol * diffuseColor.rgb * 1.9, diffuseColor.rgb, dk);',
+               // deep water swallows light: the abyss reads DARK from above,
+               // not like a crisp seabed behind blue glass
+               'diffuseColor.rgb *= mix(1.0, 0.62, dk);',
                'diffuseColor.a = mix(uAShallow, uADeep, dk);'].join('\n'))
             .replace('#include <output_fragment>',
               [// fresnel: grazing angles pick up a soft sky sheen and go a bit
@@ -437,7 +456,7 @@ SKY.Assets = (function () {
       // measure the seabed depth under every vertex ONCE the prop has its
       // world transform (map.js / the editor call this after placing) —
       // fade = meters of depth over which shallow turns into deep
-      const fade = Math.max(0.5, o.fade !== undefined ? o.fade : 6);
+      const fade = Math.max(0.5, o.fade !== undefined ? o.fade : 10);
       g.userData.postPlace = (obj) => {
         obj.updateMatrixWorld(true);
         const v = new THREE.Vector3();
@@ -519,12 +538,138 @@ SKY.Assets = (function () {
     } else if (name === 'heli' || name === 'jet' || name === 'helipad' ||
                name === 'runway' || name === 'tower' || name === 'hangar') {
       buildAviation(name, g, col.clone().convertSRGBToLinear(), o);
-    } else if (name === 'school' || name === 'sharkpatrol' || name === 'monster') {
+    } else if (name === 'school' || name === 'sharkpatrol' || name === 'monster' ||
+               name === 'whale' || name === 'dolphin' || name === 'manta') {
       buildSeaLife(name, g, col.clone().convertSRGBToLinear(), o, marker);
+    } else if (name === 'coral' || name === 'kelp' || name === 'seagrass') {
+      buildSeaDecor(name, g, col.clone().convertSRGBToLinear(), o);
     } else if (name === 'mountain') {
       buildMountain(g, col.clone().convertSRGBToLinear(), o);
     }
     return g;
+  }
+
+  /* SEA DECOR — seeded procedural reef pieces in the pack's flat-color look.
+     coral: mixed cluster (branching / tube / fan / brain), kelp: tall swaying
+     strands, seagrass: a patch of crossed blades. All deterministic from
+     `seed` so peers and thumbnails agree. */
+  function buildSeaDecor(name, g, col, o) {
+    const R = Math.max(0.5, o.size || 3);
+    let st = ((o.seed !== undefined ? o.seed : 1) * 48271 + 7) | 0 || 1;
+    const rnd = () => {
+      st |= 0; st = (st + 0x6D2B79F5) | 0;
+      let t = Math.imul(st ^ (st >>> 15), 1 | st);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const lam = (c, e) => new THREE.MeshLambertMaterial({
+      color: c, emissive: e || 0x000000, side: THREE.DoubleSide });
+    const PALETTE = [col,
+      col.clone().offsetHSL(0.06, 0, 0.06),
+      col.clone().offsetHSL(-0.08, 0.05, -0.04),
+      new THREE.Color('#ffb066').convertSRGBToLinear(),
+      new THREE.Color('#b98fe0').convertSRGBToLinear(),
+      new THREE.Color('#5fd8cf').convertSRGBToLinear()];
+    const mat = (i) => lam(PALETTE[i % PALETTE.length]);
+
+    if (name === 'coral') {
+      const n = SKY.U.clamp(Math.round(o.count || 7), 1, 16);
+      for (let i = 0; i < n; i++) {
+        const px = (rnd() * 2 - 1) * R, pz = (rnd() * 2 - 1) * R;
+        const kind = rnd();
+        const m = mat((rnd() * 6) | 0);
+        const piece = new THREE.Group();
+        if (kind < 0.35) {
+          // branching coral: trunk + child sticks
+          const s = 0.5 + rnd() * 0.8;
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.09 * s, 0.9 * s, 5), m);
+          trunk.position.y = 0.45 * s;
+          piece.add(trunk);
+          const nb = 3 + (rnd() * 4) | 0;
+          for (let b = 0; b < nb; b++) {
+            const br = new THREE.Mesh(new THREE.CylinderGeometry(0.03 * s, 0.055 * s, (0.45 + rnd() * 0.4) * s, 5), m);
+            br.position.y = (0.5 + rnd() * 0.45) * s;
+            br.rotation.z = (rnd() - 0.5) * 1.6;
+            br.rotation.x = (rnd() - 0.5) * 1.6;
+            br.translateY(0.22 * s);
+            piece.add(br);
+          }
+        } else if (kind < 0.6) {
+          // tube coral: a fistful of hollow-ish tubes
+          const s = 0.5 + rnd() * 0.7;
+          const nt = 3 + (rnd() * 3) | 0;
+          for (let tI = 0; tI < nt; tI++) {
+            const h = (0.4 + rnd() * 0.6) * s;
+            const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.09 * s, 0.13 * s, h, 6, 1, true), m);
+            tube.position.set((rnd() - 0.5) * 0.4 * s, h / 2, (rnd() - 0.5) * 0.4 * s);
+            tube.rotation.z = (rnd() - 0.5) * 0.5;
+            piece.add(tube);
+          }
+        } else if (kind < 0.85) {
+          // fan coral: a thin scalloped disc standing up
+          const s = 0.6 + rnd() * 0.9;
+          const fan = new THREE.Mesh(new THREE.CircleGeometry(0.55 * s, 9, 0, Math.PI), m);
+          fan.position.y = 0.1;
+          fan.rotation.y = rnd() * Math.PI;
+          piece.add(fan);
+        } else {
+          // brain coral: a squashed sphere
+          const s = 0.4 + rnd() * 0.5;
+          const brain = new THREE.Mesh(new THREE.SphereGeometry(0.5 * s, 8, 6), m);
+          brain.scale.y = 0.62;
+          brain.position.y = 0.28 * s;
+          piece.add(brain);
+        }
+        piece.position.set(px, 0, pz);
+        piece.rotation.y = rnd() * Math.PI * 2;
+        g.add(piece);
+      }
+    } else if (name === 'kelp') {
+      const n = SKY.U.clamp(Math.round(o.count || 8), 1, 20);
+      const H = Math.max(1.5, o.height || 6);
+      const m = lam(col, col.clone().multiplyScalar(0.08));
+      for (let i = 0; i < n; i++) {
+        const strand = new THREE.Group();
+        const h = H * (0.6 + rnd() * 0.5);
+        const segs = 4;
+        let holder = strand;
+        const sway = [];
+        for (let sI = 0; sI < segs; sI++) {
+          const seg = new THREE.Group();
+          seg.position.y = sI === 0 ? 0 : h / segs;
+          const blade = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.22 + rnd() * 0.12, h / segs + 0.05), m);
+          blade.position.y = h / segs / 2;
+          seg.add(blade);
+          holder.add(seg);
+          holder = seg;
+          sway.push(seg);
+        }
+        strand.position.set((rnd() * 2 - 1) * R, 0, (rnd() * 2 - 1) * R);
+        strand.rotation.y = rnd() * Math.PI * 2;
+        g.add(strand);
+        const phase = rnd() * Math.PI * 2;
+        sway[0].children[0].onBeforeRender = () => {
+          const t = performance.now() * 0.0009 + phase;
+          for (let sI = 0; sI < sway.length; sI++) {
+            sway[sI].rotation.z = Math.sin(t + sI * 0.8) * 0.11;
+            sway[sI].rotation.x = Math.cos(t * 0.8 + sI * 0.6) * 0.07;
+          }
+        };
+      }
+    } else {   // seagrass
+      const n = SKY.U.clamp(Math.round(o.count || 26), 4, 60);
+      const m = lam(col);
+      for (let i = 0; i < n; i++) {
+        const h = 0.35 + rnd() * 0.5;
+        const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.09, h), m);
+        blade.position.set((rnd() * 2 - 1) * R, h / 2, (rnd() * 2 - 1) * R);
+        blade.rotation.y = rnd() * Math.PI;
+        blade.rotation.z = (rnd() - 0.5) * 0.35;
+        g.add(blade);
+      }
+    }
+    g.traverse((oo) => { if (oo.isMesh) oo.castShadow = true; });
   }
 
   /* seeded low-poly backdrop mountain: displaced faceted cones with per-face
@@ -596,8 +741,12 @@ SKY.Assets = (function () {
   }
 
   /* ambient sea life — REAL Quaternius creatures (CC0) swimming on their own:
-     a school circles its marker, the shark prowls a wider ring, the squidle
-     sea monster sits and writhes. Primitive fishlets stand in on file://. */
+     a school circles its marker, the shark/whale/dolphin/manta prowl wider
+     rings with banking turns, the squidle monster sits and writhes.
+     Primitive fishlets stand in on file://.
+     NOTE the driver mesh renders with colorWrite OFF — a `visible:false`
+     material is skipped entirely and onBeforeRender NEVER fires (that bug
+     shipped once: nothing swam). */
   function buildSeaLife(name, g, col, o, marker) {
     const R = Math.max(2, o.size || 8);
     const speed = Math.max(0.05, o.speed !== undefined ? o.speed : 1);
@@ -620,7 +769,7 @@ SKY.Assets = (function () {
       g.add(mk);
     }
     const driver = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.01),
-      new THREE.MeshBasicMaterial({ visible: false }));
+      new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
     driver.frustumCulled = false;
     g.add(driver);
 
@@ -635,32 +784,47 @@ SKY.Assets = (function () {
       return;
     }
 
+    // one big cruiser per marker for the large species; a shoal for 'school'
+    const BIG = {
+      sharkpatrol: { key: 'life-shark', spd: 0.55, bobA: 0.5, bobF: 1.2 },
+      whale:       { key: 'life-whale', spd: 0.22, bobA: 1.2, bobF: 0.5 },
+      dolphin:     { key: 'life-dolphin', spd: 0.85, bobA: 1.6, bobF: 1.6 },
+      manta:       { key: 'life-mantaray', spd: 0.35, bobA: 0.9, bobF: 0.8 },
+    };
     const swimmers = [];
-    if (name === 'sharkpatrol') {
-      const s = creature('life-shark') || fallbackFish(4);
+    if (BIG[name]) {
+      const B = BIG[name];
+      const s = creature(B.key) || fallbackFish(4);
       g.add(s);
       swimmers.push({ f: s, phase: Math.random() * Math.PI * 2, r: R,
-        bob: Math.random() * Math.PI * 2, spd: 0.55 });
+        bob: Math.random() * Math.PI * 2, spd: B.spd, bobA: B.bobA, bobF: B.bobF });
     } else {
       const kinds = ['life-fish-a', 'life-fish-b', 'life-fish-c'];
       const n = SKY.U.clamp(Math.round(o.count || 10), 1, 30);
       for (let i = 0; i < n; i++) {
         const f = creature(kinds[i % kinds.length]) || fallbackFish(1);
-        f.scale.multiplyScalar(SKY.U.rand(0.5, 0.9));
+        // the source fish are ~2m long — a school wants palm-sized ones
+        f.scale.multiplyScalar(SKY.U.rand(0.22, 0.38));
         g.add(f);
         swimmers.push({ f, phase: (i / n) * Math.PI * 2 + SKY.U.rand(-0.25, 0.25),
           r: R * SKY.U.rand(0.55, 1), bob: SKY.U.rand(0, Math.PI * 2),
-          spd: SKY.U.rand(0.85, 1.25) });
+          spd: SKY.U.rand(0.85, 1.25), bobA: 0.45, bobF: 1.2 });
       }
     }
     driver.onBeforeRender = () => {
       const t = performance.now() * 0.001 * speed;
       for (const sw of swimmers) {
         const a = sw.phase + t * 0.55 * sw.spd;
+        const bobP = t * sw.bobF + sw.bob;
         sw.f.position.set(Math.cos(a) * sw.r,
-          Math.sin(t * 1.2 + sw.bob) * 0.45, Math.sin(a) * sw.r);
+          Math.sin(bobP) * sw.bobA, Math.sin(a) * sw.r);
         // velocity along the circle is (-sin a, cos a) — face it, -Z forward
+        sw.f.rotation.order = 'YXZ';
         sw.f.rotation.y = Math.PI - a;
+        // bank INTO the turn + pitch with the vertical bob = alive, not a
+        // model on a carousel rail
+        sw.f.rotation.z = -0.28;
+        sw.f.rotation.x = -Math.cos(bobP) * sw.bobA * sw.bobF * 0.12;
       }
     };
   }
