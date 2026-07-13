@@ -29,6 +29,10 @@ because these creators are great:
   (https://kenney.nl/assets/city-kit-roads), CC0.
 - **Camping props** (`models/camp/`) — "Survival Kit" by **Kenney**
   (https://kenney.nl/assets/survival-kit), CC0.
+- **Sea creatures** (`models/sealife/`) — animated shark, fish, dolphin, whale,
+  manta ray from **Quaternius**' "Animated Fish Pack" and the "Squidle" monster
+  from "Ultimate Monsters" (https://quaternius.com), CC0; GLB conversions via
+  poly.pizza.
 
 ## Audio
 

@@ -61,6 +61,52 @@ SKY.Effects = (function () {
     return p;
   }
 
+  /* ---------------------- water: splash + underwater ----------------------
+   * splash: droplet crown + expanding foam ring at the surface.
+   * underwater(vol): the whole GTA treatment while the CAMERA is submerged —
+   * dense tinted fog, DOM overlay (tint/caustics/bubbles), muffled audio.  */
+  function splash(pos, k) {
+    ring(pos.clone(), '#eaf8ff', 2.5 + k * 3, 0.5);
+    burst(pos, { count: 8 + Math.round(k * 14), speed: 3 + k * 5, color: '#dff2fc',
+      gravity: 9, life: 0.6, size: 0.5 + k * 0.3 });
+  }
+
+  let uwOn = false, uwFog = null, uwBubbleT = 0;
+  function underwater(vol, dt) {
+    const on = !!vol;
+    if (on !== uwOn) {
+      uwOn = on;
+      const el = document.getElementById('uw-ov');
+      if (el) el.classList.toggle('hidden', !on);
+      if (SKY.SFX.setUnderwater) SKY.SFX.setUnderwater(on);
+      if (on) {
+        const col = new THREE.Color((vol.opts && vol.opts.color) || '#155a9e')
+          .lerp(new THREE.Color('#06121f'), 0.25);
+        uwFog = new THREE.Fog(col, 1.5, 55);
+        uwFog.__uw = true;
+        uwFog.__saved = scene.fog;
+        scene.fog = uwFog;
+      } else if (scene.fog && scene.fog.__uw) {
+        scene.fog = scene.fog.__saved || null;   // map reloads replace fog anyway
+        uwFog = null;
+      }
+    }
+    // lazy bubbles drifting up past the camera
+    if (on && camera) {
+      uwBubbleT -= dt;
+      if (uwBubbleT <= 0) {
+        uwBubbleT = 0.33;
+        const p = camera.position;
+        spawn({
+          pos: new THREE.Vector3(p.x + SKY.U.rand(-4, 4), p.y - 2.5, p.z + SKY.U.rand(-4, 4)),
+          vel: new THREE.Vector3(SKY.U.rand(-0.2, 0.2), SKY.U.rand(1.2, 2.4), SKY.U.rand(-0.2, 0.2)),
+          life: 2.2, size: SKY.U.rand(0.06, 0.2), color: '#bfe6ff',
+          gravity: -1.2, drag: 0.2, opacity: 0.55,
+        });
+      }
+    }
+  }
+
   /* ------------------------- floating text ------------------------- */
   function floatText(pos, text, color) {
     if (texts.length > 6) return;
@@ -715,6 +761,7 @@ SKY.Effects = (function () {
   /* ================================================================= */
   return {
     shakeOffset: shakeOff,
+    splash, underwater,
 
     init(sc, cam) {
       scene = sc; camera = cam;

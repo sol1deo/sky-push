@@ -153,10 +153,178 @@ SKY.Editor = (function () {
         holder.add(obj);
         if (entry) { entry.inner = obj; updateCollVis(entry, true); }
         if (entry && objects[sel] === entry && selBox) selBox.update();
+        // world-position setup (the sea measures seabed depth per vertex)
+        if (obj.userData && obj.userData.postPlace) {
+          setTimeout(() => { if (holder.parent) obj.userData.postPlace(obj); }, 150);
+        }
         refreshOutliner();
       }, pr.fx);
     }
     return holder;
+  }
+
+  /* ================= TERRAIN (Unity-style sculpt & paint) =================
+   * def.terrains[i] = { p, size, segs, h(b64 heights), splat(b64 weights),
+   * texs:[4 texture names], rep }. The editor keeps LIVE decoded arrays on
+   * the object entry (o.hts / o.splat8) and encodes back after each stroke.
+   * Tools: raise / lower / smooth / flatten / paint — LMB drags the brush. */
+  let terra = null;         // { tool, radius, strength, chan } — sculpt mode
+  let terraStroke = null;   // { o, target } while LMB is held
+  let brushRing = null;
+  let brushAt = null;       // last brush hit point (world)
+
+  function buildTerrainMesh(tr, entry) {
+    const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128);
+    const size = Math.max(4, tr.size || 60);
+    const n = (segs + 1) * (segs + 1);
+    const hts = SKY.MapData.decodeHeights(tr.h, n);
+    const splat8 = SKY.MapData.decodeSplat(tr.splat, n);
+    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = hts[i];
+    geo.computeVertexNormals();
+    geo.setAttribute('asplat', new THREE.BufferAttribute(splat8, 4, true));
+    const mesh = new THREE.Mesh(geo, SKY.Map.terrainMaterial(tr));
+    mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;   // geometry mutates while sculpting
+    if (entry) { entry.hts = hts; entry.splat8 = splat8; entry.geo = geo; }
+    return mesh;
+  }
+
+  /* the editor mirrors terrains into SKY.World so the sea's shallow-depth
+     measurement (and anything else height-based) works while editing */
+  function syncWorldTerrains() {
+    SKY.World.terrains.length = 0;
+    for (const o of objects) {
+      if (o.kind !== 'terrain') continue;
+      const tr = o.data;
+      SKY.World.addTerrain({ x: tr.p[0], z: tr.p[2], size: Math.max(4, tr.size || 60),
+        segs: SKY.U.clamp(Math.round(tr.segs || 48), 8, 128),
+        heights: o.hts, y: tr.p[1], mesh: o.mesh });
+    }
+  }
+
+  function addTerrain() {
+    focusPoint(_v);
+    addAndSelect(def.terrains, {
+      p: [_v.x, 0, _v.z], size: 60, segs: 48, h: '', splat: '',
+      texs: ['sand', 'rock', 'grass', 'dirt'], rep: 10,
+    });
+    status('terrain added — open SCULPT in the inspector to shape it');
+  }
+
+  function enterSculpt(tool) {
+    const o = objects[sel];
+    if (!o || o.kind !== 'terrain') return;
+    if (terra && terra.tool === tool) { exitSculpt(); return; }
+    terra = terra || { radius: 7, strength: 6, chan: 0 };
+    terra.tool = tool;
+    if (gizmo) gizmo.detach();
+    if (!brushRing) {
+      brushRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 8, 40),
+        new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true,
+          opacity: 0.85, depthTest: false }));
+      brushRing.rotation.x = -Math.PI / 2;
+      brushRing.renderOrder = 6;
+      brushRing.raycast = () => {};
+    }
+    if (!brushRing.parent) group.add(brushRing);
+    brushRing.scale.setScalar(terra.radius);
+    syncInspector();
+    status(tool.toUpperCase() + ' — hold LMB on the terrain and drag · ESC to finish');
+  }
+  function exitSculpt() {
+    terra = null;
+    terraStroke = null;
+    if (brushRing && brushRing.parent) brushRing.parent.remove(brushRing);
+    if (gizmo && objects[sel]) gizmo.attach(objects[sel].mesh);
+    syncInspector();
+    status('');
+  }
+
+  function terrainHit(clientX, clientY) {
+    const o = objects[sel];
+    if (!o || o.kind !== 'terrain' || !o.mesh) return null;
+    _m.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+    ray.setFromCamera(_m, camera);
+    const hits = ray.intersectObject(o.mesh, false);
+    return hits.length ? hits[0].point : null;
+  }
+
+  /* one brush application (called per animation frame while the LMB is down) */
+  function applyBrush(dt) {
+    if (!terra || !terraStroke || !brushAt) return;
+    const o = terraStroke.o;
+    const tr = o.data;
+    const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128);
+    const size = Math.max(4, tr.size || 60);
+    const cell = size / segs, n = segs + 1;
+    const hts = o.hts, pos = o.geo.attributes.position;
+    const R = terra.radius, S = terra.strength;
+    const cx = (brushAt.x - tr.p[0] + size / 2) / cell;
+    const cz = (brushAt.z - tr.p[2] + size / 2) / cell;
+    const rg = Math.ceil(R / cell) + 1;
+    const ix0 = Math.max(0, Math.floor(cx - rg)), ix1 = Math.min(segs, Math.ceil(cx + rg));
+    const iz0 = Math.max(0, Math.floor(cz - rg)), iz1 = Math.min(segs, Math.ceil(cz + rg));
+    let touched = false;
+    for (let iz = iz0; iz <= iz1; iz++) {
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const dx = (ix - cx) * cell, dz = (iz - cz) * cell;
+        const d = Math.hypot(dx, dz);
+        if (d > R) continue;
+        const t = 1 - d / R;
+        const fall = t * t * (3 - 2 * t);   // smoothstep falloff
+        const i = iz * n + ix;
+        if (terra.tool === 'raise') hts[i] += S * fall * dt;
+        else if (terra.tool === 'lower') hts[i] -= S * fall * dt;
+        else if (terra.tool === 'flatten') {
+          hts[i] += (terraStroke.target - hts[i]) * Math.min(1, 6 * fall * dt);
+        } else if (terra.tool === 'smooth') {
+          const l = hts[iz * n + Math.max(0, ix - 1)], r = hts[iz * n + Math.min(segs, ix + 1)];
+          const u = hts[Math.max(0, iz - 1) * n + ix], dn = hts[Math.min(segs, iz + 1) * n + ix];
+          hts[i] += ((l + r + u + dn) / 4 - hts[i]) * Math.min(1, 8 * fall * dt);
+        } else if (terra.tool === 'paint') {
+          const s8 = o.splat8, b = i * 4;
+          const gain = Math.min(255, 900 * fall * dt);
+          s8[b + terra.chan] = Math.min(255, s8[b + terra.chan] + gain);
+          // renormalize so the four weights keep summing to ~255
+          const sum = s8[b] + s8[b + 1] + s8[b + 2] + s8[b + 3];
+          if (sum > 255) {
+            const k = 255 / sum;
+            s8[b] *= k; s8[b + 1] *= k; s8[b + 2] *= k; s8[b + 3] *= k;
+          }
+          o.geo.attributes.asplat.needsUpdate = true;
+          touched = true;
+          continue;
+        }
+        hts[i] = SKY.U.clamp(hts[i], -80, 160);
+        pos.array[i * 3 + 1] = hts[i];
+        touched = true;
+      }
+    }
+    if (touched && terra.tool !== 'paint') {
+      pos.needsUpdate = true;
+      o.geo.computeVertexNormals();
+    }
+  }
+
+  /* stroke ended: bake the arrays back into the def + refresh dependents */
+  function endStroke() {
+    if (!terraStroke) return;
+    const o = terraStroke.o;
+    terraStroke = null;
+    o.data.h = SKY.MapData.encodeHeights(o.hts);
+    o.data.splat = SKY.MapData.encodeSplat(o.splat8);
+    o.geo.computeBoundingSphere();
+    markDirty();
+    // seas re-measure their shallow tint against the new seabed
+    for (const q of objects) {
+      if (q.kind === 'prop' && q.inner && q.inner.userData.postPlace) {
+        q.inner.userData.postPlace(q.inner);
+      }
+    }
   }
 
   /* ---- collision display: green wireframes = the game's ACTUAL solids ----
@@ -287,6 +455,8 @@ SKY.Editor = (function () {
     for (const pd of def.pads) { const mesh = buildPadMesh(pd); group.add(mesh); objects.push({ kind: 'pad', data: pd, mesh }); }
     for (const s of def.spawns) { const mesh = buildSpawnMesh(s); group.add(mesh); objects.push({ kind: 'spawn', data: s, mesh }); }
     for (const it of def.items) { const mesh = buildItemMesh(it); group.add(mesh); objects.push({ kind: 'item', data: it, mesh }); }
+    for (const tr of def.terrains) { const entry = { kind: 'terrain', data: tr, mesh: null }; entry.mesh = buildTerrainMesh(tr, entry); group.add(entry.mesh); objects.push(entry); }
+    syncWorldTerrains();
     for (const pr of def.props) { const entry = { kind: 'prop', data: pr, mesh: null }; entry.mesh = buildPropMesh(pr, entry); group.add(entry.mesh); objects.push(entry); }
     if (!grid) grid = new THREE.GridHelper(160, 160, 0x557799, 0x2a3244);
     group.add(grid);
@@ -411,6 +581,7 @@ SKY.Editor = (function () {
   function labelOf(o, i) {
     if (o.kind === 'block') return 'Block · ' + o.data.s.map(v => +v.toFixed(1)).join('×');
     if (o.kind === 'pad') return 'Jump pad';
+    if (o.kind === 'terrain') return 'Terrain · ' + (+(o.data.size || 60)).toFixed(0) + 'm';
     if (o.kind === 'spawn') return 'Spawn';
     if (o.kind === 'item') {
       const it = o.data.item;
@@ -462,6 +633,10 @@ SKY.Editor = (function () {
       d.r = [m.rotation.x, m.rotation.y, m.rotation.z];
       d.scale = m.scale.x;
       m.scale.setScalar(d.scale);
+    } else if (o.kind === 'terrain') {
+      d.p = [m.position.x, m.position.y, m.position.z];
+      m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+      syncWorldTerrains();
     }
     if (selBox) selBox.update();
     markDirty();
@@ -495,7 +670,7 @@ SKY.Editor = (function () {
         // blocks/props: move+rotate+scale · pads/spawns: move+rotate · items: move
         const allowed = (o.kind === 'block' || o.kind === 'prop')
           ? ['translate', 'rotate', 'scale']
-          : o.kind === 'item' ? ['translate'] : ['translate', 'rotate'];
+          : (o.kind === 'item' || o.kind === 'terrain') ? ['translate'] : ['translate', 'rotate'];
         if (allowed.indexOf(gizmo.mode) < 0) gizmo.setMode('translate');
       }
     }
@@ -509,6 +684,12 @@ SKY.Editor = (function () {
   }
 
   function select(i) {
+    // changing selection always leaves sculpt mode
+    if (terra && (!objects[i] || objects[i] !== objects[sel])) {
+      terra = null;
+      terraStroke = null;
+      if (brushRing && brushRing.parent) brushRing.parent.remove(brushRing);
+    }
     sel = i;
     msel = i >= 0 ? [i] : [];
     updateSelVisuals();
@@ -547,7 +728,7 @@ SKY.Editor = (function () {
     ray.setFromCamera(_m, camera);
     let bestD = Infinity, hitObj = null;
     for (const o of objects) {
-      if (o.kind !== 'block') continue;
+      if (o.kind !== 'block' && o.kind !== 'terrain') continue;
       const hits = ray.intersectObject(o.mesh, false);
       if (hits.length && hits[0].distance < bestD) { bestD = hits[0].distance; out.copy(hits[0].point); hitObj = o; }
     }
@@ -614,7 +795,7 @@ SKY.Editor = (function () {
     if (!clipboard) { status('clipboard empty'); return; }
     // paste IN PLACE — an offset broke axis alignment; move it with G after
     const item = JSON.parse(clipboard.json);
-    const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props }[clipboard.kind];
+    const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props, terrain: def.terrains }[clipboard.kind];
     push();
     arr.push(item);
     rebuild();
@@ -664,7 +845,7 @@ SKY.Editor = (function () {
     const cx = Math.round((minX + maxX) / 2), cz = Math.round((minZ + maxZ) / 2);
     if (!cx && !cz) { status('already centered'); return; }
     push();
-    for (const arr of [def.blocks, def.pads, def.spawns, def.items, def.props]) {
+    for (const arr of [def.blocks, def.pads, def.spawns, def.items, def.props, def.terrains]) {
       for (const o of arr) { o.p[0] -= cx; o.p[2] -= cz; }
     }
     for (const b of def.blocks) {
@@ -678,7 +859,7 @@ SKY.Editor = (function () {
   function addSpawn() { focusPoint(_v); addAndSelect(def.spawns, { p: [_v.x, _v.y, _v.z], yaw: 0 }); }
   function addItem() { focusPoint(_v); addAndSelect(def.items, { p: [_v.x, _v.y, _v.z] }); }
 
-  function arrOf(o) { return { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props }[o.kind]; }
+  function arrOf(o) { return { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props, terrain: def.terrains }[o.kind]; }
 
   function duplicateSel() {
     if (msel.length > 1) {
@@ -767,6 +948,9 @@ SKY.Editor = (function () {
       const r = d.r || [0, 0, 0];
       m.rotation.set(r[0], r[1], r[2]);
       m.scale.setScalar(d.scale || 1);
+    } else if (o.kind === 'terrain') {
+      m.position.set(d.p[0], d.p[1], d.p[2]);
+      syncWorldTerrains();
     }
     if (selBox) selBox.update();
   }
@@ -925,6 +1109,41 @@ SKY.Editor = (function () {
       h += `<div class="ed-hint">Spawns here at round start and returns RESPAWN seconds
         after someone grabs it. RANDOM rolls a new item each time; CUSTOM MIX
         rolls the rarity by your percentages (e.g. 80 rare / 20 epic).</div>`;
+    } else if (o.kind === 'terrain') {
+      const texList = ['sand', 'rock', 'grass', 'dirt', 'stone', 'snow', 'concrete',
+        'metal', 'planks', 'tiles', 'lava', 'brick', 'marble', 'camo'];
+      h += numRow('Size m', d.size || 60, 'tsize', 5)
+        + numRow('Detail', d.segs || 48, 'tsegs', 8)
+        + numRow('Tex tiling', d.rep || 10, 'trep', 1);
+      const texs = d.texs || ['sand', 'rock', 'grass', 'dirt'];
+      for (let ti = 0; ti < 4; ti++) {
+        h += `<div class="ed-row"><span>Texture ${ti + 1}</span><select data-k="ttex${ti}">
+          ${texList.map(t => `<option value="${t}"${texs[ti] === t ? ' selected' : ''}>${t}</option>`).join('')}
+        </select></div>`;
+      }
+      const tool = terra ? terra.tool : '';
+      h += `<div class="ed-row"><span>Sculpt</span></div>
+        <div class="ed-row ed-faces">
+          ${[['raise', '▲ RAISE'], ['lower', '▼ LOWER'], ['smooth', '≈ SMOOTH'],
+             ['flatten', '▬ FLAT'], ['paint', '🖌 PAINT']].map(([t, l]) =>
+            `<span class="ed-face${tool === t ? ' sel' : ''}" data-tt="${t}">${l}</span>`).join('')}
+        </div>`;
+      if (terra) {
+        h += numRow('Brush size', terra.radius, 'tbrush', 1)
+          + numRow('Strength', terra.strength, 'tstr', 1);
+        if (terra.tool === 'paint') {
+          h += `<div class="ed-row"><span>Paint with</span></div>
+            <div class="ed-row ed-faces">
+              ${texs.map((t, ti) =>
+                `<span class="ed-face${terra.chan === ti ? ' sel' : ''}" data-tc="${ti}">${t}</span>`).join('')}
+            </div>`;
+        }
+      }
+      h += `<div class="ed-hint">TERRAIN: pick a sculpt tool, then HOLD LMB on the
+        terrain and drag — Unity-style. RAISE/LOWER shape hills and sea
+        trenches, SMOOTH softens, FLAT levels to the click height, PAINT blends
+        the four textures. ESC exits the brush. Collision matches exactly.
+        Drop an fx:sea ABOVE a bowl of terrain for a swimmable beach.</div>`;
     } else if (o.kind === 'prop') {
       h += numRow('Rot Y°', (d.r ? d.r[1] : 0) * 180 / Math.PI, 'pr1', 5);
       h += numRow('Scale', d.scale || 1, 'pscale', 0.1);
@@ -979,6 +1198,26 @@ SKY.Editor = (function () {
         if (fx.width !== undefined) h += numRow('Width', fx.width, 'fxwidth', 0.5);
         if (fx.height !== undefined) h += numRow('Height', fx.height, 'fxheight', 1);
         if (fx.size !== undefined) h += numRow('Size', fx.size, 'fxsize', 1);
+        // sea life: school headcount + swim pace
+        if (fx.count !== undefined) h += numRow('Count', fx.count, 'fxcount', 1);
+        if (fx.speed !== undefined && fx.deepAlpha === undefined) {
+          h += numRow('Speed ×', fx.speed, 'fxspeed', 0.1);
+        }
+        // WATER v3 (fx:sea): look + swim-feel dials
+        if (fx.deepAlpha !== undefined) {
+          h += numRow('Deep opacity', fx.deepAlpha, 'fxdeepa', 0.05)
+            + `<div class="ed-row"><span>Shallow tint</span><input type="color" data-k="fxshallow" value="${fx.shallow}"></div>`
+            + numRow('Shallow opacity', fx.shallowAlpha, 'fxshalla', 0.05)
+            + numRow('Depth fade m', fx.fade, 'fxfade', 1)
+            + numRow('Swim drag', fx.drag, 'fxdrag', 0.2)
+            + numRow('Sink rate', fx.gravity, 'fxgrav', 0.05)
+            + numRow('Swim speed ×', fx.speed, 'fxspeed', 0.05)
+            + numRow('Jump out ×', fx.jumpOut, 'fxjumpout', 0.1)
+            + `<div class="ed-hint">WATER: players SWIM inside it (forward dives where
+            you look, SPACE up / CTRL down, SPACE at the surface jumps out).
+            Shallow areas over a sculpted seabed pick up the SHALLOW TINT and
+            turn clearer — pair it with a TERRAIN for beaches.</div>`;
+        }
         // event timing (sea events: tsunami / triangle / kraken / shark)
         if (fx.start !== undefined) h += numRow('Starts at s', fx.start, 'fxstart', 5);
         if (fx.every !== undefined) h += numRow('Every s', fx.every, 'fxevery', 5);
@@ -1122,6 +1361,41 @@ SKY.Editor = (function () {
       }
     }
     else if (k === 'pdoor') d.door = e.target.checked;
+    else if (k === 'tsize' || k === 'tsegs' || k === 'trep' || k.indexOf('ttex') === 0) {
+      // terrain shape/looks: resample heights on size/detail change so the
+      // sculpt survives, then rebuild the mesh in place
+      if (o.kind !== 'terrain') return;
+      if (k === 'tsize') d.size = SKY.U.clamp(num || 60, 10, 400);
+      else if (k === 'tsegs') {
+        const oldSegs = SKY.U.clamp(Math.round(d.segs || 48), 8, 128);
+        const newSegs = SKY.U.clamp(Math.round(num || 48), 8, 128);
+        if (newSegs !== oldSegs && o.hts) {
+          const on = oldSegs + 1, nn = newSegs + 1;
+          const out = new Float32Array(nn * nn);
+          for (let z = 0; z < nn; z++) {
+            for (let x = 0; x < nn; x++) {
+              const fx = (x / newSegs) * oldSegs, fz = (z / newSegs) * oldSegs;
+              const ix = Math.min(oldSegs - 1, Math.floor(fx)), iz = Math.min(oldSegs - 1, Math.floor(fz));
+              const ax = fx - ix, az = fz - iz;
+              out[z * nn + x] =
+                (o.hts[iz * on + ix] * (1 - ax) + o.hts[iz * on + ix + 1] * ax) * (1 - az) +
+                (o.hts[(iz + 1) * on + ix] * (1 - ax) + o.hts[(iz + 1) * on + ix + 1] * ax) * az;
+            }
+          }
+          d.h = SKY.MapData.encodeHeights(out);
+          d.splat = '';   // weights don't resample cleanly — repaint
+        }
+        d.segs = newSegs;
+      }
+      else if (k === 'trep') d.rep = SKY.U.clamp(Math.round(num || 10), 1, 80);
+      else d.texs = Object.assign(d.texs || ['sand', 'rock', 'grass', 'dirt'],
+        { [+k[4]]: e.target.value });
+      markDirty();
+      rebuildTerrainMesh(o);
+      return;
+    }
+    else if (k === 'tbrush') { if (terra) { terra.radius = SKY.U.clamp(num || 7, 1, 40); if (brushRing) brushRing.scale.setScalar(terra.radius); } return; }
+    else if (k === 'tstr') { if (terra) terra.strength = SKY.U.clamp(num || 6, 0.5, 40); return; }
     else if (k.indexOf('fx') === 0 && o.kind === 'prop') {
       d.fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
       if (k === 'fxcolor') d.fx.color = e.target.value;
@@ -1135,6 +1409,15 @@ SKY.Editor = (function () {
       else if (k === 'fxevery') d.fx.every = Math.max(5, num);
       else if (k === 'fxdur') d.fx.dur = Math.max(1, num);
       else if (k === 'fxchance') d.fx.chance = SKY.U.clamp(num, 0, 100);
+      else if (k === 'fxcount') d.fx.count = SKY.U.clamp(Math.round(num), 1, 30);
+      else if (k === 'fxdeepa') d.fx.deepAlpha = SKY.U.clamp(num, 0.05, 0.98);
+      else if (k === 'fxshallow') d.fx.shallow = e.target.value;
+      else if (k === 'fxshalla') d.fx.shallowAlpha = SKY.U.clamp(num, 0.02, 0.98);
+      else if (k === 'fxfade') d.fx.fade = SKY.U.clamp(num, 0.5, 60);
+      else if (k === 'fxdrag') d.fx.drag = SKY.U.clamp(num, 0, 10);
+      else if (k === 'fxgrav') d.fx.gravity = SKY.U.clamp(num, -1, 2);
+      else if (k === 'fxspeed') d.fx.speed = SKY.U.clamp(num, 0.1, 3);
+      else if (k === 'fxjumpout') d.fx.jumpOut = SKY.U.clamp(num, 0, 3);
       markDirty();
       rebuildProp(o);
       return;
@@ -1185,6 +1468,22 @@ SKY.Editor = (function () {
     rebuild();
     select(objects.findIndex(q => q.data === nb));
     status('extruded — drag the face chips or gizmo to shape it');
+  }
+
+  /* rebuild ONE terrain mesh in place (size/detail/texture changed) */
+  function rebuildTerrainMesh(o) {
+    if (o.kind !== 'terrain') return;
+    const i = objects.indexOf(o);
+    group.remove(o.mesh);
+    o.mesh = buildTerrainMesh(o.data, o);
+    group.add(o.mesh);
+    syncWorldTerrains();
+    if (i === sel) {
+      if (selBox) group.remove(selBox);
+      selBox = new THREE.BoxHelper(o.mesh, 0xffd34d);
+      group.add(selBox);
+      if (gizmo && !terra) gizmo.attach(o.mesh);
+    }
   }
 
   /* rebuild ONE prop mesh in place (fx settings changed) */
@@ -1382,6 +1681,8 @@ SKY.Editor = (function () {
   function frame(rdt) {
     const In = SKY.Input;
     SKY.Effects.tick(rdt);
+    // terrain brush: keeps applying while the LMB is held
+    if (terraStroke) applyBrush(Math.min(rdt, 0.05));
     // Unity-style: WASD flies ONLY while RMB is held (keys stay free for hotkeys)
     if (looking) {
       const sp = flySpeed * rdt * (In.isDown('ShiftLeft') ? 2.6 : 1);
@@ -1492,6 +1793,7 @@ SKY.Editor = (function () {
     $('ed-test').onclick = testPlay;
     $('ed-addblock').onclick = addBlock;
     $('ed-addground').onclick = addGround;
+    $('ed-addterrain').onclick = addTerrain;
     $('ed-addpad').onclick = addPad;
     $('ed-addspawn').onclick = addSpawn;
     $('ed-additem').onclick = addItem;
@@ -1548,6 +1850,11 @@ SKY.Editor = (function () {
         }
         return;
       }
+      // terrain sculpt tool + paint channel chips
+      const tt = e.target.closest('[data-tt]');
+      if (tt) { enterSculpt(tt.dataset.tt); return; }
+      const tc = e.target.closest('[data-tc]');
+      if (tc) { if (terra) { terra.chan = +tc.dataset.tc; syncInspector(); } return; }
       const pf = e.target.closest('.ed-pf');
       if (pf) { paintFace = parseInt(pf.dataset.pf, 10); syncInspector(); return; }
       const ext = e.target.closest('.ed-ext');
@@ -1696,11 +2003,25 @@ SKY.Editor = (function () {
     canvas.addEventListener('mousedown', (e) => {
       if (!api.active) return;
       if (e.button === 2) { looking = true; lastX = e.clientX; lastY = e.clientY; }
-      if (e.button === 0) { downX = e.clientX; downY = e.clientY; }
+      if (e.button === 0) {
+        downX = e.clientX; downY = e.clientY;
+        // sculpt mode: LMB starts a brush stroke instead of a selection
+        if (terra && objects[sel] && objects[sel].kind === 'terrain') {
+          const pt = terrainHit(e.clientX, e.clientY);
+          if (pt) {
+            push();
+            brushAt = pt;
+            terraStroke = { o: objects[sel],
+              target: (SKY.World.terrainHeight(pt.x, pt.z) - objects[sel].data.p[1]) || 0 };
+          }
+        }
+      }
     });
     window.addEventListener('mouseup', (e) => {
       if (!api.active) return;
       if (e.button === 2) looking = false;
+      if (e.button === 0 && terraStroke) { endStroke(); return; }
+      if (e.button === 0 && terra) return;   // brush mode never re-selects
       if (e.button === 0 && !gizmoDrag && (!gizmo || !gizmo.axis) &&
           Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4 &&
           !(e.target.closest && e.target.closest('#editor-ov'))) {
@@ -1710,7 +2031,18 @@ SKY.Editor = (function () {
       }
     });
     window.addEventListener('mousemove', (e) => {
-      if (!api.active || !looking) return;
+      if (!api.active) return;
+      if (terra && !looking && !(e.target.closest && e.target.closest('#editor-ov'))) {
+        const pt = terrainHit(e.clientX, e.clientY);
+        if (pt) {
+          brushAt = pt;
+          if (brushRing) {
+            brushRing.position.set(pt.x, pt.y + 0.15, pt.z);
+            brushRing.scale.setScalar(terra.radius);
+          }
+        }
+      }
+      if (!looking) return;
       camYaw -= (e.clientX - lastX) * 0.004;
       camPitch = SKY.U.clamp(camPitch - (e.clientY - lastY) * 0.004, -1.5, 1.5);
       lastX = e.clientX; lastY = e.clientY;
@@ -1741,7 +2073,7 @@ SKY.Editor = (function () {
       if (e.code === 'KeyF') dropSel();
       if (e.code === 'KeyD' && e.shiftKey) duplicateSel();
       if (e.code === 'Delete' || e.code === 'Backspace') deleteSel();
-      if (e.code === 'Escape') select(-1);
+      if (e.code === 'Escape') { if (terra) { exitSculpt(); return; } select(-1); }
       const nstep = e.shiftKey ? 0.1 : 0.5;
       if (e.code === 'ArrowLeft') nudge(-nstep, 0, 0);
       if (e.code === 'ArrowRight') nudge(nstep, 0, 0);

@@ -123,7 +123,7 @@ SKY.Grapple = (function () {
       }
       SKY.Effects.hitBurst(_to.clone(), 1, '#d8c49a');
       if (v.isLocal) SKY.Effects.shake(SKY.TUNING.camera.shakeHitTaken * 0.7);
-      SKY.SFX.grapple();
+      SKY.SFX.grapple(pawn.sfxDist());
       if (airborne) pawn.airGrapples--;
       return true;
     }
@@ -134,12 +134,12 @@ SKY.Grapple = (function () {
     }
     pawn.grapple = {
       point: hit.point.clone(),
-      solid: hit.solid,
-      local: hit.point.clone().sub(hit.solid.c),
+      solid: hit.solid,   // null for terrain hits — terrain never moves
+      local: hit.solid ? hit.point.clone().sub(hit.solid.c) : null,
       len: Math.max(hit.point.distanceTo(_eye), 1.2),
       t: 0,
     };
-    SKY.SFX.grapple();
+    SKY.SFX.grapple(pawn.sfxDist());
     if (airborne) pawn.airGrapples--;
     return true;
   }
@@ -198,7 +198,7 @@ SKY.Grapple = (function () {
       return;
     }
 
-    if (g.solid.isMover) g.point.copy(g.solid.c).add(g.local);
+    if (g.solid && g.solid.isMover) g.point.copy(g.solid.c).add(g.local);
     g.t += dt;
 
     pawn.midPos(_mid);

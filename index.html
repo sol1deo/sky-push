@@ -1036,6 +1036,89 @@
     padding:10px 14px; border-radius:6px; white-space:pre-wrap; }
   #boot-status { display:none; }
 
+  /* ============ underwater overlay (camera below a sea surface) ============ */
+  #uw-ov { position:fixed; inset:0; z-index:4; pointer-events:none; overflow:hidden;
+    background:
+      radial-gradient(120% 100% at 50% 120%, rgba(2,24,44,.42) 0%, rgba(6,40,66,.22) 45%, rgba(10,60,92,.12) 100%),
+      linear-gradient(180deg, rgba(60,160,200,.10) 0%, rgba(8,44,78,.22) 100%); }
+  #uw-ov::before { content:''; position:absolute; inset:-20%;
+    background:
+      radial-gradient(42% 30% at 22% 18%, rgba(160,230,255,.10), transparent 70%),
+      radial-gradient(36% 26% at 66% 8%, rgba(160,230,255,.08), transparent 70%),
+      radial-gradient(50% 34% at 86% 30%, rgba(160,230,255,.06), transparent 70%);
+    animation:uw-caustic 7s ease-in-out infinite alternate; }
+  #uw-ov::after { content:''; position:absolute; inset:0;
+    box-shadow:inset 0 0 18vmin rgba(1,14,26,.75); }
+  @keyframes uw-caustic {
+    from { transform:translate(-2.5%, -1.5%) scale(1); opacity:.85; }
+    to { transform:translate(2.5%, 2%) scale(1.07); opacity:1; } }
+  #uw-ov .bub { position:absolute; bottom:-40px; width:14px; height:14px; border-radius:50%;
+    border:2px solid rgba(210,240,255,.5); background:rgba(210,240,255,.08);
+    animation:uw-bub 6s linear infinite; }
+  @keyframes uw-bub {
+    0% { transform:translateY(0) translateX(0) scale(.6); opacity:0; }
+    12% { opacity:.7; }
+    100% { transform:translateY(-110vh) translateX(4vw) scale(1.1); opacity:0; } }
+
+  /* ============ boot loading screen ============ */
+  #load-ov { position:fixed; inset:0; z-index:80; display:flex; align-items:center;
+    justify-content:center; background:
+    radial-gradient(120% 90% at 50% 110%, #17305c 0%, #0b0d18 62%, #07080f 100%);
+    transition:opacity .45s ease; overflow:hidden; }
+  #load-ov.done { opacity:0; pointer-events:none; }
+  .ls-cloud { position:absolute; width:180px; height:54px; border-radius:60px;
+    background:rgba(255,255,255,.055); filter:blur(2px); }
+  .ls-cloud::before { content:''; position:absolute; left:34px; top:-22px; width:80px;
+    height:56px; border-radius:50%; background:inherit; }
+  .ls-cloud.c1 { top:18%; left:-190px; animation:ls-drift 17s linear infinite; }
+  .ls-cloud.c2 { top:64%; left:-190px; width:130px; animation:ls-drift 23s linear 4s infinite; }
+  .ls-cloud.c3 { top:38%; left:-190px; width:230px; animation:ls-drift 29s linear 9s infinite; }
+  @keyframes ls-drift { to { transform:translateX(calc(100vw + 420px)); } }
+  .load-card { position:relative; text-align:center; width:min(480px, 86vw); }
+  .load-logo { font-size:64px; font-weight:900; font-style:italic; letter-spacing:.01em;
+    margin:0 0 6px; color:var(--txt); text-shadow:0 6px 0 rgba(0,0,0,.35); }
+  .load-logo b { color:var(--brand); }
+  .load-logo span { display:inline-block; animation:ls-hop 1.5s ease-in-out infinite; }
+  @keyframes ls-hop { 0%,100% { transform:translateY(0); } 12% { transform:translateY(-10px); } 24% { transform:translateY(0); } }
+  /* the loading bean: squash & stretch hops over its shadow */
+  .load-bean { position:relative; height:74px; margin:6px 0 2px; }
+  .load-bean i { position:absolute; left:50%; bottom:12px; width:34px; height:44px;
+    margin-left:-17px; border-radius:16px 16px 14px 14px;
+    background:linear-gradient(180deg, #ffd34d 0%, #ffb63b 100%);
+    box-shadow:inset -4px -6px 0 rgba(0,0,0,.14);
+    animation:ls-bean .85s cubic-bezier(.36,.02,.28,1) infinite; }
+  .load-bean i::before { content:''; position:absolute; left:7px; top:12px; width:6px; height:9px;
+    border-radius:3px; background:#231a05; box-shadow:14px 0 0 #231a05; }
+  .load-bean::after { content:''; position:absolute; left:50%; bottom:4px; width:44px; height:9px;
+    margin-left:-22px; border-radius:50%; background:rgba(0,0,0,.4);
+    animation:ls-shadow .85s cubic-bezier(.36,.02,.28,1) infinite; }
+  @keyframes ls-bean {
+    0%,100% { transform:translateY(0) scale(1.14,.82); }
+    18% { transform:translateY(-4px) scale(.94,1.1); }
+    50% { transform:translateY(-34px) scale(.98,1.04) rotate(4deg); }
+    82% { transform:translateY(-4px) scale(.96,1.06); } }
+  @keyframes ls-shadow {
+    0%,100% { transform:scale(1.15,1); opacity:.5; }
+    50% { transform:scale(.55,.8); opacity:.22; } }
+  .load-bar { height:18px; border-radius:10px; border:2px solid rgba(255,255,255,.18);
+    background:rgba(0,0,0,.4); overflow:hidden; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  #load-fill { height:100%; width:0%; border-radius:7px; transition:width .25s ease;
+    background:repeating-linear-gradient(-55deg, #ffd34d 0 14px, #ffc224 14px 28px);
+    background-size:40px 100%; animation:ls-stripes .7s linear infinite;
+    box-shadow:0 0 14px rgba(255,211,77,.5); }
+  @keyframes ls-stripes { to { background-position:40px 0; } }
+  .load-row { display:flex; justify-content:space-between; margin:8px 2px 0;
+    font-size:12px; font-weight:700; letter-spacing:.1em; color:var(--dim); }
+  #load-pct { color:var(--brand); font-variant-numeric:tabular-nums; }
+  #load-what { text-transform:uppercase; }
+  #load-tip { margin-top:22px; font-size:12.5px; line-height:1.55; color:var(--faint);
+    min-height:34px; padding:0 8px; }
+  #load-tip b { color:var(--txt); }
+  #load-skip { margin-top:14px; padding:9px 22px; border-radius:999px; border:0;
+    cursor:pointer; font-family:inherit; font-weight:800; font-size:12px;
+    letter-spacing:.08em; background:var(--brand); color:var(--brand-ink); }
+  #load-skip.hidden { display:none; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation:none !important; transition:none !important; }
   }
@@ -1343,6 +1426,7 @@
           <label class="r-rl hidden">Round limit</label>
           <select id="time-select" class="r-rl hidden">
             <option value="0" selected>No time limit</option>
+            <option value="60">1 minute</option>
             <option value="120">2 minutes</option>
             <option value="180">3 minutes</option>
             <option value="300">5 minutes</option>
@@ -1429,6 +1513,7 @@
           <label class="lr-rl hidden">Round limit</label>
           <select id="ltime-select" class="lr-rl hidden">
             <option value="0">No time limit</option>
+            <option value="60">1 minute</option>
             <option value="120">2 minutes</option>
             <option value="180">3 minutes</option>
             <option value="300">5 minutes</option>
@@ -1476,6 +1561,7 @@
     <span class="ed-logo">MAP EDITOR</span>
     <button class="ed-btn" id="ed-addblock">+ Block</button>
     <button class="ed-btn" id="ed-addground">+ Ground</button>
+    <button class="ed-btn" id="ed-addterrain">+ Terrain</button>
     <button class="ed-btn" id="ed-addpad">+ Pad</button>
     <button class="ed-btn" id="ed-addspawn">+ Spawn</button>
     <button class="ed-btn" id="ed-additem">+ Item</button>
@@ -1552,6 +1638,28 @@
 
 <div id="relock-hint" class="hidden">Click to play</div>
 <div id="fps" class="hidden"></div>
+<!-- underwater treatment: tint + caustic light + rising bubbles -->
+<div id="uw-ov" class="hidden">
+  <i class="bub" style="left:12%; animation-delay:0s"></i>
+  <i class="bub" style="left:31%; animation-delay:2.1s; width:9px; height:9px"></i>
+  <i class="bub" style="left:55%; animation-delay:1.2s"></i>
+  <i class="bub" style="left:72%; animation-delay:3.4s; width:10px; height:10px"></i>
+  <i class="bub" style="left:88%; animation-delay:4.6s; width:18px; height:18px"></i>
+</div>
+
+<!-- ============ boot loading screen (new players see assets stream in) ============ -->
+<div id="load-ov">
+  <i class="ls-cloud c1"></i><i class="ls-cloud c2"></i><i class="ls-cloud c3"></i>
+  <div class="load-card">
+    <h1 class="load-logo"><span>S</span><span style="animation-delay:.07s">K</span><span style="animation-delay:.14s">Y</span><b><span style="animation-delay:.21s">P</span><span style="animation-delay:.28s">U</span><span style="animation-delay:.35s">S</span><span style="animation-delay:.42s">H</span></b></h1>
+    <div class="load-bean"><i></i></div>
+    <div class="load-bar"><div id="load-fill"></div></div>
+    <div class="load-row"><span id="load-pct">0%</span><span id="load-what">warming up…</span></div>
+    <div id="load-tip"></div>
+    <button id="load-skip" class="hidden">JUMP IN ANYWAY →</button>
+  </div>
+</div>
+
 <div id="error-overlay" class="hidden"></div>
 <div id="boot-status"></div>
 
@@ -1560,38 +1668,38 @@
 <script src="lib/GLTFLoader.js"></script>
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
-<script src="js/config.js?v=46"></script>
-<script src="js/profile.js?v=46"></script>
-<script src="js/utils.js?v=46"></script>
-<script src="js/gfx.js?v=46"></script>
-<script src="js/mapdata.js?v=46"></script>
-<script src="js/audio.js?v=46"></script>
-<script src="js/settings.js?v=46"></script>
-<script src="js/input.js?v=46"></script>
-<script src="js/world.js?v=46"></script>
-<script src="js/effects.js?v=46"></script>
-<script src="js/map.js?v=46"></script>
-<script src="js/characters.js?v=46"></script>
-<script src="js/pawn.js?v=46"></script>
-<script src="js/weapons.js?v=46"></script>
-<script src="js/loot.js?v=46"></script>
-<script src="js/pickups.js?v=46"></script>
-<script src="js/sparks.js?v=46"></script>
-<script src="js/grenades.js?v=46"></script>
-<script src="js/grapple.js?v=46"></script>
-<script src="js/bots.js?v=46"></script>
-<script src="js/hud.js?v=46"></script>
-<script src="js/game.js?v=46"></script>
-<script src="js/attract.js?v=46"></script>
-<script src="js/net.js?v=46"></script>
-<script src="js/dof.js?v=46"></script>
+<script src="js/config.js?v=47"></script>
+<script src="js/profile.js?v=47"></script>
+<script src="js/utils.js?v=47"></script>
+<script src="js/gfx.js?v=47"></script>
+<script src="js/mapdata.js?v=47"></script>
+<script src="js/audio.js?v=47"></script>
+<script src="js/settings.js?v=47"></script>
+<script src="js/input.js?v=47"></script>
+<script src="js/world.js?v=47"></script>
+<script src="js/effects.js?v=47"></script>
+<script src="js/map.js?v=47"></script>
+<script src="js/characters.js?v=47"></script>
+<script src="js/pawn.js?v=47"></script>
+<script src="js/weapons.js?v=47"></script>
+<script src="js/loot.js?v=47"></script>
+<script src="js/pickups.js?v=47"></script>
+<script src="js/sparks.js?v=47"></script>
+<script src="js/grenades.js?v=47"></script>
+<script src="js/grapple.js?v=47"></script>
+<script src="js/bots.js?v=47"></script>
+<script src="js/hud.js?v=47"></script>
+<script src="js/game.js?v=47"></script>
+<script src="js/attract.js?v=47"></script>
+<script src="js/net.js?v=47"></script>
+<script src="js/dof.js?v=47"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=46"></script>
-<script src="js/vidrender.js?v=46"></script>
-<script src="js/demos.js?v=46"></script>
-<script src="js/locker.js?v=46"></script>
-<script src="js/assets.js?v=46"></script>
-<script src="js/editor.js?v=46"></script>
-<script src="js/main.js?v=46"></script>
+<script src="js/replay.js?v=47"></script>
+<script src="js/vidrender.js?v=47"></script>
+<script src="js/demos.js?v=47"></script>
+<script src="js/locker.js?v=47"></script>
+<script src="js/assets.js?v=47"></script>
+<script src="js/editor.js?v=47"></script>
+<script src="js/main.js?v=47"></script>
 </body>
 </html>

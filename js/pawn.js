@@ -20,6 +20,8 @@ window.SKY = window.SKY || {};
   const _right = new THREE.Vector3();
   const _down = new THREE.Vector3(0, -1, 0);
   const _rayO = new THREE.Vector3();
+  const _swimFwd = new THREE.Vector3();
+  const _swimDir = new THREE.Vector3();
 
   class Pawn {
     constructor(opts) {
@@ -104,11 +106,22 @@ window.SKY = window.SKY || {};
       this.tumbleVel = new THREE.Vector3();  // funny mid-air spin after big hits
       this._landSquash = 0;
 
+      // water (fx:sea volumes): the volume we're swimming in, or null
+      this.inWater = null;
+      this._wasWater = false;
+
       this.cmd = { mx: 0, mz: 0, jumpHeld: false, jumpPressed: false, crouch: false, grappleHeld: false, yaw: 0, pitch: 0 };
     }
 
     speedH() { return Math.hypot(this.vel.x, this.vel.z); }
     speed3() { return this.vel.length(); }
+    /* distance to the listener (the local player) for positional one-shots —
+       a bot dashing across the map must not sound like it's inside your ear */
+    sfxDist() {
+      if (this.isLocal) return 0;
+      const me = SKY.Game && SKY.Game.player;
+      return me ? me.pos.distanceTo(this.pos) : 12;
+    }
     eyePos(out) { return out.set(this.pos.x, this.pos.y + this.eyeHeight, this.pos.z); }
     midPos(out) { return out.set(this.pos.x, this.pos.y + this.height * 0.5, this.pos.z); }
 
@@ -140,6 +153,24 @@ window.SKY = window.SKY || {};
 
       this.yaw = cmd.yaw; this.pitch = cmd.pitch;
 
+      // ---- water check (fx:sea volumes): mid-body submerged = swimming ----
+      const wtr = SKY.World.waterAt
+        ? SKY.World.waterAt(this.pos.x, this.pos.y + this.height * 0.5, this.pos.z) : null;
+      if (wtr && !this._wasWater) {
+        // the plunge: splash + the water eats most of the fall
+        const k = SKY.U.clamp01(-this.vel.y / 20);
+        if (k > 0.12) {
+          if (SKY.Effects.splash) {
+            SKY.Effects.splash(new THREE.Vector3(this.pos.x, wtr.level, this.pos.z), k);
+          }
+          SKY.SFX.splash(k, this.sfxDist());
+        }
+        if (this.vel.y < 0) this.vel.y *= 0.3;
+        this.fellScreamed = false;
+      }
+      this._wasWater = !!wtr;
+      this.inWater = wtr;
+
       // ---- ragdoll: no control until we recover ----
       if (this.ragdoll) {
         const R = SKY.TUNING.ragdoll;
@@ -148,8 +179,11 @@ window.SKY = window.SKY || {};
         this.sliding = false; this.crouching = false;
         this.height = SKY.TUNING.move.crouchHeight;
         this.eyeHeight = SKY.U.damp(this.eyeHeight, 0.6, 10, dt);
-        // physics: gravity + friction, no steering
-        if (this.grounded) {
+        // physics: gravity + friction, no steering (water = buoyant tumble)
+        if (this.inWater) {
+          this.vel.multiplyScalar(1 / (1 + 2.4 * dt));
+          this.vel.y -= SKY.TUNING.move.gravity * 0.1 * dt;
+        } else if (this.grounded) {
           this._friction(dt, SKY.TUNING.move.friction * 0.55);
           this.vel.y = -SKY.TUNING.move.groundStick;
         } else {
@@ -197,7 +231,7 @@ window.SKY = window.SKY || {};
       }
 
       // ---- slide state ----
-      if (!this.sliding && cmd.crouch && this.grounded && this.slideCd <= 0 && this.speedH() > T.slideMinSpeed) {
+      if (!this.sliding && !this.inWater && cmd.crouch && this.grounded && this.slideCd <= 0 && this.speedH() > T.slideMinSpeed) {
         this.sliding = true;
         this.slideT = T.slideDuration;
         const hs = this.speedH();
@@ -205,7 +239,7 @@ window.SKY = window.SKY || {};
           this.vel.x += (this.vel.x / hs) * T.slideBoost;
           this.vel.z += (this.vel.z / hs) * T.slideBoost;
         }
-        SKY.SFX.slideStart();
+        SKY.SFX.slideStart(this.sfxDist());
       }
       if (this.sliding) {
         this.slideT -= dt;
@@ -219,13 +253,20 @@ window.SKY = window.SKY || {};
       const eyeTarget = (this.crouching || this.sliding) ? T.eyeCrouch : T.eyeStand;
       this.eyeHeight = SKY.U.damp(this.eyeHeight, eyeTarget, 14, dt);
 
+      // ---- swimming: GTA-style — dive where you look, SPACE up, CTRL down.
+      // All dials live on the sea prop (editor inspector): gravity/drag/
+      // speed/swimUp, so each map's water can feel different. ----
+      if (this.inWater) {
+        this._swim(dt, cmd);
+      } else {
+
       // ---- jump (on the landing tick this SKIPS friction -> bhop keeps speed) ----
       if (wantJump && (this.grounded || this.coyoteT > 0)) {
         this.vel.y = T.jumpForce * this.mods.jumpMult;
         this.grounded = false;
         this.coyoteT = 0; this.jumpBufferT = 0; this.timeSinceJump = 0;
         if (this.sliding) { this.sliding = false; this.slideCd = T.slideCooldown * 0.5; }
-        SKY.SFX.jump();
+        SKY.SFX.jump(this.sfxDist());
       } else if (cmd.jumpPressed && !this.grounded && this.coyoteT <= 0 &&
                  this.abilities.doubleJump && this.airJumps > 0) {
         // DOUBLE JUMP: the second jump is HIGHER than the first
@@ -234,7 +275,7 @@ window.SKY = window.SKY || {};
           T.jumpForce * SKY.TUNING.abilities.doubleJumpMult * this.mods.jumpMult);
         this.timeSinceJump = 0;
         SKY.Effects.ring(new THREE.Vector3(this.pos.x, this.pos.y + 0.1, this.pos.z), '#ffffff', 2, 0.3);
-        SKY.SFX.jump();
+        SKY.SFX.jump(this.sfxDist());
       }
 
       // ---- accelerate ----
@@ -266,7 +307,7 @@ window.SKY = window.SKY || {};
             this.pounding = true;
             this.vel.x *= 0.2; this.vel.z *= 0.2;
             this.vel.y = -A.poundSpeed;
-            SKY.SFX.dash();
+            SKY.SFX.dash(this.sfxDist());
           }
         }
         if (wishLen > 1e-4 && !this.pounding) {
@@ -277,6 +318,8 @@ window.SKY = window.SKY || {};
         this.vel.y -= T.gravity * this.mods.gravMult * dt;
         if (this.vel.y < -T.maxFallSpeed) this.vel.y = -T.maxFallSpeed;
       }
+
+      }   // end of the dry-land branch (swimming handled above)
       this._crouchWas = cmd.crouch;
 
       // ---- roof air vents: ride the updraft column (SKY.World.vents) ----
@@ -328,7 +371,7 @@ window.SKY = window.SKY || {};
       // landing feedback
       if (!prevGrounded && this.grounded) {
         const impact = SKY.U.clamp((-velYBefore - 4) / 14, 0, 1);
-        if (impact > 0.05) SKY.SFX.land(this.isLocal ? impact : impact * 0.4);
+        if (impact > 0.05) SKY.SFX.land(this.isLocal ? impact : impact * 0.7, this.sfxDist());
         this._landSquash = Math.max(this._landSquash, impact);
         this.fellScreamed = false;
         this.tumbleVel.set(0, 0, 0);
@@ -397,7 +440,7 @@ window.SKY = window.SKY || {};
       if (!this.alive || !this.grounded || this.tauntT > 0 || this.ragdoll) return false;
       this.tauntT = 1.25;
       if (this.avatar) this.avatar.playEmote();
-      SKY.SFX.taunt();
+      SKY.SFX.taunt(this.sfxDist());
       return true;
     }
 
@@ -424,7 +467,7 @@ window.SKY = window.SKY || {};
       this.vel.y = 4;
       SKY.Effects.ring(new THREE.Vector3(this.pos.x, this.pos.y + 0.15, this.pos.z), '#ffffff', A.poundRadius * 1.6, 0.4);
       SKY.Effects.burst(this.pos, { count: 16, speed: 6, color: '#cfd8e8', life: 0.5 });
-      SKY.SFX.rumble();
+      SKY.SFX.rumble(this.sfxDist());
       if (this.isLocal) SKY.Effects.shake(1);
     }
 
@@ -439,9 +482,57 @@ window.SKY = window.SKY || {};
       this.vel.z = dz * spd;
       this.vel.y = Math.max(this.vel.y, 2.5);
       this.grounded = false;
-      SKY.SFX.dash();
+      SKY.SFX.dash(this.sfxDist());
       if (this.isLocal) SKY.Effects.shake(0.4);
       return true;
+    }
+
+    /* underwater movement: momentum-light, fully 3D — forward dives where
+       you look, SPACE rises, crouch sinks, SPACE at the surface breaches.
+       Every dial comes from the sea prop's fx settings (editor-tweakable):
+       drag / gravity (sink rate) / speed / jumpOut. */
+    _swim(dt, cmd) {
+      const T = SKY.TUNING.move;
+      const o = this.inWater.opts || {};
+      const surf = this.inWater.level;
+      // thick water: drag on everything, momentum dies fast
+      const drag = o.drag !== undefined ? o.drag : 1.7;
+      this.vel.multiplyScalar(1 / (1 + drag * dt));
+      // a gentle idle sink (0 = perfectly neutral buoyancy)
+      this.vel.y -= T.gravity * (o.gravity !== undefined ? o.gravity : 0.12) *
+        this.mods.gravMult * dt;
+      // steering
+      const spd = T.walkSpeed * (o.speed !== undefined ? o.speed : 0.65) * this.mods.speedMult;
+      _swimDir.set(0, 0, 0);
+      if (cmd.mz) {
+        SKY.U.dirFromYawPitch(this.yaw, this.pitch, _swimFwd);
+        _swimDir.addScaledVector(_swimFwd, cmd.mz);
+      }
+      if (cmd.mx) {
+        _swimDir.x += Math.cos(this.yaw) * cmd.mx;
+        _swimDir.z += -Math.sin(this.yaw) * cmd.mx;
+      }
+      if (cmd.jumpHeld) _swimDir.y += 0.85;
+      if (cmd.crouch) _swimDir.y -= 0.85;
+      const wl = _swimDir.length();
+      if (wl > 1e-4) {
+        _swimDir.multiplyScalar(1 / wl);
+        const cur = this.vel.dot(_swimDir);
+        const add = spd - cur;
+        if (add > 0) this.vel.addScaledVector(_swimDir, Math.min(add, 26 * dt));
+      }
+      // the surface is a lid you bob under — unless you actively breach
+      const headY = this.pos.y + this.height * 0.75;
+      if (headY > surf - 0.1 && this.vel.y > 0.5 && !cmd.jumpPressed) this.vel.y *= 0.55;
+      if (cmd.jumpPressed && headY > surf - 0.8) {
+        this.vel.y = T.jumpForce * (o.jumpOut !== undefined ? o.jumpOut : 1) * this.mods.jumpMult;
+        this.grounded = false;
+      }
+      // water resets air resources — climbing out is a fresh start
+      this.airJumps = 1;
+      this.airGrapples = Math.max(this.airGrapples, SKY.TUNING.grapple.airHooks);
+      this.fellScreamed = false;
+      this.pounding = false;
     }
 
     /* Quake ground/air accelerate: only adds speed toward wishdir up to wishspeed */

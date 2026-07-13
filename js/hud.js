@@ -566,8 +566,8 @@ SKY.HUD = (function () {
         }
       }
       setHTML(el.pips, pipsHtml);
-      // alive dots: one per player, dimmed when down/eliminated
-      setHTML(el.dots, G.pawns.map(q =>
+      // alive dots: one per player, dimmed when down/eliminated (leavers gone)
+      setHTML(el.dots, G.pawns.filter(q => !q.left).map(q =>
         `<span class="pdot${q.eliminated ? ' out' : q.alive ? '' : ' dead'}" style="background:${q.color};color:${q.color}"></span>`).join(''));
       if (G.mode === 'spark') {
         el.lives.classList.add('hidden');
@@ -717,7 +717,8 @@ SKY.HUD = (function () {
           : (b.roundWins - a.roundWins) || ((b.mk || 0) - (a.mk || 0)));
       el.sbBody.innerHTML = rows.map(p => {
         const cls = (p.isLocal ? 'me' : '') + (p.eliminated ? ' out' : '');
-        const status = p.eliminated ? 'OUT'
+        const status = p.left ? 'LEFT'
+          : p.eliminated ? 'OUT'
           : (G.mode === 'it' && p.isSeeker) ? '👹 SEEKER'
           : (p.alive ? '' : 'respawning');
         const score = G.mode === 'spark' ? '✦' + (p.sparks || 0)

@@ -1880,6 +1880,60 @@ SKY.Map = (function () {
     return true;
   }
 
+  /* =============================================================
+   * SCULPTED TERRAIN (editor TERRAIN tool) — a heightfield grid with a
+   * 4-texture splat blend (sand/rock/grass/dirt by default). The visual is
+   * a displaced plane; collision is a real heightfield in world.js.
+   * ============================================================= */
+  function terrainMaterial(tr) {
+    const texs = tr.texs || ['sand', 'rock', 'grass', 'dirt'];
+    const rep = Math.max(1, tr.rep || Math.round((tr.size || 60) / 6));
+    const t = (nm) => (SKY.GFX && SKY.GFX.texture) ? SKY.GFX.texture(nm, 1) : null;
+    const t0 = t(texs[0]);
+    if (!t0) return new THREE.MeshLambertMaterial({ color: 0xd8c49a });  // file:// look
+    const t1 = t(texs[1]) || t0, t2 = t(texs[2]) || t0, t3 = t(texs[3]) || t0;
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: t0 });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uT1 = { value: t1 };
+      sh.uniforms.uT2 = { value: t2 };
+      sh.uniforms.uT3 = { value: t3 };
+      sh.uniforms.uRep = { value: rep };
+      sh.vertexShader = 'attribute vec4 asplat;\nvarying vec4 vSplat;\n' +
+        sh.vertexShader.replace('#include <begin_vertex>',
+          '#include <begin_vertex>\nvSplat = asplat;');
+      sh.fragmentShader = ('uniform sampler2D uT1;\nuniform sampler2D uT2;\n' +
+        'uniform sampler2D uT3;\nuniform float uRep;\nvarying vec4 vSplat;\n') +
+        sh.fragmentShader.replace('#include <map_fragment>', [
+          'vec2 tuv = vUv * uRep;',
+          'vec4 w = vSplat; w.x += 0.001;',
+          'w /= (w.x + w.y + w.z + w.w);',
+          'diffuseColor *= texture2D(map, tuv) * w.x + texture2D(uT1, tuv) * w.y +',
+          '  texture2D(uT2, tuv) * w.z + texture2D(uT3, tuv) * w.w;',
+        ].join('\n'));
+    };
+    return mat;
+  }
+
+  function buildTerrain(tr) {
+    const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128);
+    const size = Math.max(4, tr.size || 60);
+    const n = (segs + 1) * (segs + 1);
+    const heights = SKY.MapData.decodeHeights(tr.h, n);
+    const splat = SKY.MapData.decodeSplat(tr.splat, n);
+    const geo = new THREE.PlaneGeometry(size, size, segs, segs);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.array[i * 3 + 1] = heights[i];
+    geo.computeVertexNormals();
+    geo.setAttribute('asplat', new THREE.BufferAttribute(splat, 4, true));
+    const mesh = new THREE.Mesh(geo, terrainMaterial(tr));
+    mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    SKY.World.addTerrain({ x: tr.p[0], z: tr.p[2], size, segs, heights, y: tr.p[1], mesh });
+    return mesh;
+  }
+
   function buildCustomMap(def) {
     const D = SKY.MapData;
     SKY.World.killY = def.killY;
@@ -1919,6 +1973,8 @@ SKY.Map = (function () {
       scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
     }
 
+    // terrains FIRST: the sea's per-vertex depth measurement needs them
+    for (const tr of def.terrains || []) buildTerrain(tr);
     for (const b of def.blocks) {
       plat(b.p[0], b.p[1], b.p[2], b.s[0], b.s[1], b.s[2], {
         material: customBlockMaterial(b),
@@ -1961,6 +2017,18 @@ SKY.Map = (function () {
       // SEA EVENTS: invisible markers -> deterministic clock-driven shows
       if (a === 'fx:tsunami' || a === 'fx:triangle' || a === 'fx:kraken' || a === 'fx:shark') {
         registerSeaEvent(a.slice(3), pr);
+      }
+      // WATER: register the swim volume — pawn physics (swim/buoyancy) and
+      // the underwater screen/audio treatment key off it. All the dials ride
+      // in pr.fx so every sea can feel different.
+      if (a === 'fx:sea') {
+        const sf = { ...(SKY.Assets ? SKY.Assets.fxDefaults('fx:sea') : {}), ...(pr.fx || {}) };
+        SKY.World.addWater({
+          x: pr.p[0], z: pr.p[2],
+          half: (Math.max(20, sf.size) / 2) * (pr.scale || 1),
+          level: pr.p[1],
+          opts: sf,
+        });
       }
       // AIR VENT: register the updraft column (pawn.tick applies the lift —
       // deterministic from the def, so every peer simulates it identically)
@@ -2023,6 +2091,11 @@ SKY.Map = (function () {
         }
         obj.rotation.set(rot[0], rot[1], rot[2]);
         obj.updateMatrixWorld(true);
+        // world-transform-dependent setup (the sea measures seabed depth
+        // under each vertex) — delayed so sibling props' solids exist too
+        if (obj.userData && obj.userData.postPlace) {
+          setTimeout(() => { if (group === g) obj.userData.postPlace(obj); }, 120);
+        }
         // pre-rotation box -> rotated OBB opts (offset spun by the prop's quat)
         const toSolid = (bc, bs) => {
           const lc = bc.clone().sub(obj.position);
@@ -2279,7 +2352,7 @@ SKY.Map = (function () {
   }
 
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
-           setDoor, tryInteract, propCollisionLocal, skyFollow,
+           setDoor, tryInteract, propCollisionLocal, skyFollow, terrainMaterial,
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; },
            get rootGroup() { return group; } };

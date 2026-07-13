@@ -107,6 +107,7 @@ SKY.MapData = (function () {
       ],
       items: [],
       props: [],
+      terrains: [],    // sculpted heightfields (editor TERRAIN tool)
       assets: {},
       light: 1,        // global lighting dial (0.05 dark .. 2 blown out)
       skyc: null,      // custom sky {top, mid, hor, stars, clouds, cloudCol}
@@ -120,6 +121,7 @@ SKY.MapData = (function () {
     def.spawns = def.spawns || [];
     def.items = def.items || [];
     def.props = def.props || [];     // placed 3D assets
+    def.terrains = def.terrains || [];  // sculpted heightfields
     def.assets = def.assets || {};   // embedded asset payloads (id -> {name,type,data})
     def.mood = MOODS[def.mood] ? def.mood : 'golden';
     def.sky = SKIES[def.sky] ? def.sky : 'golden';
@@ -198,9 +200,56 @@ SKY.MapData = (function () {
     catch (e) { return {}; }
   }
 
+  /* ---------- terrain payload codecs ----------
+   * heights: Float32 meters -> Int16 centimeters -> base64 (compact + exact
+   * enough); splat: 4 texture weights per vertex as raw Uint8 RGBA -> base64.
+   * Keeps a 48×48 sculpt around ~12 KB inside the def — still beam-able. */
+  function b64FromBytes(bytes) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(s);
+  }
+  function bytesFromB64(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function encodeHeights(f32) {
+    const i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      i16[i] = Math.max(-32000, Math.min(32000, Math.round(f32[i] * 100)));
+    }
+    return b64FromBytes(new Uint8Array(i16.buffer));
+  }
+  function decodeHeights(b64, n) {
+    const out = new Float32Array(n);
+    if (!b64) return out;
+    try {
+      const bytes = bytesFromB64(b64);
+      const i16 = new Int16Array(bytes.buffer, 0, Math.min(n, bytes.length >> 1));
+      for (let i = 0; i < i16.length; i++) out[i] = i16[i] / 100;
+    } catch (e) {}
+    return out;
+  }
+  function encodeSplat(u8) { return b64FromBytes(u8); }
+  function decodeSplat(b64, n) {
+    const out = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) out[i * 4] = 255;   // default: 100% texture 1
+    if (!b64) return out;
+    try {
+      const bytes = bytesFromB64(b64);
+      out.set(bytes.subarray(0, Math.min(bytes.length, out.length)));
+    } catch (e) {}
+    return out;
+  }
+
   const api = {
     MOODS, SKIES, PALETTES, SKY_FOR_MOOD,
     blank, normalize,
+    encodeHeights, decodeHeights, encodeSplat, decodeSplat,
 
     register(def) {
       normalize(def);

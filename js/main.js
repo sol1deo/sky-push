@@ -96,6 +96,74 @@
   SKY.Net.init();
   SKY.Locker.init();
 
+  /* ---------------------------------------------------------------------
+   * Boot loading screen: new players used to land on a menu whose models,
+   * maps and textures were still streaming in. A real progress bar now
+   * tracks every asset (SKY.GFX.progress) and fades out when it's all in.
+   * --------------------------------------------------------------------- */
+  (function bootLoader() {
+    const ov = document.getElementById('load-ov');
+    if (!ov) return;
+    const kill = () => { if (ov.parentNode) ov.parentNode.removeChild(ov); };
+    // file:// can't stream assets; test harnesses drive the DOM directly
+    if (!SKY.GFX.canLoad || /autotest|nethost|netjoin|nettest/.test(location.search)) {
+      kill();
+      return;
+    }
+    const fill = document.getElementById('load-fill');
+    const pct = document.getElementById('load-pct');
+    const what = document.getElementById('load-what');
+    const tip = document.getElementById('load-tip');
+    const skip = document.getElementById('load-skip');
+    const TIPS = [
+      'hold <b>SPACE</b> to chain perfect bunny-hops — speed is power',
+      'your shots push harder the <b>faster you move</b>',
+      '<b>RMB</b> fires the grapple — build a swing, don\'t just dangle',
+      '<b>Q</b> is the air cannon. Aim at the ground behind you = rocket jump',
+      'slide (<b>SHIFT</b>) down ramps to build ridiculous speed',
+      'headshots ragdoll people. It is very funny',
+      'press <b>V</b> after a great play — the replay editor saw everything',
+      'in IT, the tag cannon only works point-blank — never stop moving',
+      'the map editor (MAPS tab) lets you build & share your own arenas',
+    ];
+    let tipI = (Math.random() * TIPS.length) | 0;
+    tip.innerHTML = 'TIP — ' + TIPS[tipI];
+    const tipTimer = setInterval(() => {
+      tipI = (tipI + 1) % TIPS.length;
+      tip.innerHTML = 'TIP — ' + TIPS[tipI];
+    }, 3200);
+    const t0 = performance.now();
+    let shown = 0;   // eased display fraction — the bar never jumps backward
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearInterval(tipTimer);
+      clearInterval(poll);
+      ov.classList.add('done');
+      setTimeout(kill, 500);
+    };
+    skip.onclick = finish;
+    const poll = setInterval(() => {
+      const p = SKY.GFX.progress();
+      const real = p.total > 0 ? p.done / p.total : 0;
+      shown = Math.max(shown, Math.min(real, shown + 0.06));
+      fill.style.width = (shown * 100).toFixed(1) + '%';
+      pct.textContent = Math.round(shown * 100) + '%';
+      what.textContent = shown < 0.25 ? 'loading textures…'
+        : shown < 0.5 ? 'loading characters…'
+        : shown < 0.85 ? 'loading the prop shop…'
+        : 'polishing the arena…';
+      const elapsed = performance.now() - t0;
+      // everything settled (min 700ms so it never just flashes)
+      if (real >= 1 && shown >= 0.99 && elapsed > 700) finish();
+      // network trouble shouldn't trap anyone: offer a way in after 12s
+      if (elapsed > 12000) skip.classList.remove('hidden');
+      // absolute failsafe
+      if (elapsed > 60000) finish();
+    }, 90);
+  })();
+
   const STEP = 1 / 120;
   let acc = 0;
   let last = performance.now();

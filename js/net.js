@@ -213,6 +213,7 @@ SKY.Net = (function () {
   let lootSeenSeq = 0;           // client: highest loot seq already handled
   let lastPick = null;           // client: { seq, item } — re-sent if 'pick' is lost
   const pings = {};              // id -> ms (host-collected, broadcast to all)
+  let lastHostSeen = 0;          // client: last time ANY host message arrived
   const _v = new THREE.Vector3();
 
   const $ = (id) => document.getElementById(id);
@@ -338,19 +339,36 @@ SKY.Net = (function () {
     if (!id || !conns.has(id)) return;
     conns.delete(id);
     lastStates.delete(id);
+    pendingLoot.delete(id);
     api.roster = api.roster.filter(r => r.id !== id);
     broadcast({ t: 'roster', roster: api.roster });
     renderLobby();
     if (api.inGame) {
-      const pawn = SKY.Game.pawns.find(p => p.netId === id);
-      if (pawn) { pawn.eliminated = true; pawn.alive = false; }
-      SKY.HUD.killFeed('<b>' + (conn.__name || 'player') + '</b> disconnected');
-      broadcast({ t: 'gone', id });
+      removePawn(id, conn.__name);
+      broadcast({ t: 'gone', id, name: conn.__name || 'player' });
     }
   }
 
+  /* a player left mid-match: their body goes away everywhere, the feed says
+     so, and nothing (crown, round-end checks, spectate) keeps pointing at it */
+  function removePawn(id, name) {
+    const G = SKY.Game;
+    const pawn = G.pawns.find(p => p.netId === id);
+    if (!pawn || pawn.left) return;
+    pawn.left = true;
+    pawn.eliminated = true;
+    pawn.alive = false;
+    pawn.netTarget = null;
+    if (G.crownHolder === pawn) G.crownHolder = null;
+    pawn.dispose();          // avatar off the map right now, not next respawn
+    pawn.avatar = null;
+    SKY.HUD.killFeed('<b>' + (name || pawn.name) + '</b> left the game');
+  }
+
   function onHostMessage(conn, m) {
+    conn.__seen = performance.now();   // liveness: ANY message counts
     switch (m.t) {
+      case 'bye': dropClient(conn); try { conn.close(); } catch (e) {} break;
       case 'hello': {
         if (api.roster.filter(r => !r.bot).length >= MAX_PLAYERS || api.inGame) {
           conn.send({ t: 'full' });
@@ -359,6 +377,7 @@ SKY.Net = (function () {
         }
         const id = 'p' + randCode(4);
         conn.__id = id; conn.__name = m.name;
+        conn.__seen = performance.now();
         conns.set(id, conn);
         api.roster.push({ id, name: m.name, color: COLORS[api.roster.length % COLORS.length], cos: m.cos || null });
         conn.send({ t: 'welcome', you: id, roster: api.roster, settings: api.settings,
@@ -714,6 +733,11 @@ SKY.Net = (function () {
   }
 
   function leaveWithMessage(msg) {
+    // tell the others RIGHT NOW instead of hoping their close event fires
+    try {
+      if (api.role === 'client' && hostConn && hostConn.open) hostConn.send({ t: 'bye' });
+      else if (api.role === 'host') broadcast({ t: 'hostbye' });
+    } catch (e) {}
     destroyPeer();
     SKY.Game.toMenu();
     showOnlineHome();
@@ -722,8 +746,10 @@ SKY.Net = (function () {
 
   /* ===================== client messages ===================== */
   function onClientMessage(m) {
+    lastHostSeen = performance.now();
     const G = SKY.Game;
     switch (m.t) {
+      case 'hostbye': leaveWithMessage('Host left the game.'); break;
       case 'ping': if (hostConn && hostConn.open) hostConn.send({ t: 'pong', ts: m.ts }); break;
       case 'roster': api.roster = m.roster; renderLobby(); break;
       case 'settings':
@@ -776,12 +802,16 @@ SKY.Net = (function () {
         SKY.SFX.ko(pawn.isLocal);
         if (pawn.isLocal) {
           if (m.elim) SKY.HUD.showRespawn('☠ ELIMINATED — spectating the chaos');
-          else if (G.mode === 'spark' || G.mode === 'dm') SKY.HUD.showRespawn('Respawning…');
-          else SKY.HUD.showRespawn('💀 YEETED! Pick a reward…');
+          else if (G.mode === 'lbs') SKY.HUD.showRespawn('💀 YEETED! Pick a reward…');
+          else SKY.HUD.showRespawn('Respawning…');
         }
         break;
       }
       case 'loot': {
+        // cards exist ONLY in Last Standing. A stale resend from a previous
+        // match (pendingLoot outliving the mode switch) must never pop cards
+        // mid-deathmatch/IT — that was the "cards in dm wtf" bug.
+        if (G.mode !== 'lbs') break;
         // seq dedup: a 3s resend can CROSS our 'pick' on the wire at high
         // ping — same-seq repeats must never re-open (= the double-reward bug)
         if (m.seq !== undefined) {
@@ -857,11 +887,7 @@ SKY.Net = (function () {
       }
       case 'newround': G.startRound(); break;
       case 'tolobby': G.toMenu(); showLobby(); break;
-      case 'gone': {
-        const pawn = G.pawns.find(p => p.netId === m.id);
-        if (pawn) { pawn.eliminated = true; pawn.alive = false; }
-        break;
-      }
+      case 'gone': removePawn(m.id, m.name); break;
       case 'pkspawn': SKY.Pickups.spawnAt(m.id, m.item, m.pos); break;
       case 'pktake': SKY.Pickups.takeRemote(m.id, m.by); break;
     }
@@ -929,6 +955,9 @@ SKY.Net = (function () {
     const roster = buildRoster();
     api.roster = roster;
     api.inGame = true;
+    // stale card offers from the previous match must not haunt the next one
+    // (same netIds, different mode = phantom loot popups + blocked respawns)
+    pendingLoot.clear();
     const rules = { rounds: api.settings.rounds, lives: api.settings.lives,
       crown: api.settings.crown, sparks: api.settings.sparks, dmMin: api.settings.dmMin,
       time: api.settings.time || 0 };
@@ -972,11 +1001,23 @@ SKY.Net = (function () {
     return s;
   }
 
+  /* heartbeat both ways. WebRTC 'close' events are UNRELIABLE (killed tab,
+     pulled cable, sleeping laptop) — without a timeout a leaver's pawn stood
+     on the map forever. Host pings every 2s; clients answer; silence past the
+     threshold = they're gone. */
   function startPing() {
     if (pingTimer) clearInterval(pingTimer);
-    if (api.role !== 'host') return;
+    lastHostSeen = performance.now();
     pingTimer = setInterval(() => {
-      broadcast({ t: 'ping', ts: performance.now() });
+      const now = performance.now();
+      if (api.role === 'host') {
+        broadcast({ t: 'ping', ts: now });
+        for (const conn of [...conns.values()]) {
+          if (conn.__seen && now - conn.__seen > 9000) dropClient(conn);
+        }
+      } else if (lastHostSeen && now - lastHostSeen > 13000) {
+        leaveWithMessage('Lost connection to the host.');
+      }
     }, 2000);
   }
 
@@ -1388,7 +1429,9 @@ SKY.Net = (function () {
         killer: killer ? killer.netId : null, killerKos: killer ? killer.koCount : 0,
         assist: assist ? assist.netId : null,
       });
-      if (SKY.Game.mode !== 'spark' && SKY.Game.mode !== 'dm' && pawn.isRemote && !pawn.eliminated) {
+      // death-reward cards are a LAST STANDING exclusive — every other mode
+      // (dm / it / crown / spark) respawns clean, no popup
+      if (SKY.Game.mode === 'lbs' && pawn.isRemote && !pawn.eliminated) {
         const choices = SKY.Loot.roll(pawn).map(it => it.id);
         lootSeq++;
         pendingLoot.set(pawn.netId, { choices, seq: lootSeq, at: performance.now() });

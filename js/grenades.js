@@ -73,7 +73,7 @@ SKY.Grenades = (function () {
       fuse: N.fuse + (type === 'molly' ? 3 : 0),   // molly mostly ignites on impact
       mesh: makeNadeMesh(N.color), resting: false,
     });
-    SKY.SFX.grapMiss();   // soft toss click
+    if (pawn.isLocal) SKY.SFX.grapMiss();   // soft toss click
     return true;
   }
 

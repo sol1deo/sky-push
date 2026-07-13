@@ -113,12 +113,10 @@ SKY.Game = (function () {
       if (rules.crown) SKY.TUNING.crown.holdToWin = rules.crown;
       if (rules.sparks) SKY.TUNING.spark.target = rules.sparks;
       if (rules.dmMin) SKY.TUNING.dm.timeLimit = rules.dmMin * 60;
-      // optional hard round cap for lbs/crown/it (0 = classic, no limit)
+      // optional hard round cap for lbs/crown/it (0 = classic, no limit).
+      // IT honors "no limit" too now — the round then only ends when every
+      // runner is tagged (or the seeker leaves).
       SKY.TUNING.game.timeLimit = rules.time !== undefined ? rules.time : 0;
-      // IT always runs on a clock — surviving it is the runners' win condition
-      if (mode === 'it' && !SKY.TUNING.game.timeLimit) {
-        SKY.TUNING.game.timeLimit = SKY.TUNING.it.roundTime;
-      }
     },
 
     /* round-limit buzzer: best-placed player takes the round */
@@ -215,6 +213,7 @@ SKY.Game = (function () {
       SKY.Replay.mark('R' + api.roundNum);       // round tick on the replay timeline
       const spawns = SKY.World.spawnPoints;
       api.pawns.forEach((p, i) => {
+        if (p.left) { p.eliminated = true; p.alive = false; return; }   // leavers stay gone
         p.lives = SKY.TUNING.game.lives;
         p.eliminated = false; p.alive = true; p.deadT = 0; p.koCount = 0;
         p.crownTime = 0;
@@ -263,12 +262,15 @@ SKY.Game = (function () {
           else p.giveWeapon(SKY.U.pick(DM_WEAPONS));
         }
       }
-      // IT: rotate the seeker deterministically (same roster order everywhere)
+      // IT: rotate the seeker deterministically (same roster order everywhere;
+      // leavers are skipped identically on every client — same pawn order)
       api._itReleased = false;
       if (api.mode === 'it') {
-        const seekIdx = (api.roundNum - 1) % api.pawns.length;
-        api.pawns.forEach((p, i) => {
-          p.isSeeker = i === seekIdx;
+        const present = api.pawns.filter(p => !p.left);
+        const seeker = present.length ? present[(api.roundNum - 1) % present.length] : null;
+        api.pawns.forEach((p) => {
+          p.isSeeker = p === seeker;
+          if (p.left) return;
           p._frz = null;                      // fresh hide-phase anchor
           if (p.isSeeker) {
             if (!p.isRemote) p.giveWeapon('seeker');
@@ -282,9 +284,10 @@ SKY.Game = (function () {
           }
           p.nades = { type: 'he', count: 0 }; // hook + cannon only
         });
-        const seeker = api.pawns[seekIdx];
-        SKY.HUD.subMsg((seeker.isLocal ? 'YOU are the SEEKER — ' : seeker.name + ' is the SEEKER — ') +
-          'runners scatter!', 3.5);
+        if (seeker) {
+          SKY.HUD.subMsg((seeker.isLocal ? 'YOU are the SEEKER — ' : seeker.name + ' is the SEEKER — ') +
+            'runners scatter!', 3.5);
+        }
       } else {
         api.pawns.forEach(p => { p.isSeeker = false; });
       }
@@ -544,8 +547,9 @@ SKY.Game = (function () {
           }
           if (!p.alive && !p.eliminated) {
             p.deadT -= dt;
-            // spark mode never blocks respawns on card picks (they're live)
-            const waiting = api.mode !== 'spark' &&
+            // only LAST STANDING gates the respawn on a card pick — every
+            // other mode (dm/it/crown/spark) respawns on the timer, period
+            const waiting = api.mode === 'lbs' &&
                             ((p.isLocal && api.lootChoices) ||
                              (SKY.Net.online && p.isRemote && SKY.Net.hostWaitingLoot(p)));
             if (p.isLocal) {
@@ -651,12 +655,14 @@ SKY.Game = (function () {
         SKY.HUD.centerMsg('THE SEEKER IS LOOSE', 1.6, 44);
         SKY.SFX.overtime();
       }
-      // all runners down -> the seeker takes the round
+      // all runners down -> the seeker takes the round.
+      // seeker LEFT the game -> the surviving runners take it instead.
       if (SKY.Net.authority) {
+        const seeker = api.pawns.find(p => p.isSeeker);
+        if (seeker && seeker.left) { this.endRound(this.timeoutWinner()); return; }
         const runnersLeft = api.pawns.filter(p => !p.isSeeker && !p.eliminated).length;
         if (runnersLeft === 0) {
-          const seeker = api.pawns.find(p => p.isSeeker);
-          this.endRound(seeker || null);
+          this.endRound(seeker && !seeker.left ? seeker : null);
         }
       }
     },
@@ -848,13 +854,16 @@ SKY.Game = (function () {
       }
       if (api.mode === 'crown' || pawn.lives > 0) {
         pawn.deadT = G.respawnDelay;
-        if (pawn.isLocal) {
+        // reward cards: LAST STANDING only (crown just respawns clean)
+        if (api.mode === 'lbs' && pawn.isLocal) {
           api.lootChoices = SKY.Loot.roll(pawn);
           api.lootOpen = true;
           SKY.HUD.showLoot(api.lootChoices, (i) => api.pickLoot(i));
           if (document.pointerLockElement) document.exitPointerLock();
-        } else if (!pawn.isRemote) {
+        } else if (api.mode === 'lbs' && !pawn.isRemote) {
           SKY.Loot.autoPick(pawn);       // host-simulated bots
+        } else if (pawn.isLocal) {
+          SKY.HUD.showRespawn('Respawning…');
         }
       } else {
         pawn.eliminated = true;
@@ -986,6 +995,11 @@ SKY.Game = (function () {
       const C = SKY.TUNING.camera;
       SKY.Map.tick(rdt, api.time);
       SKY.Effects.tick(rdt);
+      // camera below a sea surface = the full underwater treatment
+      SKY.Effects.underwater(
+        api.state !== 'menu' && SKY.World.waterAt
+          ? SKY.World.waterAt(camera.position.x, camera.position.y, camera.position.z)
+          : null, rdt);
       SKY.Pickups.visualTick(rdt);
       SKY.Sparks.visualTick(rdt);
       SKY.Attract.tick(rdt);    // slow-mo menu show (self-gates on state)

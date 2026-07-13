@@ -155,11 +155,18 @@ SKY.GFX = (function () {
     { file: 'Suit_Male', tint: 'Black' },
   ];
 
+  // Quaternius sea creatures (CC0, poly.pizza GLBs) — some carry swim clips;
+  // prop() clones them with SkeletonUtils and self-plays the animation
+  const SEALIFE_NAMES = ['shark', 'fish-a', 'fish-b', 'fish-c', 'dolphin',
+    'whale', 'mantaray', 'squidle'];
+  const SEALIFE_SCALE = { whale: 1, squidle: 1 };   // filled after calibration
+
   const weapons = {};     // kind -> normalized template Group (cloned per use)
   const props = {};       // name -> template Group
   const texImgs = {};     // name -> HTMLImageElement (decoded, ready)
   const texCache = {};    // name|repeat -> THREE.Texture
   const cast = {};        // file -> { root, clips, height, tint }
+  const sealife = {};     // name -> { root, clips }
   let loader = null;
 
   // onReady fires ONCE when textures+weapons+characters have all settled
@@ -171,6 +178,12 @@ SKY.GFX = (function () {
     api.ready = true;
     if (api.onReady) { try { api.onReady(); } catch (e) {} }
   }
+
+  // per-item progress for the boot loading screen: every model/texture/
+  // character counts once, success OR failure — the bar always reaches 100%
+  let loadTotal = 0, loadDone = 0;
+  function track(n) { loadTotal += n; }
+  function tick() { loadDone++; }
 
   function gl() { return loader || (loader = new THREE.GLTFLoader()); }
 
@@ -210,18 +223,21 @@ SKY.GFX = (function () {
   function loadWeapons(done) {
     const kinds = Object.keys(WEAPON_FIT);
     let pending = kinds.length;
+    track(pending);
     for (const kind of kinds) {
       const file = WEAPON_FIT[kind].file || kind;
       gl().load('assets/models/weapons/' + file + '.glb', (g) => {
         try { weapons[kind] = normalizeWeapon(kind, g.scene || g.scenes[0]); } catch (e) {}
+        tick();
         if (--pending === 0 && done) done();
-      }, undefined, () => { if (--pending === 0 && done) done(); });
+      }, undefined, () => { tick(); if (--pending === 0 && done) done(); });
     }
   }
 
   function loadChars() {
     let pending = CAST.length;
-    const settle = () => { if (--pending === 0) groupDone(); };
+    track(pending);
+    const settle = () => { tick(); if (--pending === 0) groupDone(); };
     for (const entry of CAST) {
       gl().load('assets/models/chars/cast/' + entry.file + '.glb', (g) => {
         const root = g.scene || g.scenes[0];
@@ -264,7 +280,8 @@ SKY.GFX = (function () {
     let pending = PROP_NAMES.length + KIT_NAMES.length + BUILD_NAMES.length +
       CITY_NAMES.length + SITE_NAMES.length + FURN_NAMES.length + MOD_NAMES.length;
     for (const p of EXTRA_PACKS) pending += p.names.length;
-    const settle = () => { if (--pending === 0) groupDone(); };
+    track(pending);
+    const settle = () => { tick(); if (--pending === 0) groupDone(); };
     const store = (name, scale, lambert) => (g) => {
       let root = g.scene || g.scenes[0];
       const k = scale !== undefined ? scale : PACK_SCALE[name];
@@ -340,9 +357,69 @@ SKY.GFX = (function () {
     }
   }
 
+  /* sea creatures: keep root + clips (skinned — cloned via SkeletonUtils) */
+  function loadSealife() {
+    track(SEALIFE_NAMES.length);
+    for (const name of SEALIFE_NAMES) {
+      gl().load('assets/models/sealife/' + name + '.glb', (g) => {
+        const root = g.scene || g.scenes[0];
+        root.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = true;
+          o.frustumCulled = false;
+          if (o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            const conv = mats.map((src) => {
+              const m = new THREE.MeshLambertMaterial({
+                color: src.color ? src.color.clone() : 0xffffff,
+              });
+              if (src.map) m.map = src.map;
+              m.name = src.name || '';
+              return m;
+            });
+            o.material = Array.isArray(o.material) ? conv : conv[0];
+          }
+        });
+        sealife[name] = { root, clips: g.animations || [] };
+        tick();
+      }, undefined, tick);
+    }
+  }
+
+  /* an animated, self-driving clone of a sea creature (or null) */
+  function creatureInstance(name) {
+    const t = sealife[name];
+    if (!t) return null;
+    const root = THREE.SkeletonUtils ? THREE.SkeletonUtils.clone(t.root) : t.root.clone(true);
+    const wrap = new THREE.Group();
+    const inner = new THREE.Group();
+    const k = SEALIFE_SCALE[name] || 1;
+    if (k !== 1) inner.scale.setScalar(k);
+    inner.add(root);
+    wrap.add(inner);
+    if (t.clips.length) {
+      const mixer = new THREE.AnimationMixer(root);
+      const clip = t.clips.find(c => /swim|move|idle/i.test(c.name)) || t.clips[0];
+      mixer.clipAction(clip).play();
+      let last = 0;
+      let m = null;
+      root.traverse((o) => { if (!m && o.isMesh) m = o; });
+      if (m) {
+        m.onBeforeRender = () => {
+          const now = performance.now();
+          mixer.update(Math.min(0.1, last ? (now - last) / 1000 : 0.016));
+          last = now;
+        };
+      }
+      wrap.userData.mixer = mixer;
+    }
+    return wrap;
+  }
+
   function loadTextures() {
     let pending = TEX_NAMES.length;
-    const settle = () => { if (--pending === 0) groupDone(); };
+    track(pending);
+    const settle = () => { tick(); if (--pending === 0) groupDone(); };
     for (const name of TEX_NAMES) {
       const img = new Image();
       img.onload = () => { texImgs[name] = img; settle(); };
@@ -355,6 +432,8 @@ SKY.GFX = (function () {
     canLoad,
     ready: false,    // true once textures+weapons+characters settle
     onReady: null,   // fired once at that moment
+    /* boot loading screen: fraction of tracked assets that have settled */
+    progress() { return { done: loadDone, total: loadTotal }; },
 
     init() {
       if (!canLoad || !window.THREE || !THREE.GLTFLoader) return;
@@ -363,6 +442,7 @@ SKY.GFX = (function () {
         loadWeapons(groupDone);
         loadChars();
         loadProps();
+        loadSealife();
       } catch (e) {}
     },
 
@@ -427,8 +507,12 @@ SKY.GFX = (function () {
     },
 
     /* ---- props ---- */
-    hasProp(name) { return !!props[name]; },
+    hasProp(name) {
+      if (name.indexOf('life-') === 0) return !!sealife[name.slice(5)];
+      return !!props[name];
+    },
     prop(name) {
+      if (name.indexOf('life-') === 0) return creatureInstance(name.slice(5));
       const t = props[name];
       return t ? t.clone(true) : null;
     },
@@ -436,10 +520,12 @@ SKY.GFX = (function () {
       let out = PROP_NAMES.concat(KIT_NAMES, BUILD_NAMES, CITY_NAMES,
         SITE_NAMES, FURN_NAMES, MOD_NAMES);
       for (const p of EXTRA_PACKS) out = out.concat(p.names.map(n => p.prefix + n));
+      out = out.concat(SEALIFE_NAMES.map(n => 'life-' + n));
       return out;
     },
     /* editor asset-panel folder for a pack prop */
     propFolder(name) {
+      if (name.indexOf('life-') === 0) return 'sea life';
       for (const p of EXTRA_PACKS) {
         if (name.indexOf(p.prefix) === 0) return p.folder;
       }

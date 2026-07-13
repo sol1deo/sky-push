@@ -23,10 +23,13 @@ SKY.SFX = (function () {
 
   /* ---------------- sample bank (https only) ---------------- */
   const canFetch = /^https?:$/.test(location.protocol);
+  // NOTE: the old `dash` bank (R&B "swings") is deliberately GONE — it was a
+  // literal sword-swing whoosh playing at full volume for every bot dash
+  // across the map ("why do I hear sword fights, we have no swords")
   const MANIFEST = {
     fire_light: 4, fire_med: 4, fire_heavy: 2, fire_sniper: 3, glfire: 3,
     boom: 3, boom_low: 1, thunder_smp: 1,
-    hit: 2, headshot: 2, land: 2, step: 5, dash: 2, pad: 1, grapple: 1,
+    hit: 2, headshot: 2, land: 2, step: 5, pad: 1, grapple: 1,
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
     go: 1, ko: 2, aircannon: 1, win: 1, lose: 1, uiclick: 4,
     taunt: 1, cheer: 1, alarm: 1,
@@ -34,6 +37,22 @@ SKY.SFX = (function () {
   const FILE_FOR = { thunder_smp: 'thunder' };   // bank name -> file prefix
   const bank = {};          // name -> [AudioBuffer] (buffers survive rebuilds)
   let samplesKicked = false;
+
+  /* library recordings ship with a silent lead-in (some R&B files carry close
+     to a second of it) — played raw, EVERY sound landed noticeably after the
+     action. Measure the real start once at decode time; playback skips it. */
+  function trimStart(buf) {
+    const thr = 0.004;                     // ≈ -48 dB: content, not noise floor
+    let first = buf.length;
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < first; i++) {
+        if (d[i] > thr || d[i] < -thr) { first = i; break; }
+      }
+    }
+    if (first >= buf.length) first = 0;
+    return Math.max(0, first / buf.sampleRate - 0.003);   // keep a 3ms pre-roll
+  }
 
   function loadSamples() {
     if (!canFetch || samplesKicked || !ctx) return;
@@ -45,18 +64,26 @@ SKY.SFX = (function () {
         fetch('assets/audio/sfx/' + prefix + '_' + i + '.ogg')
           .then((r) => (r.ok ? r.arrayBuffer() : null))
           .then((ab) => (ab && ctx ? ctx.decodeAudioData(ab) : null))
-          .then((buf) => { if (buf) (bank[name] = bank[name] || [])[idx] = buf; })
+          .then((buf) => {
+            if (!buf) return;
+            buf.__trim = trimStart(buf);
+            (bank[name] = bank[name] || [])[idx] = buf;
+          })
           .catch(() => {});
       }
     }
   }
 
-  /* play a random variant; returns false when the bank isn't ready
-     so callers can fall back to the synth version */
-  function sample(name, vol, rate, delay) {
+  /* play a bank sample; `variant` picks a FIXED take (weapons must sound the
+     same every shot), otherwise a random one (footsteps like variety).
+     Returns false when the bank isn't ready so callers can fall back to the
+     synth version */
+  function sample(name, vol, rate, delay, variant) {
     const b = bank[name];
     if (!ctx || !master || !b) return false;
-    const buf = b[(Math.random() * b.length) | 0];
+    const buf = variant === undefined
+      ? b[(Math.random() * b.length) | 0]
+      : b[variant % b.length];
     if (!buf) return false;
     const s = ctx.createBufferSource();
     s.buffer = buf;
@@ -64,7 +91,7 @@ SKY.SFX = (function () {
     const g = ctx.createGain();
     g.gain.value = vol == null ? 1 : vol;
     s.connect(g).connect(master);
-    s.start(ctx.currentTime + (delay || 0));
+    s.start(ctx.currentTime + (delay || 0), buf.__trim || 0);
     return true;
   }
 
@@ -164,7 +191,8 @@ SKY.SFX = (function () {
     if (ctx) { resumeCtx(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    try { ctx = new AC(); } catch (e) { ctx = null; return; }
+    try { ctx = new AC({ latencyHint: 'interactive' }); }
+    catch (e) { try { ctx = new AC(); } catch (e2) { ctx = null; return; } }
     ctx.onstatechange = () => { if (ctx && ctx.state !== 'running') resumeCtx(); };
     // graph: sfx bus + music bus -> shared lowpass (ear-ring muffle) -> out
     outFilter = ctx.createBiquadFilter();
@@ -238,38 +266,41 @@ SKY.SFX = (function () {
     s.start(t0); s.stop(t0 + dur + 0.02);
   }
 
-  /* per-weapon shot table: [bank, rate, vol]. REAL unsuppressed gunshots
-     (Rust & Blood) — rates near 1, character comes from the bank:
+  /* per-weapon shot table: [bank, rate, vol, variant]. REAL unsuppressed
+     gunshots (Rust & Blood) — rates near 1, character comes from the bank:
      light = pistol · med = SMG/assault · heavy = SHOTGUN only ·
-     sniper = bolt rifles · glfire = grenade launcher THOOMP
-     (shotgun and sniper each get their OWN bank — mixing them made the
-     shotgun randomly fire sniper cracks) */
+     sniper = bolt rifles · glfire = grenade launcher THOOMP.
+     `variant` pins ONE take per weapon: a gun fires the SAME sound every
+     single shot (random takes + random pitch read as a broken soundboard).
+     Different weapons on the same bank use different takes + rates, so each
+     still has its own voice. */
   const FIRE_SND = {
-    pistol:    ['fire_light', 1.0, 0.90],
-    smg:       ['fire_med', 1.05, 0.65],
-    blaster:   ['fire_med', 0.92, 0.80],
-    burst:     ['fire_light', 1.12, 0.75],
-    scatter:   ['fire_heavy', 1.05, 0.90],
-    boomstick: ['fire_heavy', 0.85, 1.0],
-    longshot:  ['fire_sniper', 1.0, 0.95],
-    magnum:    ['fire_light', 0.78, 0.95],
-    mega:      ['fire_med', 0.85, 0.80],
-    bouncer:   ['fire_light', 1.18, 0.70],
-    piston:    ['fire_sniper', 1.12, 0.90],
-    seeker:    ['fire_heavy', 0.72, 1.0],    // IT tag cannon: shotgun BOOM
-    lobber:    ['glfire', 1.0, 0.85],
-    quad:      ['glfire', 1.1, 0.75],
+    pistol:    ['fire_light', 1.0, 0.90, 0],
+    burst:     ['fire_light', 1.12, 0.75, 1],
+    bouncer:   ['fire_light', 1.18, 0.70, 2],
+    magnum:    ['fire_light', 0.78, 0.95, 3],
+    smg:       ['fire_med', 1.05, 0.65, 0],
+    blaster:   ['fire_med', 0.92, 0.80, 1],
+    mega:      ['fire_med', 0.85, 0.80, 2],
+    scatter:   ['fire_heavy', 1.05, 0.90, 0],
+    boomstick: ['fire_heavy', 0.85, 1.0, 1],
+    seeker:    ['fire_heavy', 0.72, 1.0, 1],   // IT tag cannon: shotgun BOOM
+    longshot:  ['fire_sniper', 1.0, 0.95, 0],
+    piston:    ['fire_sniper', 1.12, 0.90, 1],
+    lobber:    ['glfire', 1.0, 0.85, 0],
+    quad:      ['glfire', 1.1, 0.75, 1],
   };
 
   return {
     init,
-    /* gunshot: kind-specific soft sample, distance-attenuated */
+    /* gunshot: ONE fixed take per weapon at a fixed pitch — every shot of a
+       gun sounds identical (only distance changes the level) */
     fire(kind, p, k, dist) {
       k = k || 1;
       const a = att(dist);
       if (a < 0.05) return;
       const row = FIRE_SND[kind] || FIRE_SND.blaster;
-      if (sample(row[0], row[2] * a, row[1] * SKY.U.rand(0.96, 1.05))) return;
+      if (sample(row[0], row[2] * a, row[1], 0, row[3])) return;
       const v = SKY.U.clamp(k, 0.45, 1.4) * a;
       noise(0.04, 3200, 0.22 * v, 'highpass');
       tone(420, 180, 0.07, 'triangle', 0.18 * v);
@@ -283,8 +314,11 @@ SKY.SFX = (function () {
                 noise(0.05, 2200, 0.18, 'highpass'); tone(520, 380, 0.05, 'square', 0.1); },
     dry()     { if (sample('dry', 0.3, 1.2)) return;
                 tone(300, 240, 0.04, 'square', 0.12); },
-    dash()    { if (sample('dash', 0.38, SKY.U.rand(1.15, 1.35))) return;
-                noise(0.22, 900, 0.25, 'bandpass'); },
+    /* dash / ground-pound windup: a soft AIR puff (the old sample was a
+       sword-swing recording), heard quietly and only nearby */
+    dash(dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.15) return;
+                noise(0.16, 750, 0.14 * a, 'bandpass'); },
     pick()    { if (sample('pick', 0.4, SKY.U.rand(0.95, 1.05))) return;
                 tone(620, 930, 0.12, 'triangle', 0.22); tone(930, 1240, 0.14, 'triangle', 0.18, 0.09); },
     /* door swing: soft mechanical clunk */
@@ -302,6 +336,26 @@ SKY.SFX = (function () {
       if (sample('beep', 0.16 + th * 0.1, 0.7 + th * 0.7)) return;
       tone(240 + th * 420, 240 + th * 420, 0.05, 'square', 0.1 + th * 0.05);
     },
+    /* water entry: layered noise splash, k = 0..1 plunge intensity */
+    splash(k, dist) {
+      const a = att(dist === undefined ? 0 : dist);
+      if (a < 0.08) return;
+      const v = (0.2 + k * 0.5) * a;
+      noise(0.09, 2400, v * 0.8, 'highpass');
+      noise(0.5, 900, v, 'bandpass', 0.02);
+      tone(220, 70, 0.28, 'sine', v * 0.5, 0.01);
+    },
+    /* head under the surface: everything muffles (GTA-style) */
+    setUnderwater(on) {
+      if (!ctx || !outFilter) return;
+      if (this._uw === !!on) return;
+      this._uw = !!on;
+      const t0 = ctx.currentTime;
+      const f = outFilter.frequency;
+      f.cancelScheduledValues(t0);
+      f.setValueAtTime(Math.max(200, f.value), t0);
+      f.exponentialRampToValueAtTime(on ? 620 : 19000, t0 + 0.22);
+    },
     /* close explosion: brief muffle + faint ring, then hearing comes back */
     earRing(k) {
       if (!ctx || !outFilter) return;
@@ -309,7 +363,8 @@ SKY.SFX = (function () {
       const f = outFilter.frequency;
       f.cancelScheduledValues(t0);
       f.setValueAtTime(Math.min(f.value, 900), t0);
-      f.exponentialRampToValueAtTime(19000, t0 + 1.4 + k * 0.8);
+      // hearing comes back — to "muffled" if we're under water right now
+      f.exponentialRampToValueAtTime(this._uw ? 620 : 19000, t0 + 1.4 + k * 0.8);
       const o = ctx.createOscillator();
       o.frequency.value = 3400;
       const g = ctx.createGain();
@@ -323,12 +378,16 @@ SKY.SFX = (function () {
       if (master) master.gain.value = SKY.TUNING.audio.master * sfxVol();
       if (musicBus) musicBus.gain.value = musVol();
     },
-    taunt()   { if (sample('taunt', 0.35, SKY.U.rand(0.94, 1.08))) return;
-                tone(392, 392, 0.12, 'square', 0.12); },
+    taunt(dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.08) return;
+                if (sample('taunt', 0.35 * a, SKY.U.rand(0.94, 1.08))) return;
+                tone(392, 392, 0.12, 'square', 0.12 * a); },
     /* match-end crowd */
     cheer()   { sample('cheer', 0.45); },
     honk()    { tone(220, 220, 0.35, 'sawtooth', 0.4); tone(277, 277, 0.35, 'sawtooth', 0.35); tone(220, 220, 0.4, 'sawtooth', 0.4, 0.5); tone(277, 277, 0.4, 'sawtooth', 0.35, 0.5); },
-    rumble()  { noise(0.6, 140, 0.4); tone(70, 35, 0.5, 'sine', 0.35); },
+    rumble(dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.06) return;
+                noise(0.6, 140, 0.4 * a); tone(70, 35, 0.5, 'sine', 0.35 * a); },
     thunder() { if (sample('thunder_smp', 0.5, 0.85)) { noise(0.9, 220, 0.2, 'lowpass', 0.1); return; }
                 noise(0.08, 4000, 0.35, 'highpass'); noise(0.9, 220, 0.4, 'lowpass', 0.06); },
     gust()    { noise(1.2, 700, 0.22, 'bandpass'); },
@@ -364,13 +423,19 @@ SKY.SFX = (function () {
                 if (a < 0.06) return;
                 if (sample('hit', (0.3 + p * 0.22) * a, 1.15 - p * 0.25)) return;
                 tone(130 + p * 90, 40, 0.16, 'sine', (0.3 + p * 0.2) * a); },
-    jump()    { noise(0.05, 650, 0.05, 'bandpass'); },   // soft push-off puff
-    land(i)   { if (sample('land', SKY.U.clamp(i, 0, 1) * 0.32, SKY.U.rand(0.95, 1.1))) return;
-                noise(0.09, 320, SKY.U.clamp(i, 0, 1) * 0.2); },
+    jump(dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.2) return;
+                noise(0.05, 650, 0.05 * a, 'bandpass'); },   // soft push-off puff
+    land(i, dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.08) return;
+                if (sample('land', SKY.U.clamp(i, 0, 1) * 0.32 * a, SKY.U.rand(0.95, 1.1))) return;
+                noise(0.09, 320, SKY.U.clamp(i, 0, 1) * 0.2 * a); },
     pad()     { if (sample('pad', 0.4, 1.35)) return;
                 tone(220, 640, 0.24, 'sine', 0.26); },
-    grapple() { if (sample('grapple', 0.3, 1.5)) return;
-                noise(0.14, 2200, 0.18, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.14); },
+    grapple(dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.1) return;
+                if (sample('grapple', 0.3 * a, 1.5)) return;
+                noise(0.14, 2200, 0.18 * a, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.14 * a); },
     grapMiss(){ tone(300, 180, 0.07, 'square', 0.12); },
     /* heavy-knock jam: a dead mechanical double-clunk — the hook/cannon
        refusing to fire (replaces the old "Hook jammed!" text) */
@@ -389,7 +454,9 @@ SKY.SFX = (function () {
                 tone(660, 660, 0.14, 'square', 0.2); tone(880, 880, 0.2, 'square', 0.18, 0.07); },
     win()     { if (sample('win', 0.38)) return;
                 [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 'triangle', 0.22, i * 0.13)); },
-    slideStart(){ noise(0.12, 700, 0.15, 'bandpass'); },
+    slideStart(dist) { const a = att(dist === undefined ? 0 : dist);
+                if (a < 0.15) return;
+                noise(0.12, 700, 0.15 * a, 'bandpass'); },
 
     /* background music: 'menu' | 'game' | null. Combat tracks rotate. */
     music(key) {

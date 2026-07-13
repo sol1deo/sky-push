@@ -122,6 +122,9 @@ SKY.Assets = (function () {
     { id: 'fx:triangle',   name: 'EVENT · bermuda triangle', folder: 'water' },
     { id: 'fx:kraken',     name: 'EVENT · kraken attack', folder: 'water' },
     { id: 'fx:shark',      name: 'EVENT · shark patrol', folder: 'water' },
+    { id: 'fx:school',     name: 'fish school (swims)', folder: 'sea life' },
+    { id: 'fx:sharkpatrol', name: 'shark — ambient swimmer', folder: 'sea life' },
+    { id: 'fx:monster',    name: 'sea monster (animated)', folder: 'sea life' },
     { id: 'fx:rope',       name: 'hanging rope', folder: 'gadgets' },
     { id: 'fx:plane',      name: 'prop plane', folder: 'aviation' },
     { id: 'fx:planewreck', name: 'crashed plane', folder: 'aviation' },
@@ -144,8 +147,13 @@ SKY.Assets = (function () {
     haze:       { color: '#dde6f2', alpha: 0.1, size: 9 },
     // roof updraft: power = lift force, range = column height (m)
     airvent:    { color: '#9fd8ff', power: 40, range: 10 },
-    // vertex-animated swell field: power = wave height, range = wave length
-    sea:        { color: '#155a9e', power: 0.5, range: 18, size: 140 },
+    // WATER v3 — vertex-animated swells + real translucency.
+    //   power = wave height · range = wave length · size = side length
+    //   deepAlpha/shallowAlpha + shallow tint + fade = the depth look
+    //   drag/gravity/speed/jumpOut = swim feel (pawn physics reads these)
+    sea:        { color: '#155a9e', power: 0.5, range: 18, size: 140,
+                  deepAlpha: 0.78, shallowAlpha: 0.35, shallow: '#5fd8cf', fade: 6,
+                  drag: 1.7, gravity: 0.12, speed: 0.65, jumpOut: 1 },
     // SEA EVENTS — invisible markers in-game; the event system in map.js
     // fires them off the synced round clock. Shared knobs:
     //   start = seconds into the round · every = repeat period ·
@@ -164,6 +172,11 @@ SKY.Assets = (function () {
     // shark: power = bite knock, size = patrol circle radius
     shark:      { color: '#d8e4ee', power: 16, size: 11,
                   start: 20, every: 35, dur: 12, chance: 100 },
+    // SEA LIFE — real Quaternius creatures (swim clips play on their own).
+    // school: size = circle radius, count = fish, speed = swim pace
+    school:     { color: '#8fd8ff', size: 8, count: 10, speed: 1 },
+    sharkpatrol: { color: '#9fb6c8', size: 10, speed: 1 },
+    monster:    { color: '#b98fe0', speed: 1 },
     rope:       { color: '#d8c49a', range: 8 },   // range = rope length (m)
     plane:      { color: '#d0483e' },
     planewreck: { color: '#8a92a0' },
@@ -331,26 +344,62 @@ SKY.Assets = (function () {
       mk.position.y = o.range / 2 + 1.3;
       g.add(mk);
     } else if (name === 'sea') {
-      // REAL water v2: vertex-animated swells + per-vertex COLOR — troughs go
-      // deep, crests lift toward the sky tint, big peaks break into white
-      // foam. Slightly transparent so the seabed reads through the shallows.
+      // WATER v3: vertex-animated swells + per-vertex COLOR (foam crests) +
+      // real translucency. A per-vertex `adeep` attribute (0 = shallow,
+      // 1 = deep — measured against whatever is UNDER the surface once the
+      // prop is placed) drives a shallow tint + shallow transparency, and a
+      // fresnel term makes grazing angles glassier — the water finally reads
+      // as water instead of a blue tarp.
       const size = Math.max(20, o.size);
-      const segs = SKY.U.clamp(Math.round(size / 3), 24, 48);
+      const segs = SKY.U.clamp(Math.round(size / 3), 24, 56);
       const geo = new THREE.PlaneGeometry(size, size, segs, segs);
       geo.rotateX(-Math.PI / 2);
       const basePos = geo.attributes.position.array.slice();
       geo.setAttribute('color', new THREE.BufferAttribute(
         new Float32Array(geo.attributes.position.count * 3), 3));
+      const adeep = new Float32Array(geo.attributes.position.count).fill(1);
+      geo.setAttribute('adeep', new THREE.BufferAttribute(adeep, 1));
       const base = col.clone().convertSRGBToLinear();
       const deep = base.clone().multiplyScalar(0.35);
       const crest = base.clone().lerp(new THREE.Color(0.35, 0.55, 0.75), 0.3);
       const foam = new THREE.Color(0.85, 0.95, 1);
-      const sea = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+      const shallowCol = new THREE.Color(o.shallow || '#5fd8cf').convertSRGBToLinear();
+      const aDeep = SKY.U.clamp(o.deepAlpha !== undefined ? o.deepAlpha : 0.78, 0.05, 0.98);
+      const aShallow = SKY.U.clamp(o.shallowAlpha !== undefined ? o.shallowAlpha : 0.35, 0.02, 0.98);
+      const mat = new THREE.MeshPhongMaterial({
         color: 0xffffff, vertexColors: true,
-        shininess: 60, specular: 0x2a3e50,
-        transparent: true, opacity: 0.88,
-      }));
+        shininess: 110, specular: 0x4a6a84,
+        transparent: true, opacity: 1, depthWrite: false,
+        side: THREE.DoubleSide,   // the surface must exist when seen from BELOW
+      });
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uShallowCol = { value: shallowCol };
+        sh.uniforms.uADeep = { value: aDeep };
+        sh.uniforms.uAShallow = { value: aShallow };
+        sh.vertexShader = 'attribute float adeep;\nvarying float vDeep;\n' +
+          sh.vertexShader.replace('#include <begin_vertex>',
+            '#include <begin_vertex>\nvDeep = adeep;');
+        sh.fragmentShader = ('uniform vec3 uShallowCol;\nuniform float uADeep;\n' +
+          'uniform float uAShallow;\nvarying float vDeep;\n') +
+          sh.fragmentShader
+            .replace('#include <color_fragment>',
+              ['#include <color_fragment>',
+               'float dk = clamp(vDeep, 0.0, 1.0);',
+               // shallows: lighter tint AND clearer water
+               'diffuseColor.rgb = mix(uShallowCol * diffuseColor.rgb * 1.9, diffuseColor.rgb, dk);',
+               'diffuseColor.a = mix(uAShallow, uADeep, dk);'].join('\n'))
+            .replace('#include <output_fragment>',
+              [// fresnel: grazing angles pick up a soft sky sheen and go a bit
+               // more solid; steep look-down stays clear (kept SUBTLE — the
+               // strong version read as a field of snow from across the map)
+               'float fres = pow(1.0 - clamp(dot(normalize(vViewPosition), normalize(normal)), 0.0, 1.0), 3.5);',
+               'outgoingLight += vec3(0.22, 0.38, 0.55) * fres * 0.28;',
+               'diffuseColor.a = clamp(diffuseColor.a + fres * 0.18, 0.0, 0.94);',
+               '#include <output_fragment>'].join('\n'));
+      };
+      const sea = new THREE.Mesh(geo, mat);
       sea.receiveShadow = true;
+      sea.renderOrder = 2;   // draw after the seabed so blending reads right
       const amp = Math.max(0.01, o.power);
       const kw = (Math.PI * 2) / Math.max(4, o.range);
       const pos = geo.attributes.position;
@@ -380,6 +429,27 @@ SKY.Assets = (function () {
         geo.computeVertexNormals();
       };
       g.add(sea);
+      // measure the seabed depth under every vertex ONCE the prop has its
+      // world transform (map.js / the editor call this after placing) —
+      // fade = meters of depth over which shallow turns into deep
+      const fade = Math.max(0.5, o.fade !== undefined ? o.fade : 6);
+      g.userData.postPlace = (obj) => {
+        obj.updateMatrixWorld(true);
+        const v = new THREE.Vector3();
+        const dirDown = new THREE.Vector3(0, -1, 0);
+        for (let i = 0; i < pos.count; i++) {
+          v.set(basePos[i * 3], 0, basePos[i * 3 + 2]);
+          sea.localToWorld(v);
+          v.y += 0.5;
+          let depth = Infinity;
+          const th = SKY.World.terrainHeight ? SKY.World.terrainHeight(v.x, v.z) : -Infinity;
+          if (isFinite(th)) depth = (v.y - 0.5) - th;
+          const hit = SKY.World.raycast(v, dirDown, Math.min(depth, fade + 2) + 0.5);
+          if (hit) depth = Math.min(depth, hit.t - 0.5);
+          adeep[i] = SKY.U.clamp01(depth / fade);
+        }
+        geo.attributes.adeep.needsUpdate = true;
+      };
     } else if (name === 'rope') {
       // crane-style hanging rope: sagging tube + knot, swaying gently.
       // Hangs DOWN from where you place it — put it on a crane arm / mast.
@@ -440,8 +510,80 @@ SKY.Assets = (function () {
     } else if (name === 'heli' || name === 'jet' || name === 'helipad' ||
                name === 'runway' || name === 'tower' || name === 'hangar') {
       buildAviation(name, g, col.clone().convertSRGBToLinear(), o);
+    } else if (name === 'school' || name === 'sharkpatrol' || name === 'monster') {
+      buildSeaLife(name, g, col.clone().convertSRGBToLinear(), o, marker);
     }
     return g;
+  }
+
+  /* ambient sea life — REAL Quaternius creatures (CC0) swimming on their own:
+     a school circles its marker, the shark prowls a wider ring, the squidle
+     sea monster sits and writhes. Primitive fishlets stand in on file://. */
+  function buildSeaLife(name, g, col, o, marker) {
+    const R = Math.max(2, o.size || 8);
+    const speed = Math.max(0.05, o.speed !== undefined ? o.speed : 1);
+    const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+    const creature = (key) => (SKY.GFX && SKY.GFX.hasProp(key)) ? SKY.GFX.prop(key) : null;
+    const fallbackFish = (scale) => {
+      const f = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.ConeGeometry(0.14 * scale, 0.55 * scale, 6), lam(col));
+      body.rotation.x = -Math.PI / 2;   // nose toward -Z (the game's forward)
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.1 * scale, 0.25 * scale, 4), lam(col));
+      tail.rotation.x = Math.PI / 2;
+      tail.position.z = 0.35 * scale;
+      f.add(body, tail);
+      return f;
+    };
+    // editor gizmo ring so the patrol circle is visible while placing
+    if (name !== 'monster') {
+      const mk = marker(new THREE.CylinderGeometry(R, R, 0.3, 24, 1, true), col);
+      mk.position.y = 0;
+      g.add(mk);
+    }
+    const driver = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.01, 0.01),
+      new THREE.MeshBasicMaterial({ visible: false }));
+    driver.frustumCulled = false;
+    g.add(driver);
+
+    if (name === 'monster') {
+      const m = creature('life-squidle') || fallbackFish(6);
+      g.add(m);
+      driver.onBeforeRender = () => {
+        const t = performance.now() * 0.0005 * speed;
+        m.rotation.y = Math.sin(t) * 0.6;
+        m.position.y = Math.sin(t * 2.3) * 0.35;
+      };
+      return;
+    }
+
+    const swimmers = [];
+    if (name === 'sharkpatrol') {
+      const s = creature('life-shark') || fallbackFish(4);
+      g.add(s);
+      swimmers.push({ f: s, phase: Math.random() * Math.PI * 2, r: R,
+        bob: Math.random() * Math.PI * 2, spd: 0.55 });
+    } else {
+      const kinds = ['life-fish-a', 'life-fish-b', 'life-fish-c'];
+      const n = SKY.U.clamp(Math.round(o.count || 10), 1, 30);
+      for (let i = 0; i < n; i++) {
+        const f = creature(kinds[i % kinds.length]) || fallbackFish(1);
+        f.scale.multiplyScalar(SKY.U.rand(0.5, 0.9));
+        g.add(f);
+        swimmers.push({ f, phase: (i / n) * Math.PI * 2 + SKY.U.rand(-0.25, 0.25),
+          r: R * SKY.U.rand(0.55, 1), bob: SKY.U.rand(0, Math.PI * 2),
+          spd: SKY.U.rand(0.85, 1.25) });
+      }
+    }
+    driver.onBeforeRender = () => {
+      const t = performance.now() * 0.001 * speed;
+      for (const sw of swimmers) {
+        const a = sw.phase + t * 0.55 * sw.spd;
+        sw.f.position.set(Math.cos(a) * sw.r,
+          Math.sin(t * 1.2 + sw.bob) * 0.45, Math.sin(a) * sw.r);
+        // velocity along the circle is (-sin a, cos a) — face it, -Z forward
+        sw.f.rotation.y = Math.PI - a;
+      }
+    };
   }
 
   /* airport set — same flat-color toon style as the packs. Helicopter and

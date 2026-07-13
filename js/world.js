@@ -21,14 +21,81 @@ SKY.World = (function () {
     recoveryAnchors: [], // V3 points bots aim grapples at when falling
     itemPoints: [],    // custom-map pickup spawn spots (empty = use roamPoints)
     vents: [],         // air-vent updraft columns { x,y,z, radius, height, force }
+    waters: [],        // swimmable volumes { x,z, half, level, depth, opts }
+    terrains: [],      // sculpted heightfields (see addTerrain)
     killY: -22,
 
     reset() {
       api.solids.length = 0; api.movers.length = 0; api.pads.length = 0;
       api.spawnPoints.length = 0; api.roamPoints.length = 0; api.recoveryAnchors.length = 0;
       api.itemPoints.length = 0; api.vents.length = 0;
+      api.waters.length = 0; api.terrains.length = 0;
       api.teamSpawns = { atk: [], def: [] };   // legacy (team maps)
       api.bombSites = [];                       // legacy (kept: map defs still set it)
+    },
+
+    /* ---------------- water volumes (fx:sea) ----------------
+     * A square column under the sea surface: swim physics + the underwater
+     * screen/audio treatment key off "is this point inside a water volume". */
+    addWater(w) {
+      api.waters.push({
+        x: w.x, z: w.z, half: w.half, level: w.level,
+        depth: w.depth !== undefined ? w.depth : 60,   // how far down it stays water
+        opts: w.opts || {},
+      });
+    },
+    waterAt(x, y, z) {
+      for (const w of api.waters) {
+        if (y > w.level || y < w.level - w.depth) continue;
+        if (Math.abs(x - w.x) > w.half || Math.abs(z - w.z) > w.half) continue;
+        return w;
+      }
+      return null;
+    },
+
+    /* ---------------- sculpted terrain heightfields ----------------
+     * grid: (segs+1)² heights over a size×size square centered on (x,z).
+     * Pawns/ragdolls collide by height sample; raycast marches the ray.  */
+    addTerrain(t) {
+      const T = {
+        x: t.x, z: t.z, size: t.size, segs: t.segs,
+        cell: t.size / t.segs,
+        h: t.heights,               // Float32Array, row-major, (segs+1)²
+        y: t.y || 0,                // base height offset
+        mesh: t.mesh || null,
+      };
+      api.terrains.push(T);
+      return T;
+    },
+    /* bilinear height at world (x,z) — -Infinity outside every terrain */
+    terrainHeight(x, z) {
+      let best = -Infinity;
+      for (const T of api.terrains) {
+        const lx = (x - T.x + T.size / 2) / T.cell;
+        const lz = (z - T.z + T.size / 2) / T.cell;
+        if (lx < 0 || lz < 0 || lx > T.segs || lz > T.segs) continue;
+        const ix = Math.min(T.segs - 1, Math.floor(lx));
+        const iz = Math.min(T.segs - 1, Math.floor(lz));
+        const fx = lx - ix, fz = lz - iz;
+        const n = T.segs + 1;
+        const h00 = T.h[iz * n + ix],     h10 = T.h[iz * n + ix + 1];
+        const h01 = T.h[(iz + 1) * n + ix], h11 = T.h[(iz + 1) * n + ix + 1];
+        const h = (h00 * (1 - fx) + h10 * fx) * (1 - fz) +
+                  (h01 * (1 - fx) + h11 * fx) * fz;
+        const y = T.y + h;
+        if (y > best) best = y;
+      }
+      return best;
+    },
+    /* terrain surface normal from central differences */
+    terrainNormal(x, z, out) {
+      const e = 0.35;
+      const hx1 = api.terrainHeight(x + e, z), hx0 = api.terrainHeight(x - e, z);
+      const hz1 = api.terrainHeight(x, z + e), hz0 = api.terrainHeight(x, z - e);
+      if (!isFinite(hx1) || !isFinite(hx0) || !isFinite(hz1) || !isFinite(hz0)) {
+        return out.set(0, 1, 0);
+      }
+      return out.set(hx0 - hx1, 2 * e, hz0 - hz1).normalize();
     },
 
     /* Register a collision box. rot* in radians.
@@ -148,6 +215,17 @@ SKY.World = (function () {
           }
         }
       }
+      // sculpted terrain: feet never sink below the heightfield
+      if (api.terrains.length) {
+        const th = api.terrainHeight(pos.x, pos.z);
+        if (isFinite(th) && pos.y < th) {
+          pos.y = th;
+          api.terrainNormal(pos.x, pos.z, _n);
+          const vn = vel.dot(_n);
+          if (vn < 0) vel.addScaledVector(_n, -vn);
+          if (_n.y > 0.55) { grounded = true; groundNormal.copy(_n); groundSolid = null; }
+        }
+      }
       return { grounded, groundNormal, groundSolid };
     },
 
@@ -169,6 +247,10 @@ SKY.World = (function () {
             if (_d.y / d > 0.5) grounded = true;
           }
         }
+      }
+      if (api.terrains.length) {
+        const th = api.terrainHeight(p.x, p.z);
+        if (isFinite(th) && p.y - r < th) { p.y = th + r; grounded = true; }
       }
       return grounded;
     },
@@ -208,6 +290,39 @@ SKY.World = (function () {
           normal: ax.clone().multiplyScalar(sign),
           solid: s,
         };
+      }
+      // heightfields: coarse march, then a short bisection to sharpen the hit
+      if (api.terrains.length) {
+        const limit = best ? best.t : maxDist;
+        const step = 0.45;
+        let prevT = 0;
+        let prevAbove = origin.y - api.terrainHeight(origin.x, origin.z);
+        if (!isFinite(prevAbove)) prevAbove = 1;
+        for (let t = step; t <= limit + step; t += step) {
+          const tt = Math.min(t, limit);
+          const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
+          const th = api.terrainHeight(px, pz);
+          const above = isFinite(th) ? py - th : 1;
+          if (prevAbove > 0 && above <= 0) {
+            let lo = prevT, hi = tt;
+            for (let i = 0; i < 5; i++) {
+              const mid = (lo + hi) / 2;
+              const mh = api.terrainHeight(origin.x + dir.x * mid, origin.z + dir.z * mid);
+              (origin.y + dir.y * mid) - (isFinite(mh) ? mh : -1e9) > 0 ? lo = mid : hi = mid;
+            }
+            const hitT = (lo + hi) / 2;
+            if (!best || hitT < best.t) {
+              const hp = origin.clone().addScaledVector(dir, hitT);
+              best = { t: hitT, point: hp,
+                normal: api.terrainNormal(hp.x, hp.z, new THREE.Vector3()).clone(),
+                solid: null, terrain: true };
+            }
+            break;
+          }
+          prevAbove = above;
+          prevT = tt;
+          if (tt >= limit) break;
+        }
       }
       return best;
     },
