@@ -82,7 +82,10 @@ SKY.Game = (function () {
       };
       SKY.Input.onLockChange = (locked) => {
         if (SKY.Replay.active) return;          // the editor owns the cursor
-        if (api.state !== 'playing' && api.state !== 'countdown') return;
+        const roundOver = api.state === 'roundend' || api.state === 'matchend';
+        // round-end counts too: ESC there used to show only a bare cursor
+        // with no way to reach quit/settings until the next round started
+        if (api.state !== 'playing' && api.state !== 'countdown' && !roundOver) return;
         if (!locked) {
           if (api.lootOpen) return;              // reward picker owns the cursor
           if (api.loadoutOpen) return;           // DM loadout menu owns it too
@@ -91,7 +94,7 @@ SKY.Game = (function () {
             // (quit/settings — the game keeps running behind it); everything
             // else — alt-tab, dying, waiting to respawn — only shows the
             // small "click to play" hint. No surprise menus.
-            if (document.hasFocus() && api.player && api.player.alive) SKY.HUD.setPause(true);
+            if (document.hasFocus() && (roundOver || (api.player && api.player.alive))) SKY.HUD.setPause(true);
             else SKY.HUD.relockHint(true);
             return;
           }
@@ -433,7 +436,7 @@ SKY.Game = (function () {
 
       if (api.state === 'menu') return;
 
-      // V — open the replay editor (mid-round pauses; round/match end too)
+      // C — open the replay editor (mid-round pauses; round/match end too)
       if (SKY.Input.actionPressed('replay') &&
           (api.state === 'playing' || api.state === 'roundend' || api.state === 'matchend')) {
         SKY.Replay.open();
@@ -822,9 +825,12 @@ SKY.Game = (function () {
         break;
       }
       if (assist) assist.ma = (assist.ma || 0) + 1;
+      // names carry the PLAYER COLORS in the feed — reads at a glance
+      const kTag = killer ? `<b style="color:${killer.color}">${killer.name}</b>` : '';
+      const vTag = `<b style="color:${pawn.color}">${pawn.name}</b>`;
       const line = killer
-        ? SKY.U.pick(KO_LINES).replace('{k}', killer.name).replace('{v}', pawn.name)
-        : SKY.U.pick(FALL_LINES).replace('{v}', pawn.name);
+        ? SKY.U.pick(KO_LINES).replace('<b>{k}</b>', '{k}').replace('{k}', kTag).replace('{v}', vTag)
+        : SKY.U.pick(FALL_LINES).replace('{v}', vTag);
       SKY.HUD.killFeed(line);
       SKY.SFX.ko(pawn.isLocal || (killer && killer.isLocal));
       pawn.lastHitBy = null;

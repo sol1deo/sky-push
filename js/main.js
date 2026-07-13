@@ -204,6 +204,7 @@
     }
     if (!rendered) renderer.render(scene, camera);
     SKY.Locker.tick(Math.min(rdt, 0.05));   // menu character preview
+    if (SKY.Voice) SKY.Voice.tick(camera);  // push-to-talk + 3D voice positions
 
     // fps counter (updates twice a second)
     fpsAcc += rdt; fpsN++;

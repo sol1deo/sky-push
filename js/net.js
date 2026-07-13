@@ -242,6 +242,7 @@ SKY.Net = (function () {
 
   function destroyPeer() {
     sessionId++;
+    if (SKY.Voice) SKY.Voice.stop();
     if (sendTimer) { clearInterval(sendTimer); sendTimer = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (peer) { const old = peer; peer = null; try { old.destroy(); } catch (e) {} }
@@ -347,6 +348,7 @@ SKY.Net = (function () {
     api.roster = api.roster.filter(r => r.id !== id);
     broadcast({ t: 'roster', roster: api.roster });
     renderLobby();
+    if (SKY.Voice) SKY.Voice.syncPeers();
     if (api.inGame) {
       removePawn(id, conn.__name);
       broadcast({ t: 'gone', id, name: conn.__name || 'player' });
@@ -389,6 +391,7 @@ SKY.Net = (function () {
                     mapDef: SKY.MapData.get(api.settings.map) || null });
         broadcast({ t: 'roster', roster: api.roster }, id);
         renderLobby();
+        if (SKY.Voice) SKY.Voice.syncPeers();
         break;
       }
       case 'state': {
@@ -448,6 +451,30 @@ SKY.Net = (function () {
         }
         break;
       }
+      case 'chat': {
+        // host stamps identity from the connection — names can't be spoofed
+        const r = api.roster.find(x => x.id === conn.__id);
+        if (!r) break;
+        const text = String(m.text || '').slice(0, 120).trim();
+        if (!text) break;
+        const out = { t: 'chat', id: r.id, name: r.name, color: r.color, text };
+        broadcast(out, conn.__id);
+        if (SKY.HUD.chatAdd) SKY.HUD.chatAdd(r.name, r.color, text);
+        break;
+      }
+      case 'vsig': {
+        // voice signaling relay: star -> the target peer (or us)
+        if (m.to === 'host') { if (SKY.Voice) SKY.Voice.onSignal(conn.__id, m.d); }
+        else {
+          const c = conns.get(m.to);
+          if (c && c.open) c.send({ t: 'vsig', from: conn.__id, d: m.d });
+        }
+        break;
+      }
+      case 'vtalk':
+        broadcast({ t: 'vtalk', id: conn.__id, on: !!m.on }, conn.__id);
+        if (SKY.Voice) SKY.Voice.setTalking(conn.__id, !!m.on);
+        break;
     }
   }
 
@@ -518,11 +545,13 @@ SKY.Net = (function () {
             api.myId = m.you;
             api.roster = m.roster;
             api.settings = m.settings;
+            if (m.mapDef) SKY.MapData.register(m.mapDef);   // host's custom map
             SKY.Game.previewMap(api.settings.map);
             showLobby();
             status('');
             startStream();
             startPing();
+            if (SKY.Voice) SKY.Voice.syncPeers();
           } else if (m.t === 'full') {
             clearTimeout(connTimeout);
             finished = true;
@@ -721,6 +750,7 @@ SKY.Net = (function () {
           status('');
           startStream();
           startPing();
+          if (SKY.Voice) SKY.Voice.syncPeers();
         } else if (m.t === 'full') {
           status('That lobby is full or already playing.');
           conn.close();
@@ -757,7 +787,14 @@ SKY.Net = (function () {
     switch (m.t) {
       case 'hostbye': leaveWithMessage('Host left the game.'); break;
       case 'ping': if (hostConn && hostConn.open) hostConn.send({ t: 'pong', ts: m.ts }); break;
-      case 'roster': api.roster = m.roster; renderLobby(); break;
+      case 'roster':
+        api.roster = m.roster;
+        renderLobby();
+        if (SKY.Voice) SKY.Voice.syncPeers();
+        break;
+      case 'chat': if (SKY.HUD.chatAdd) SKY.HUD.chatAdd(m.name, m.color, m.text); break;
+      case 'vsig': if (SKY.Voice) SKY.Voice.onSignal(m.from, m.d); break;
+      case 'vtalk': if (SKY.Voice) SKY.Voice.setTalking(m.id, !!m.on); break;
       case 'settings':
         // custom (editor-made) maps ride along so every client's map list
         // shows the host's pick — selectable, previewable, loadable
@@ -1178,8 +1215,9 @@ SKY.Net = (function () {
       SKY.Account.username() !== r.name &&
       !SKY.Account.friends().some(f => String(f.username) === String(r.name));
     $('lobby-players').innerHTML = api.roster.filter(r => !r.bot).map(r =>
-      `<div class="lob-player" style="border-color:${r.color}">
+      `<div class="lob-player" id="lobp-${r.id}" style="border-color:${r.color}">
         ${SKY.U.avatarHtml(r.av, r.color, r.name)} ${r.name}${r.id === 'host' ? ' (host)' : ''}${r.id === api.myId ? ' (you)' : ''}
+        <span class="lob-mic">MIC</span>
         ${canBefriend(r) ? `<button class="fr-btn" data-addfr="${r.name}">+ FRIEND</button>` : ''}
       </div>`).join('');
     const isHost = api.role === 'host';
@@ -1353,6 +1391,7 @@ SKY.Net = (function () {
     get roster() { return api.roster; },
     get pings() { return pings; },
     get settings() { return api.settings; },
+    get iceServers() { return iceServers; },   // voice mesh reuses the config
     netTest, directHost, directComplete, directJoin,
     init() {
       initUI();
@@ -1458,6 +1497,29 @@ SKY.Net = (function () {
     },
     sendTaunt() { if (api.online) send({ t: 'taunt', id: api.myId }); },
     sendDoor(i, o) { if (api.online) send({ t: 'door', i, o }); },
+    /* ---------- text chat ---------- */
+    sendChat(text) {
+      text = String(text || '').slice(0, 120).trim();
+      if (!api.online || !text) return;
+      if (api.role === 'host') {
+        const me = api.roster.find(r => r.id === 'host');
+        broadcast({ t: 'chat', id: 'host', name: me ? me.name : nickname(),
+          color: me ? me.color : COLORS[0], text });
+      } else send({ t: 'chat', text });
+    },
+    /* ---------- voice chat (signaling + talk flags over the data star) ---- */
+    sendVSig(to, d) {
+      if (!api.online) return;
+      if (api.role === 'host') {
+        const c = conns.get(to);
+        if (c && c.open) c.send({ t: 'vsig', from: 'host', d });
+      } else send({ t: 'vsig', to, d });
+    },
+    sendTalk(on) {
+      if (!api.online) return;
+      if (api.role === 'host') broadcast({ t: 'vtalk', id: 'host', on: !!on });
+      else send({ t: 'vtalk', id: api.myId, on: !!on });
+    },
     sendPickupSpawn(d) { if (api.role === 'host') broadcast({ t: 'pkspawn', ...d }); },
     sendPickupTake(id, by) { if (api.role === 'host') broadcast({ t: 'pktake', id, by }); },
     sendMapEvent(params) { if (api.role === 'host') broadcast({ t: 'mapevent', params }); },

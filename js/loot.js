@@ -154,8 +154,9 @@ SKY.Loot = (function () {
       item.apply(pawn);
     }
     if (pawn.isLocal) {
-      const d = describe(item);
-      SKY.HUD.killFeed('Picked up <b>' + d.name + '</b>');
+      // your own pickups get a front-and-center toast — the killfeed is for
+      // KOs, and nobody spotted their new powerup up there
+      SKY.HUD.pickupToast(item);
       SKY.SFX.pick();
     }
   }

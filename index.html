@@ -417,12 +417,63 @@
     color:var(--dim); text-transform:uppercase; white-space:nowrap; }
 
   #killfeed { position:absolute; top:20px; right:22px; display:flex; flex-direction:column;
-    gap:6px; align-items:flex-end; max-width:44vw; }
-  .feed-item { font-size:12px; font-weight:600; color:#e6eaf6; animation:feedin .2s ease-out;
-    background:var(--bg2); backdrop-filter:blur(8px); padding:5px 12px; border-radius:7px;
-    border-right:3px solid var(--brand); }
-  .feed-item b { font-weight:800; color:var(--brand); }
-  @keyframes feedin { from { opacity:0; transform:translateX(12px); } }
+    gap:7px; align-items:flex-end; max-width:46vw; }
+  .feed-item { font-size:15px; font-weight:800; font-style:italic; color:#fff;
+    animation:feedin .3s cubic-bezier(.18,1.5,.4,1);
+    background:rgba(9,13,23,.92); padding:8px 15px 7px; border-radius:9px;
+    border:1.5px solid rgba(255,255,255,.22); border-right:5px solid var(--brand);
+    letter-spacing:.03em; text-shadow:0 1px 3px rgba(0,0,0,.8);
+    box-shadow:0 5px 16px rgba(0,0,0,.5); transform:skewX(-4deg);
+    transition:opacity .5s, transform .5s; }
+  .feed-item b { font-weight:900; color:var(--brand); font-style:normal; }
+  .feed-item.fading { opacity:0; transform:skewX(-4deg) translateX(18px); }
+  @keyframes feedin { from { opacity:0; transform:skewX(-4deg) translateX(40px) scale(.8); } }
+
+  /* pickup toast: what you just grabbed, right above the weapon bar */
+  #pickup-toast { position:absolute; left:50%; bottom:19%; transform:translateX(-50%) skewX(-4deg);
+    display:flex; align-items:center; gap:12px; background:rgba(9,13,23,.92);
+    border:1.5px solid rgba(255,255,255,.22); border-left:5px solid var(--brand);
+    border-radius:11px; padding:10px 20px; box-shadow:0 6px 18px rgba(0,0,0,.5);
+    pointer-events:none; z-index:22; }
+  #pickup-toast.punch { animation:ptpunch .34s cubic-bezier(.18,1.6,.4,1); }
+  @keyframes ptpunch { from { opacity:0; transform:translateX(-50%) skewX(-4deg) scale(.7) translateY(18px); } }
+  #pickup-toast .pt-ico { width:34px; height:34px; flex:0 0 34px; }
+  #pickup-toast .pt-ico svg { width:100%; height:100%; }
+  #pickup-toast .pt-tx { display:flex; flex-direction:column; gap:2px; }
+  #pickup-toast .pt-tx b { font-size:16px; font-weight:900; font-style:italic; letter-spacing:.04em; }
+  #pickup-toast .pt-tx small { font-size:11px; font-weight:600; color:var(--dim); }
+
+  /* text chat (Enter) — bottom-left, over the game and the lobby */
+  #chat { position:absolute; left:20px; bottom:14%; z-index:24; width:min(430px, 42vw);
+    display:flex; flex-direction:column; gap:7px; pointer-events:none; }
+  #chat-log { display:flex; flex-direction:column; gap:4px; }
+  .chat-msg { font-size:13.5px; font-weight:600; color:#f2f5fc; line-height:1.35;
+    background:rgba(9,13,23,.78); border-radius:7px; padding:5px 11px;
+    border-left:3px solid rgba(255,255,255,.25); width:fit-content; max-width:100%;
+    word-break:break-word; animation:feedin .22s ease-out;
+    transition:opacity .6s; }
+  .chat-msg b { font-weight:900; font-style:italic; letter-spacing:.03em; }
+  .chat-msg.old { opacity:0; }
+  #chat.open .chat-msg.old { opacity:.75; }
+  #chat-entry { display:flex; align-items:center; gap:9px; pointer-events:auto;
+    background:rgba(9,13,23,.94); border:1.5px solid rgba(255,255,255,.25);
+    border-left:5px solid var(--brand); border-radius:9px; padding:8px 13px; }
+  #chat-entry span { font-size:10px; font-weight:900; letter-spacing:.22em; color:var(--brand); }
+  #chat-entry input { flex:1; background:none; border:none; outline:none; color:#fff;
+    font:600 14px Inter, system-ui, sans-serif; }
+
+  /* voice chat: transmitting pill + who's-talking rings */
+  #voice-pill { position:absolute; left:50%; bottom:24.5%; transform:translateX(-50%) skewX(-4deg);
+    background:rgba(20,60,30,.9); border:1.5px solid #57e389; color:#b8ffce;
+    border-radius:999px; padding:5px 16px 4px; font-size:10.5px; font-weight:900;
+    letter-spacing:.24em; pointer-events:none; z-index:22;
+    box-shadow:0 0 14px rgba(87,227,137,.45); }
+  .pav.spk { box-shadow:0 0 0 2.5px #57e389, 0 0 12px #57e389 !important; }
+  .lob-player .lob-mic { display:none; margin-left:8px; font-size:9px; font-weight:900;
+    letter-spacing:.2em; color:#57e389; background:rgba(87,227,137,.14);
+    border:1px solid #57e389; border-radius:999px; padding:2px 9px 1px; }
+  .lob-player.talking .lob-mic { display:inline-block; }
+  .lob-player.talking { box-shadow:0 0 0 2px #57e389, 0 0 16px rgba(87,227,137,.5); }
 
   #crosshair { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     width:24px; height:24px; transition:transform .12s; }
@@ -1279,6 +1330,8 @@
     </div>
   </div>
   <div id="killfeed"></div>
+  <div id="pickup-toast" class="hidden"></div>
+  <div id="voice-pill" class="hidden">VOICE — TRANSMITTING</div>
   <div id="loadout-ov" class="hidden">
     <div class="loadout-panel">
       <h3>CHOOSE YOUR WEAPON</h3>
@@ -1485,6 +1538,12 @@
 </div>
 
 <!-- ============ start menu (top nav + fullscreen play hub) ============ -->
+<!-- text chat: outside #hud so it overlays the LOBBY too -->
+<div id="chat">
+  <div id="chat-log"></div>
+  <div id="chat-entry" class="hidden"><span>SAY</span>
+    <input id="chat-input" maxlength="120" autocomplete="off" spellcheck="false"></div>
+</div>
 <div id="menu">
   <div id="topnav">
     <div id="nav-logo">SKY<b>PUSH</b></div>
@@ -1500,7 +1559,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 53</div>
+  <div id="build-foot" class="rail-foot">prototype · build 54</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1709,6 +1768,7 @@
     <input type="file" id="ed-import" accept=".json" class="hidden">
     <button class="ed-btn" id="ed-save">Save</button>
     <button class="ed-btn" id="ed-export">Export</button>
+    <button class="ed-btn" id="ed-exportall" title="download EVERY saved map as one backup file — import it to restore them all">Backup all</button>
     <button class="ed-btn" id="ed-delete" title="delete this map and its backups">Delete</button>
     <button class="ed-btn ed-primary" id="ed-test">▶ Test</button>
     <button class="ed-btn" id="ed-exit">Exit</button>
@@ -1852,40 +1912,41 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=53"></script>
-<script src="js/profile.js?v=53"></script>
-<script src="js/account.js?v=53"></script>
-<script src="js/accountui.js?v=53"></script>
-<script src="js/utils.js?v=53"></script>
-<script src="js/gfx.js?v=53"></script>
-<script src="js/mapdata.js?v=53"></script>
-<script src="js/audio.js?v=53"></script>
-<script src="js/settings.js?v=53"></script>
-<script src="js/input.js?v=53"></script>
-<script src="js/world.js?v=53"></script>
-<script src="js/effects.js?v=53"></script>
-<script src="js/map.js?v=53"></script>
-<script src="js/characters.js?v=53"></script>
-<script src="js/pawn.js?v=53"></script>
-<script src="js/weapons.js?v=53"></script>
-<script src="js/loot.js?v=53"></script>
-<script src="js/pickups.js?v=53"></script>
-<script src="js/sparks.js?v=53"></script>
-<script src="js/grenades.js?v=53"></script>
-<script src="js/grapple.js?v=53"></script>
-<script src="js/bots.js?v=53"></script>
-<script src="js/hud.js?v=53"></script>
-<script src="js/game.js?v=53"></script>
-<script src="js/attract.js?v=53"></script>
-<script src="js/net.js?v=53"></script>
-<script src="js/dof.js?v=53"></script>
+<script src="js/config.js?v=54"></script>
+<script src="js/profile.js?v=54"></script>
+<script src="js/account.js?v=54"></script>
+<script src="js/accountui.js?v=54"></script>
+<script src="js/utils.js?v=54"></script>
+<script src="js/gfx.js?v=54"></script>
+<script src="js/mapdata.js?v=54"></script>
+<script src="js/audio.js?v=54"></script>
+<script src="js/voice.js?v=54"></script>
+<script src="js/settings.js?v=54"></script>
+<script src="js/input.js?v=54"></script>
+<script src="js/world.js?v=54"></script>
+<script src="js/effects.js?v=54"></script>
+<script src="js/map.js?v=54"></script>
+<script src="js/characters.js?v=54"></script>
+<script src="js/pawn.js?v=54"></script>
+<script src="js/weapons.js?v=54"></script>
+<script src="js/loot.js?v=54"></script>
+<script src="js/pickups.js?v=54"></script>
+<script src="js/sparks.js?v=54"></script>
+<script src="js/grenades.js?v=54"></script>
+<script src="js/grapple.js?v=54"></script>
+<script src="js/bots.js?v=54"></script>
+<script src="js/hud.js?v=54"></script>
+<script src="js/game.js?v=54"></script>
+<script src="js/attract.js?v=54"></script>
+<script src="js/net.js?v=54"></script>
+<script src="js/dof.js?v=54"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=53"></script>
-<script src="js/vidrender.js?v=53"></script>
-<script src="js/demos.js?v=53"></script>
-<script src="js/locker.js?v=53"></script>
-<script src="js/assets.js?v=53"></script>
-<script src="js/editor.js?v=53"></script>
-<script src="js/main.js?v=53"></script>
+<script src="js/replay.js?v=54"></script>
+<script src="js/vidrender.js?v=54"></script>
+<script src="js/demos.js?v=54"></script>
+<script src="js/locker.js?v=54"></script>
+<script src="js/assets.js?v=54"></script>
+<script src="js/editor.js?v=54"></script>
+<script src="js/main.js?v=54"></script>
 </body>
 </html>

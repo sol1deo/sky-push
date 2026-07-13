@@ -1905,11 +1905,37 @@ SKY.Editor = (function () {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     status('exported — put it in maps/ + maps/index.json to deploy for everyone');
   }
+  /* one-click backup of EVERYTHING: all saved maps in a single file.
+     Import that file to restore them all (existing ids get overwritten). */
+  function exportAll() {
+    const maps = SKY.MapData.drafts();
+    if (!maps.length) { status('no saved maps to back up yet'); return; }
+    const blob = new Blob([JSON.stringify({ skypushMaps: maps })], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const d = new Date();
+    a.download = 'skypush-maps-backup-' + d.toISOString().slice(0, 10) + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    status('backed up ' + maps.length + ' map' + (maps.length > 1 ? 's' : '') +
+      ' — keep that file somewhere safe');
+  }
   function importJson(file) {
     const fr = new FileReader();
     fr.onload = () => {
       try {
-        def = SKY.MapData.normalize(JSON.parse(fr.result));
+        const data = JSON.parse(fr.result);
+        // a "Backup all" bundle: restore every map straight into the list
+        if (data && Array.isArray(data.skypushMaps)) {
+          let n = 0;
+          for (const m of data.skypushMaps) {
+            try { SKY.MapData.saveDraft(SKY.MapData.normalize(m)); n++; } catch (e) {}
+          }
+          refreshLoadList();
+          status('restored ' + n + ' map' + (n === 1 ? '' : 's') + ' from the backup');
+          return;
+        }
+        def = SKY.MapData.normalize(data);
         history = [];
         rebuild(false);
         status('imported ' + def.name);
@@ -2101,6 +2127,7 @@ SKY.Editor = (function () {
     $('ed-new').onclick = () => { api.active = false; open(null); };
     $('ed-save').onclick = save;
     $('ed-export').onclick = exportJson;
+    $('ed-exportall').onclick = exportAll;
     $('ed-delete').onclick = () => {
       if (!def) return;
       const stored = SKY.MapData.draftMeta(def.id) || SKY.MapData.autosaveOf(def.id);

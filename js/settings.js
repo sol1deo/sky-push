@@ -20,6 +20,7 @@ SKY.Settings = (function () {
     rawInput: true,     // unadjusted mouse + spike filter; OFF = classic feel
     sfxVol: 0.8,        // sound effects volume
     musicVol: 0.5,      // background music volume
+    voiceVol: 1.0,      // incoming voice chat volume
     binds: {
       forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
       jump: 'Space', crouch: 'ShiftLeft',
@@ -27,7 +28,8 @@ SKY.Settings = (function () {
       grapple: 'KeyE', cannon: 'KeyQ', grenade: 'KeyG', dash: 'KeyF',
       interact: 'KeyX', loadout: 'KeyB',
       taunt: 'KeyT', scoreboard: 'Tab', reset: 'KeyP',
-      replay: 'KeyV',
+      replay: 'KeyC',
+      voice: 'KeyV',
     },
   };
   const BIND_LABELS = {
@@ -38,6 +40,7 @@ SKY.Settings = (function () {
     interact: 'Interact', loadout: 'Weapon loadout (DM)',
     taunt: 'Taunt', scoreboard: 'Scoreboard', reset: 'Reset position',
     replay: 'Replay editor',
+    voice: 'Voice — hold to talk',
   };
 
   let data = load();
@@ -56,6 +59,12 @@ SKY.Settings = (function () {
       if (!merged._shiftSlide) {
         if (merged.binds.crouch === 'KeyC') merged.binds.crouch = 'ShiftLeft';
         merged._shiftSlide = true;
+      }
+      // one-time migration: V now talks (voice chat); the replay editor moved
+      // to C. Only saves still on the old default get touched.
+      if (!merged._voiceV) {
+        if (merged.binds.replay === 'KeyV') merged.binds.replay = 'KeyC';
+        merged._voiceV = true;
       }
       return merged;
     } catch (e) { return JSON.parse(JSON.stringify(DEFAULTS)); }
@@ -116,6 +125,7 @@ SKY.Settings = (function () {
       <h4>AUDIO</h4>
       ${slider('Sound effects', 'sfxVol', 0, 1, 0.05, v => Math.round(v * 100) + '%')}
       ${slider('Music', 'musicVol', 0, 1, 0.05, v => Math.round(v * 100) + '%')}
+      ${slider('Voice chat', 'voiceVol', 0, 2, 0.05, v => Math.round(v * 100) + '%')}
       <h4>CONTROLS <small>click a key, then press the new one (Esc cancels)</small></h4>
       <div class="bind-grid">${Object.keys(DEFAULTS.binds).map(a => `
         <div class="bind-row" data-a="${a}"><span>${BIND_LABELS[a]}</span>
@@ -133,7 +143,7 @@ SKY.Settings = (function () {
       if (v) {
         if (k === 'sens') v.textContent = data[k].toFixed(2) + 'x';
         else if (k === 'fov') v.textContent = data[k] + '°';
-        else if (k === 'renderScale' || k === 'sfxVol' || k === 'musicVol') {
+        else if (k === 'renderScale' || k === 'sfxVol' || k === 'musicVol' || k === 'voiceVol') {
           v.textContent = Math.round(data[k] * 100) + '%';
         }
       }

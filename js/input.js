@@ -23,10 +23,17 @@ SKY.Input = (function () {
     sensMult: 1,              // lowered while aiming/scoped
     wheel: 0,                 // accumulated scroll steps (weapon swap)
     locked: false,
+    typing: false,            // chat input open — game keys suspended
     onLockChange: null,   // callback(locked)
+
+    setTyping(on) {
+      api.typing = on;
+      if (on) { down.clear(); pressed.clear(); }   // no stuck WASD after typing
+    },
 
     init(canvas) {
       window.addEventListener('keydown', (e) => {
+        if (api.typing) return;                            // chat input owns the keys
         if (e.code === 'Tab') e.preventDefault();          // Tab = scoreboard, not focus change
         if (e.code === 'Space') e.preventDefault();
         if (!down.has(e.code)) pressed.add(e.code);
@@ -40,7 +47,8 @@ SKY.Input = (function () {
         // clicking the world while unlocked mid-match jumps straight back in
         if (!api.locked && SKY.Game && !SKY.Game.lootOpen &&
             !(SKY.Replay && SKY.Replay.active) &&
-            (SKY.Game.state === 'playing' || SKY.Game.state === 'countdown')) {
+            (SKY.Game.state === 'playing' || SKY.Game.state === 'countdown' ||
+             SKY.Game.state === 'roundend')) {
           api.requestLock();
         }
       });

@@ -13,6 +13,9 @@ SKY.HUD = (function () {
   let dmgT = 0, dmgMax = 1;
   let lastTier = -1, lastWeapon = '';
   let lootKeyHandler = null;
+  let chatOpen = false;
+  const esc = (s) => String(s).replace(/[&<>"]/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   /* ---- themed dropdowns: the native <select> stays (all .value/.disabled/
      change wiring intact) but is hidden behind a styled trigger. The popup is
@@ -192,6 +195,31 @@ SKY.HUD = (function () {
       $('quit-btn').addEventListener('click', () => api.onQuit && api.onQuit());
       $('open-settings').addEventListener('click', () => SKY.Settings.open());
       $('pause-settings').addEventListener('click', () => SKY.Settings.open());
+
+      // ENTER = chat (online only). Opens over the lobby AND mid-match; the
+      // input owns the keyboard while it's up (Input.setTyping suspends game
+      // keys), ESC cancels, Enter sends.
+      window.addEventListener('keydown', (e) => {
+        if (e.code !== 'Enter' && e.code !== 'NumpadEnter' && e.code !== 'Escape') return;
+        if (chatOpen) {
+          e.preventDefault();
+          e.stopPropagation();
+          api.chatClose(e.code !== 'Escape');
+          return;
+        }
+        if (e.code === 'Escape') return;
+        if (!SKY.Net.online) return;
+        // never steal Enter from real inputs (nickname modal, editor fields…)
+        const a = document.activeElement;
+        if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return;
+        if (SKY.Replay.active || (SKY.Editor && SKY.Editor.active)) return;
+        const inLobby = SKY.Game.state === 'menu' && !$('mp-lobby').classList.contains('hidden');
+        const inMatch = SKY.Game.state !== 'menu';
+        if (!inLobby && !inMatch) return;
+        e.preventDefault();
+        api.chatOpen();
+      }, true);
+      $('chat-input').addEventListener('keydown', (e) => e.stopPropagation());
     },
 
     /* map dropdowns: built-ins + an optgroup of custom maps (editor drafts /
@@ -293,7 +321,65 @@ SKY.HUD = (function () {
       d.innerHTML = html;
       el.feed.appendChild(d);
       while (el.feed.children.length > 6) el.feed.removeChild(el.feed.firstChild);
-      setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 4500);
+      setTimeout(() => { if (d.parentNode) d.classList.add('fading'); }, 5600);
+      setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 6100);
+    },
+
+    /* -------- pickup toast: what you just grabbed, front and center --------
+       (pickups used to announce themselves in the killfeed, where nobody
+       looks — now it's a sticker right above the weapon bar) */
+    pickupToast(item) {
+      const t = $('pickup-toast');
+      if (!t) return;
+      const d = SKY.Loot.describe(item);
+      const r = SKY.Loot.RARITY[item.rarity] || { label: '', color: '#c6cdd9' };
+      t.innerHTML =
+        `<span class="pt-ico" style="color:${d.color || r.color}">${d.glyph || ''}</span>
+         <span class="pt-tx"><b style="color:${r.color}">${d.name}</b><small>${d.desc || ''}</small></span>`;
+      t.classList.remove('hidden', 'punch');
+      void t.offsetWidth;
+      t.classList.add('punch');
+      clearTimeout(t._hideT);
+      t._hideT = setTimeout(() => t.classList.add('hidden'), 2800);
+    },
+
+    /* -------- text chat (Enter) — online lobby + in-game -------- */
+    chatTyping() { return chatOpen; },
+    chatAdd(name, color, text) {
+      const log = $('chat-log');
+      if (!log) return;
+      const d = document.createElement('div');
+      d.className = 'chat-msg';
+      d.innerHTML = `<b style="color:${color || '#ffd34d'}">${esc(name)}</b> ${esc(text)}`;
+      log.appendChild(d);
+      while (log.children.length > 14) log.removeChild(log.firstChild);
+      setTimeout(() => d.classList.add('old'), 8000);
+    },
+    chatOpen() {
+      if (chatOpen || !SKY.Net.online) return;
+      chatOpen = true;
+      SKY.Input.setTyping(true);
+      $('chat').classList.add('open');
+      $('chat-entry').classList.remove('hidden');
+      const inp = $('chat-input');
+      inp.value = '';
+      inp.focus();
+    },
+    chatClose(sendIt) {
+      if (!chatOpen) return;
+      const inp = $('chat-input');
+      const text = inp.value;
+      chatOpen = false;
+      SKY.Input.setTyping(false);
+      $('chat').classList.remove('open');
+      $('chat-entry').classList.add('hidden');
+      inp.blur();
+      if (sendIt && text.trim()) {
+        SKY.Net.sendChat(text);
+        // your own line shows immediately (the host relays to everyone else)
+        const me = SKY.Net.roster.find(r => r.id === SKY.Net.myId);
+        api.chatAdd(me ? me.name : 'you', me ? me.color : '#ffd34d', text.trim().slice(0, 120));
+      }
     },
 
     /* CS:GO-style round-won banner: winner + stars up top while the arena
@@ -597,7 +683,8 @@ SKY.HUD = (function () {
       // guests/bots) — dimmed when down, ghosted when eliminated
       setHTML(el.dots, G.pawns.filter(q => !q.left).map(q =>
         SKY.U.avatarHtml(q.av, q.color, q.name,
-          q.eliminated ? 'out' : q.alive ? '' : 'dead')).join(''));
+          (q.eliminated ? 'out' : q.alive ? '' : 'dead') +
+          (q._talking ? ' spk' : ''))).join(''));
       if (G.mode === 'spark') {
         el.lives.classList.add('hidden');
         el.crownStatus.classList.add('hidden');

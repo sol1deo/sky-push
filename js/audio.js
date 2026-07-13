@@ -293,6 +293,9 @@ SKY.SFX = (function () {
 
   return {
     init,
+    /* raw context for modules that build their own graphs (voice chat) —
+       may be null until the first user gesture calls init() */
+    context() { return ctx; },
     /* gunshot: ONE fixed take per weapon at a fixed pitch — every shot of a
        gun sounds identical (only distance changes the level) */
     fire(kind, p, k, dist) {
