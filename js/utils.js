@@ -20,6 +20,17 @@ SKY.U = {
   },
 
   // aim direction from yaw/pitch (three.js convention: yaw 0 looks down -Z)
+  /* RADIAL fog patch (applied once at load, before any material compiles):
+     three's stock fog uses view-space DEPTH (-z), so with this game's wide
+     FOV objects at the screen edges get visibly LESS fog and the haze swims
+     when you turn the camera. Distance-based fog is rotation-invariant. */
+  _patchFog() {
+    if (THREE.ShaderChunk && THREE.ShaderChunk.fog_vertex) {
+      THREE.ShaderChunk.fog_vertex = THREE.ShaderChunk.fog_vertex
+        .replace('vFogDepth = - mvPosition.z;', 'vFogDepth = length( mvPosition.xyz );');
+    }
+  },
+
   dirFromYawPitch(yaw, pitch, out) {
     const cp = Math.cos(pitch);
     out.set(-Math.sin(yaw) * cp, Math.sin(pitch), -Math.cos(yaw) * cp);

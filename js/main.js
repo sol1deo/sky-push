@@ -65,6 +65,7 @@
     camera.updateProjectionMatrix();
   });
 
+  SKY.U._patchFog();       // radial fog — must run before any material compiles
   SKY.Settings.init();
   SKY.Input.init(canvas);
   SKY.GFX.init();          // real models/textures (async; https hosts only)

@@ -1247,6 +1247,7 @@ SKY.Map = (function () {
     const rep = b.rep || Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
     if (b.tex) return new THREE.MeshLambertMaterial({ map: texFromDataURL(b.tex, b.rep ? rep : 1) });
     const single = () => {
+      if (b.ptex && b.ptex[0] === '#') return flat(b.ptex);   // painted flat color
       if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
         return new THREE.MeshLambertMaterial({ map: blockTex(b, b.ptex) });
       }
@@ -1259,7 +1260,8 @@ SKY.Map = (function () {
       const mats = [];
       for (let f = 0; f < 6; f++) {
         const pf = b.ptexF[f];
-        mats.push(pf && SKY.U.PROC_TEX[pf]
+        mats.push(pf && pf[0] === '#' ? flat(pf)
+          : pf && SKY.U.PROC_TEX[pf]
           ? new THREE.MeshLambertMaterial({ map: blockTex(b, pf) })
           : single());
       }
@@ -1444,14 +1446,26 @@ SKY.Map = (function () {
     return box;
   }
 
+  /* lumpy models (big cliff rocks) can exceed the box budget at full res —
+     retry COARSER instead of collapsing to one giant bounding box, which put
+     invisible walls meters off the surface (hooks/bullets hit thin air) */
   function voxelBoxes(obj, meshes) {
+    for (const across of [16, 12, 9, 6]) {
+      const b = voxelBoxesAt(obj, meshes, across);
+      if (b === null) return null;          // degenerate — bounds fallback
+      if (b.length <= 48) return b;
+    }
+    return null;
+  }
+
+  function voxelBoxesAt(obj, meshes, across) {
     const bounds = localBounds(obj, meshes);
     if (bounds.isEmpty()) return null;
     const size = bounds.getSize(new THREE.Vector3());
     const maxDim = Math.max(size.x, size.y, size.z);
     if (!(maxDim > 0.05)) return null;
-    // grid: ~16 cells across the largest side, cells never thinner than 14 cm
-    const cellT = SKY.U.clamp(maxDim / 16, 0.14, 1.0);
+    // grid: ~`across` cells across the largest side, never thinner than 14 cm
+    const cellT = SKY.U.clamp(maxDim / across, 0.14, 1.5);
     const nx = SKY.U.clamp(Math.ceil(size.x / cellT), 1, 24);
     const ny = SKY.U.clamp(Math.ceil(size.y / cellT), 1, 24);
     const nz = SKY.U.clamp(Math.ceil(size.z / cellT), 1, 24);
@@ -1550,8 +1564,8 @@ SKY.Map = (function () {
         s: new THREE.Vector3((x1 - x + 1) * cx, (y1 - y + 1) * cy, (z1 - z + 1) * cz),
       });
     }
-    if (!boxes.length || boxes.length > 48) return null;   // degenerate/too fragmented
-    return boxes;
+    if (!boxes.length) return null;   // degenerate
+    return boxes;                     // caller retries coarser if fragmented
   }
 
   /* collision boxes for a prop in its LOCAL frame (no rotation, no scale).
@@ -1885,10 +1899,28 @@ SKY.Map = (function () {
    * 4-texture splat blend (sand/rock/grass/dirt by default). The visual is
    * a displaced plane; collision is a real heightfield in world.js.
    * ============================================================= */
+  /* tiny solid-color textures let terrain splat slots (and walls) hold a
+     PLAIN COLOR instead of a texture — the flat Kenney-cliff look */
+  const solidTexCache = {};
+  function solidTexture(hex) {
+    if (solidTexCache[hex]) return solidTexCache[hex];
+    const c = document.createElement('canvas');
+    c.width = c.height = 2;
+    const g = c.getContext('2d');
+    g.fillStyle = hex;
+    g.fillRect(0, 0, 2, 2);
+    const t = new THREE.CanvasTexture(c);
+    t.encoding = THREE.sRGBEncoding;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    solidTexCache[hex] = t;
+    return t;
+  }
+
   function terrainMaterial(tr) {
     const texs = tr.texs || ['sand', 'rock', 'grass', 'dirt'];
     const rep = Math.max(1, tr.rep || Math.round((tr.size || 60) / 6));
-    const t = (nm) => (SKY.GFX && SKY.GFX.texture) ? SKY.GFX.texture(nm, 1) : null;
+    const t = (nm) => nm && nm[0] === '#' ? solidTexture(nm)
+      : (SKY.GFX && SKY.GFX.texture) ? SKY.GFX.texture(nm, 1) : null;
     const t0 = t(texs[0]);
     if (!t0) return new THREE.MeshLambertMaterial({ color: 0xd8c49a });  // file:// look
     const t1 = t(texs[1]) || t0, t2 = t(texs[2]) || t0, t3 = t(texs[3]) || t0;
@@ -1981,12 +2013,18 @@ SKY.Map = (function () {
     };
     update(hts);
     const texs = tr.texs || ['sand', 'rock', 'grass', 'dirt'];
-    const wt = (SKY.GFX && SKY.GFX.texture)
-      ? (SKY.GFX.texture(texs[1] || texs[0], 1) || SKY.GFX.texture(texs[0], 1)) : null;
-    const mat = wt
-      ? new THREE.MeshLambertMaterial({ map: wt, side: THREE.DoubleSide,
-          color: 0xcfcfcf })
-      : new THREE.MeshLambertMaterial({ color: 0x8a7f6e, side: THREE.DoubleSide });
+    const wsrc = texs[1] || texs[0];
+    let mat;
+    if (wsrc && wsrc[0] === '#') {
+      mat = new THREE.MeshLambertMaterial({ color: wsrc, side: THREE.DoubleSide });
+    } else {
+      const wt = (SKY.GFX && SKY.GFX.texture)
+        ? (SKY.GFX.texture(wsrc, 1) || SKY.GFX.texture(texs[0], 1)) : null;
+      mat = wt
+        ? new THREE.MeshLambertMaterial({ map: wt, side: THREE.DoubleSide,
+            color: 0xcfcfcf })
+        : new THREE.MeshLambertMaterial({ color: 0x8a7f6e, side: THREE.DoubleSide });
+    }
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = mesh.castShadow = true;
     mesh.frustumCulled = false;
@@ -2055,10 +2093,16 @@ SKY.Map = (function () {
       if (M.clouds) cloudField(-10, 18, new THREE.Color(M.clouds).getHex(), 0.45);
     }
     if (def.fog) {
-      // creator's global fog override (color + explicit near/far range)
-      scene.fog = new THREE.Fog(new THREE.Color(def.fog.color).getHex(),
-        def.fog.near !== undefined ? def.fog.near : 30,
-        def.fog.far !== undefined ? def.fog.far : 150);
+      // creator's global fog override: DENSITY > 0 = exponential atmosphere
+      // (one dial, ignores near/far); otherwise the linear near/far range
+      const fogHex = new THREE.Color(def.fog.color).getHex();
+      if (def.fog.exp > 0) {
+        scene.fog = new THREE.FogExp2(fogHex, def.fog.exp * 0.0004);
+      } else {
+        scene.fog = new THREE.Fog(fogHex,
+          def.fog.near !== undefined ? def.fog.near : 30,
+          def.fog.far !== undefined ? def.fog.far : 150);
+      }
     } else {
       // default distance fog now MATCHES THE SKY: color derives from the
       // active sky's horizon (custom or preset) — a sunset sky used to get

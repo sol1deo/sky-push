@@ -74,6 +74,9 @@ SKY.Editor = (function () {
       return new THREE.MeshLambertMaterial({ map: tex });
     }
     const single = () => {
+      if (b.ptex && b.ptex[0] === '#') {                 // painted flat color
+        return new THREE.MeshLambertMaterial({ color: b.ptex });
+      }
       if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
         return new THREE.MeshLambertMaterial({ map: edBlockTex(b, b.ptex) });
       }
@@ -89,13 +92,66 @@ SKY.Editor = (function () {
       const mats = [];
       for (let f = 0; f < 6; f++) {
         const pf = b.ptexF[f];
-        mats.push(pf && SKY.U.PROC_TEX[pf]
+        mats.push(pf && pf[0] === '#'
+          ? new THREE.MeshLambertMaterial({ color: pf })
+          : pf && SKY.U.PROC_TEX[pf]
           ? new THREE.MeshLambertMaterial({ map: edBlockTex(b, pf) })
           : single());
       }
       return mats;
     }
     return single();
+  }
+
+  /* eyedropper: read the actual rendered pixel under the cursor (fresh
+     render — the drawing buffer isn't preserved between frames) */
+  function samplePixel(cx, cy) {
+    const r = SKY.DBG && SKY.DBG.renderer;
+    if (!r) return null;
+    const gl = r.getContext();
+    r.render(scene, camera);
+    const dpr = r.getPixelRatio ? r.getPixelRatio() : 1;
+    const px = new Uint8Array(4);
+    gl.readPixels(
+      SKY.U.clamp(Math.round(cx * dpr), 0, gl.drawingBufferWidth - 1),
+      SKY.U.clamp(gl.drawingBufferHeight - Math.round(cy * dpr) - 1, 0, gl.drawingBufferHeight - 1),
+      1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return '#' + [px[0], px[1], px[2]]
+      .map((v) => v.toString(16).padStart(2, '0')).join('');
+  }
+
+  function enterPipette(apply) {
+    pipette = { apply };
+    SKY.Input._canvas.style.cursor = 'crosshair';
+    status('PIPETTE — click anywhere in the scene to grab that color · ESC cancels');
+  }
+  function exitPipette() {
+    pipette = null;
+    SKY.Input._canvas.style.cursor = '';
+  }
+
+  /* apply a texture name OR '#rrggbb' color to the selected block (honors the
+     Paint-face target) — shared by the swatch grid, color input and pipette */
+  function applyBlockPaint(o, val) {
+    push();
+    if (paintFace >= 0 && (!o.data.shape || o.data.shape === 'box')) {
+      o.data.ptexF = o.data.ptexF || {};
+      if (val) o.data.ptexF[paintFace] = val;
+      else delete o.data.ptexF[paintFace];
+      if (!Object.keys(o.data.ptexF).length) o.data.ptexF = null;
+    } else {
+      o.data.ptex = val;
+      if (o.data.ptex) o.data.tex = null;  // paint replaces a dropped image
+    }
+    o.mesh.material = blockMaterial(o.data);
+    markDirty();
+    syncInspector();
+  }
+
+  /* swatch face: '#hex' entries show the color itself, textures a thumbnail */
+  function swStyle(t) {
+    return t && t[0] === '#' ? `background:${t}`
+      : `background-image:url(${SKY.U.procThumb(t)})`;
   }
 
   function buildBlockMesh(b) {
@@ -176,6 +232,9 @@ SKY.Editor = (function () {
   let terraStroke = null;   // { o, target } while LMB is held
   let brushRing = null;
   let brushAt = null;       // last brush hit point (world)
+  let pipette = null;       // { apply(hex) } — next viewport click samples a color
+  let pipSkip = false;      // swallow the mouseup that follows a pipette click
+  let colStroke = null;     // color-input drag = ONE undo step (input spams events)
 
   function trSX(tr) { return Math.max(4, tr.sx !== undefined ? tr.sx : (tr.size || 60)); }
   function trSZ(tr) { return Math.max(4, tr.sz !== undefined ? tr.sz : (tr.size || 60)); }
@@ -509,9 +568,14 @@ SKY.Editor = (function () {
     lights.push(hemi, sun);
     scene.add(hemi, sun);
     if (def.fog) {
-      scene.fog = new THREE.Fog(new THREE.Color(def.fog.color).getHex(),
-        def.fog.near !== undefined ? def.fog.near : 30,
-        def.fog.far !== undefined ? def.fog.far : 150);
+      const fogHex = new THREE.Color(def.fog.color).getHex();
+      if (def.fog.exp > 0) {
+        scene.fog = new THREE.FogExp2(fogHex, def.fog.exp * 0.0004);
+      } else {
+        scene.fog = new THREE.Fog(fogHex,
+          def.fog.near !== undefined ? def.fog.near : 30,
+          def.fog.far !== undefined ? def.fog.far : 150);
+      }
     } else {
       // sky-matched default fog — same derivation as in-game (map.js)
       const S2 = def.skyc ? [def.skyc.top, def.skyc.mid, def.skyc.hor]
@@ -1009,12 +1073,15 @@ SKY.Editor = (function () {
           <input type="checkbox" data-k="fogOn" ${def.fog ? 'checked' : ''}></div>` +
         (def.fog ? `
         <div class="ed-row"><span>Fog color</span><input type="color" data-k="fogCol" value="${def.fog.color}"></div>
+        ${numRow('Density', def.fog.exp || 0, 'fogExp', 1)}
+        ${def.fog.exp > 0 ? '' : `
         ${numRow('Fog near', def.fog.near !== undefined ? def.fog.near : 30, 'fogNear', 5)}
-        ${numRow('Fog far', def.fog.far !== undefined ? def.fog.far : 150, 'fogFar', 10)}
+        ${numRow('Fog far', def.fog.far !== undefined ? def.fog.far : 150, 'fogFar', 10)}`}
         <div class="ed-hint">Distance fog: by default its color MATCHES the sky's
-        horizon automatically. Override for full control — fog starts at NEAR
-        and is solid past FAR (the sky fades with it). Keep FAR above ~400 for
-        a light haze that leaves the sky visible.</div>` : '') + `
+        horizon automatically. Override for full control. DENSITY &gt; 0 =
+        exponential atmosphere fog — one dial, thicker with distance (NEAR/FAR
+        are ignored). At 0 the fog is linear: starts at NEAR, solid past FAR
+        (keep FAR above ~400 for a light haze).</div>` : '') + `
         <div class="ed-row"><span>Custom sky</span>
           <input type="checkbox" data-k="skycOn" ${def.skyc ? 'checked' : ''}></div>` +
         (def.skyc ? `
@@ -1082,6 +1149,9 @@ SKY.Editor = (function () {
           ${Object.keys(SKY.U.PROC_TEX).map(t =>
             `<span class="ed-swatch${curPt === t ? ' sel' : ''}" data-pt="${t}" title="${t}" style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
         </div>`;
+      h += `<div class="ed-row"><span>Solid color</span><span>
+          <input type="color" data-k="ptcol" value="${curPt && curPt[0] === '#' ? curPt : '#b8b4a6'}">
+          <button class="ed-mini${pipette ? ' sel' : ''}" data-k="ptpick">PIPETTE</button></span></div>`;
       h += numRow('Tiling', d.rep || 0, 'rep', 1);
       h += `<div class="ed-row"><span>Viewport paint</span>
         <button class="ed-mini${facePaint ? ' sel' : ''}" data-k="fpaint">${facePaint ? 'PAINTING… (ESC)' : 'PAINT FACES'}</button></div>`;
@@ -1089,7 +1159,9 @@ SKY.Editor = (function () {
         h += `<div class="ed-row"><span>Sculpt</span>
           <button class="ed-mini" data-k="bsculpt">CONVERT TO TERRAIN</button></div>
         <div class="ed-hint">PAINT FACES: pick a texture swatch above, then click any
-        block's faces in the viewport to paint them (drag to sweep). CONVERT
+        block's faces in the viewport to paint them (drag to sweep). SOLID COLOR
+        paints a plain untextured color instead — PIPETTE grabs any color
+        straight from the scene (works on terrain slots too). CONVERT
         turns this block into a sculptable terrain with the same footprint —
         raise hills and dig valleys right on top of it.</div>`;
       }
@@ -1159,7 +1231,7 @@ SKY.Editor = (function () {
         <div class="ed-row ed-swatches">
           ${texs.map((t, ti) => `<span class="ed-swatch tslot${texSlotEdit === ti ? ' sel' : ''}"
             data-tslot="${ti}" title="slot ${ti + 1}: ${t}"
-            style="background-image:url(${SKY.U.procThumb(t)})"><i>${ti + 1}</i></span>`).join('')}
+            style="${swStyle(t)}"><i>${ti + 1}</i></span>`).join('')}
         </div>`;
       if (texSlotEdit >= 0) {
         h += `<div class="ed-row ed-swatches">
@@ -1167,6 +1239,9 @@ SKY.Editor = (function () {
             data-ttexpick="${t}" title="${t}"
             style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
         </div>`;
+        h += `<div class="ed-row"><span>Solid color</span><span>
+          <input type="color" data-k="ttcol" value="${texs[texSlotEdit] && texs[texSlotEdit][0] === '#' ? texs[texSlotEdit] : '#b8b4a6'}">
+          <button class="ed-mini${pipette ? ' sel' : ''}" data-k="ttpick">PIPETTE</button></span></div>`;
       }
       const tool = terra ? terra.tool : '';
       h += `<div class="ed-row"><span>Sculpt</span></div>
@@ -1183,7 +1258,7 @@ SKY.Editor = (function () {
             <div class="ed-row ed-swatches">
               ${texs.map((t, ti) =>
                 `<span class="ed-swatch${terra.chan === ti ? ' sel' : ''}" data-tc="${ti}"
-                  title="${t}" style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
+                  title="${t}" style="${swStyle(t)}"></span>`).join('')}
             </div>`;
         }
       }
@@ -1321,11 +1396,17 @@ SKY.Editor = (function () {
       }
       else if (k === 'shaftsOn') { def.shafts = e.target.checked; applyMood(); }
       else if (k === 'fogOn') {
-        def.fog = e.target.checked ? { color: '#a8bede', near: 30, far: 150 } : null;
+        def.fog = e.target.checked ? { color: '#a8bede', near: 30, far: 150, exp: 0 } : null;
         applyMood();
         syncInspector();
       }
       else if (k === 'fogCol' && def.fog) { def.fog.color = e.target.value; applyMood(); }
+      else if (k === 'fogExp' && def.fog) {
+        const was = def.fog.exp > 0;
+        def.fog.exp = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 100);
+        applyMood();
+        if ((def.fog.exp > 0) !== was) syncInspector();   // NEAR/FAR rows toggle
+      }
       else if (k === 'fogNear' && def.fog) {
         def.fog.near = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 900);
         if (def.fog.far <= def.fog.near) def.fog.far = def.fog.near + 10;
@@ -1496,6 +1577,33 @@ SKY.Editor = (function () {
     }
     else if (k === 'pal') { d.pal = e.target.value || null; if (d.pal) d.ptex = null; o.mesh.material = blockMaterial(d); syncInspector(); }
     else if (k === 'color') { d.color = e.target.value; if (!d.pal && !d.tex && !d.ptex) o.mesh.material = blockMaterial(d); }
+    else if (k === 'ptcol') {
+      // flat paint color — live while dragging the picker, so no inspector
+      // rebuild here (it would destroy the input mid-drag)
+      if (o.kind !== 'block') return;
+      if (colStroke !== e.target) { push(); colStroke = e.target; }
+      const val = e.target.value;
+      if (paintFace >= 0 && (!d.shape || d.shape === 'box')) {
+        d.ptexF = d.ptexF || {};
+        d.ptexF[paintFace] = val;
+      } else {
+        d.ptex = val;
+        d.tex = null;
+      }
+      if (facePaint) facePaint.tex = val;
+      o.mesh.material = blockMaterial(d);
+      markDirty();
+      return;
+    }
+    else if (k === 'ttcol') {
+      if (o.kind !== 'terrain' || texSlotEdit < 0) return;
+      if (colStroke !== e.target) { push(); colStroke = e.target; }
+      d.texs = Object.assign(d.texs || ['sand', 'rock', 'grass', 'dirt'],
+        { [texSlotEdit]: e.target.value });
+      markDirty();
+      rebuildTerrainMesh(o);
+      return;
+    }
     else if (k === 'rep') { d.rep = Math.max(0, Math.round(num)) || null; o.mesh.material = blockMaterial(d); }
     else if (k === 'crumble') d.crumble = e.target.checked;
     else if (k === 'shape') {
@@ -1966,6 +2074,10 @@ SKY.Editor = (function () {
     };
     $('ed-import').onchange = (e) => { if (e.target.files[0]) importJson(e.target.files[0]); e.target.value = ''; };
     ui.ins.addEventListener('input', onInspectorInput);
+    // a finished color-picker session = one undo step; next session pushes anew
+    ui.ins.addEventListener('change', (e) => {
+      if (colStroke === e.target) { colStroke = null; syncInspector(); }
+    });
     ui.ins.addEventListener('click', (e) => {
       if (e.target.dataset.k === 'cleartex') { onInspectorInput(e); return; }
       if (e.target.dataset.k === 'centermap') { centerMap(); return; }
@@ -2005,6 +2117,37 @@ SKY.Editor = (function () {
       if (e.target.dataset.k === 'bsculpt') { convertBlockToTerrain(objects[sel]); return; }
       if (e.target.dataset.k === 'fpaint') {
         facePaint ? exitFacePaint() : enterFacePaint();
+        return;
+      }
+      if (e.target.dataset.k === 'ptpick') {
+        if (pipette) { exitPipette(); syncInspector(); return; }
+        enterPipette((hex) => {
+          const o = objects[sel];
+          if (facePaint) {
+            facePaint.tex = hex;
+            status('PAINT ' + hex.toUpperCase() + ' — click faces · ESC ends');
+          } else if (o && o.kind === 'block') {
+            applyBlockPaint(o, hex);
+          }
+          syncInspector();
+        });
+        syncInspector();
+        return;
+      }
+      if (e.target.dataset.k === 'ttpick') {
+        if (pipette) { exitPipette(); syncInspector(); return; }
+        enterPipette((hex) => {
+          const o = objects[sel];
+          if (o && o.kind === 'terrain' && texSlotEdit >= 0) {
+            push();
+            o.data.texs = Object.assign(o.data.texs || ['sand', 'rock', 'grass', 'dirt'],
+              { [texSlotEdit]: hex });
+            markDirty();
+            rebuildTerrainMesh(o);
+          }
+          syncInspector();
+        });
+        syncInspector();
         return;
       }
       // terrain texture SLOT swatches + the picker grid under them
@@ -2188,6 +2331,16 @@ SKY.Editor = (function () {
       if (e.button === 2) { looking = true; lastX = e.clientX; lastY = e.clientY; }
       if (e.button === 0) {
         downX = e.clientX; downY = e.clientY;
+        // pipette: this click SAMPLES a color instead of selecting/painting
+        if (pipette && !(e.target.closest && e.target.closest('#editor-ov'))) {
+          const hex = samplePixel(e.clientX, e.clientY);
+          const pip = pipette;
+          exitPipette();
+          pipSkip = true;
+          if (hex) pip.apply(hex);
+          status('picked ' + hex);
+          return;
+        }
         // face-paint mode: LMB paints instead of selecting
         if (facePaint && !(e.target.closest && e.target.closest('#editor-ov'))) {
           paintDrag = true;
@@ -2208,6 +2361,7 @@ SKY.Editor = (function () {
     window.addEventListener('mouseup', (e) => {
       if (!api.active) return;
       if (e.button === 2) looking = false;
+      if (e.button === 0 && pipSkip) { pipSkip = false; return; }
       if (e.button === 0 && paintDrag) {
         paintDrag = false;
         if (facePaint) facePaint.pushed = false;   // next sweep = next undo step
@@ -2293,6 +2447,7 @@ SKY.Editor = (function () {
       if (e.code === 'KeyD' && e.shiftKey) duplicateSel();
       if (e.code === 'Delete' || e.code === 'Backspace') deleteSel();
       if (e.code === 'Escape') {
+        if (pipette) { exitPipette(); syncInspector(); return; }
         if (facePaint) { exitFacePaint(); return; }
         if (terra) { exitSculpt(); return; }
         select(-1);

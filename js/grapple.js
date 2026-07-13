@@ -213,13 +213,21 @@ SKY.Grapple = (function () {
     _to.multiplyScalar(1 / dist);
 
     // rope SNAPS when geometry gets between you and the hook point — hooking
-    // a floor from underneath no longer drags you up through the slab
-    if (dist > 1.5) {
-      _losPt.copy(g.point).addScaledVector(_to, -0.35);
+    // a floor from underneath no longer drags you up through the slab.
+    // Debounced + grace period: mesh-collided props (cliff assets) have
+    // BUMPY voxel collision that grazed this check and killed ~27% of
+    // legit hooks the instant they attached ("the hook doesn't register").
+    if (dist > 1.5 && g.t > 0.25) {
+      _losPt.copy(g.point).addScaledVector(_to, -0.7);
       if (!SKY.World.los(_mid, _losPt)) {
-        release(pawn);
-        if (pawn.isLocal) SKY.SFX.grapMiss();
-        return;
+        g._losFails = (g._losFails || 0) + 1;
+        if (g._losFails >= 3) {          // ~3 ticks of REAL occlusion
+          release(pawn);
+          if (pawn.isLocal) SKY.SFX.grapMiss();
+          return;
+        }
+      } else {
+        g._losFails = 0;
       }
     }
 

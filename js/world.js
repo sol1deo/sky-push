@@ -318,19 +318,24 @@ SKY.World = (function () {
         const limit = best ? best.t : maxDist;
         const step = 0.45;
         let prevT = 0;
-        let prevAbove = origin.y - api.terrainHeight(origin.x, origin.z);
-        if (!isFinite(prevAbove)) prevAbove = 1;
+        const oh = api.terrainHeight(origin.x, origin.z);
+        let prevInside = isFinite(oh);
+        let prevAbove = prevInside ? origin.y - oh : 1;
         for (let t = step; t <= limit + step; t += step) {
           const tt = Math.min(t, limit);
           const px = origin.x + dir.x * tt, py = origin.y + dir.y * tt, pz = origin.z + dir.z * tt;
           const th = api.terrainHeight(px, pz);
-          const above = isFinite(th) ? py - th : 1;
-          if (prevAbove > 0 && above <= 0) {
+          const inside = isFinite(th);
+          const above = inside ? py - th : 1;
+          // only a real above→below crossing counts — a ray entering the
+          // footprint from OUTSIDE below surface level is not a hit (that
+          // used to raise a phantom wall around every terrain's edge)
+          if (prevInside && inside && prevAbove > 0 && above <= 0) {
             let lo = prevT, hi = tt;
             for (let i = 0; i < 5; i++) {
               const mid = (lo + hi) / 2;
               const mh = api.terrainHeight(origin.x + dir.x * mid, origin.z + dir.z * mid);
-              (origin.y + dir.y * mid) - (isFinite(mh) ? mh : -1e9) > 0 ? lo = mid : hi = mid;
+              (origin.y + dir.y * mid) - (isFinite(mh) ? mh : 1e9) > 0 ? lo = mid : hi = mid;
             }
             const hitT = (lo + hi) / 2;
             if (!best || hitT < best.t) {
@@ -342,6 +347,7 @@ SKY.World = (function () {
             break;
           }
           prevAbove = above;
+          prevInside = inside;
           prevT = tt;
           if (tt >= limit) break;
         }
