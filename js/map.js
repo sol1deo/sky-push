@@ -1914,6 +1914,85 @@ SKY.Map = (function () {
     return mat;
   }
 
+  /* perimeter WALLS that follow the sculpted rim + optional bottom cap.
+     One mesh, no coplanar faces = no z-fighting with the surface, and raised
+     edges are never hollow. `update()` refits the wall to live heights
+     (the editor calls it every brush frame). */
+  function buildTerrainSides(tr, hts, segs, sx, sz) {
+    const n = segs + 1;
+    const cellX = sx / segs, cellZ = sz / segs;
+    const cap = tr.base && tr.base > 0.05;
+    const strips = 4 * n * 2;                       // 2 verts per edge column
+    const capVerts = cap ? 4 : 0;
+    const posArr = new Float32Array((strips + capVerts) * 3);
+    const uvArr = new Float32Array((strips + capVerts) * 2);
+    const idx = [];
+    for (let e = 0; e < 4; e++) {
+      const base = e * n * 2;
+      for (let i = 0; i < segs; i++) {
+        const a = base + i * 2;
+        idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3);
+      }
+    }
+    if (cap) {
+      const c0 = strips;
+      idx.push(c0, c0 + 1, c0 + 2, c0 + 2, c0 + 1, c0 + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    geo.setIndex(idx);
+    const update = (heights) => {
+      let minH = 0;
+      for (let i = 0; i < heights.length; i++) if (heights[i] < minH) minH = heights[i];
+      const yBot = cap ? -Math.max(0.5, tr.base) : minH - 2.5;
+      const edge = (e, i) => {   // -> [x, z, h]
+        if (e === 0) return [-sx / 2 + i * cellX, -sz / 2, heights[i]];
+        if (e === 1) return [-sx / 2 + i * cellX, sz / 2, heights[segs * n + i]];
+        if (e === 2) return [-sx / 2, -sz / 2 + i * cellZ, heights[i * n]];
+        return [sx / 2, -sz / 2 + i * cellZ, heights[i * n + segs]];
+      };
+      for (let e = 0; e < 4; e++) {
+        for (let i = 0; i < n; i++) {
+          const [x, z, h] = edge(e, i);
+          const v = (e * n + i) * 2;
+          posArr[v * 3] = x; posArr[v * 3 + 1] = h; posArr[v * 3 + 2] = z;
+          posArr[v * 3 + 3] = x; posArr[v * 3 + 4] = yBot; posArr[v * 3 + 5] = z;
+          const u = (e < 2 ? x : z) / 4;
+          uvArr[v * 2] = u; uvArr[v * 2 + 1] = h / 4;
+          uvArr[v * 2 + 2] = u; uvArr[v * 2 + 3] = yBot / 4;
+        }
+      }
+      if (cap) {
+        const c0 = strips;
+        const cs = [[-sx / 2, -sz / 2], [sx / 2, -sz / 2], [-sx / 2, sz / 2], [sx / 2, sz / 2]];
+        for (let i = 0; i < 4; i++) {
+          posArr[(c0 + i) * 3] = cs[i][0];
+          posArr[(c0 + i) * 3 + 1] = yBot;
+          posArr[(c0 + i) * 3 + 2] = cs[i][1];
+          uvArr[(c0 + i) * 2] = cs[i][0] / 4;
+          uvArr[(c0 + i) * 2 + 1] = cs[i][1] / 4;
+        }
+      }
+      geo.attributes.position.needsUpdate = true;
+      geo.attributes.uv.needsUpdate = true;
+      geo.computeVertexNormals();
+      geo.computeBoundingSphere();
+    };
+    update(hts);
+    const texs = tr.texs || ['sand', 'rock', 'grass', 'dirt'];
+    const wt = (SKY.GFX && SKY.GFX.texture)
+      ? (SKY.GFX.texture(texs[1] || texs[0], 1) || SKY.GFX.texture(texs[0], 1)) : null;
+    const mat = wt
+      ? new THREE.MeshLambertMaterial({ map: wt, side: THREE.DoubleSide,
+          color: 0xcfcfcf })
+      : new THREE.MeshLambertMaterial({ color: 0x8a7f6e, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    return { mesh, update };
+  }
+
   function buildTerrain(tr) {
     const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128);
     const sx = Math.max(4, tr.sx !== undefined ? tr.sx : (tr.size || 60));
@@ -1931,16 +2010,12 @@ SKY.Map = (function () {
     mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
     mesh.receiveShadow = true;
     group.add(mesh);
-    // base skirt (blocks converted to terrain keep their solid body): a box
-    // from p.y - base up to p.y, visual + side/bottom collision
+    // sculpt-following side walls (+ bottom cap and body collision when the
+    // terrain came from a converted block)
+    const sides = buildTerrainSides(tr, heights, segs, sx, sz);
+    sides.mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
+    group.add(sides.mesh);
     if (tr.base && tr.base > 0.05) {
-      const t0 = (SKY.GFX && SKY.GFX.texture) ? SKY.GFX.texture((tr.texs || ['sand'])[0], 1) : null;
-      const bmat = t0 ? new THREE.MeshLambertMaterial({ map: t0 })
-        : new THREE.MeshLambertMaterial({ color: 0xb9a887 });
-      const box = new THREE.Mesh(new THREE.BoxGeometry(sx, tr.base, sz), bmat);
-      box.position.set(tr.p[0], tr.p[1] - tr.base / 2, tr.p[2]);
-      box.receiveShadow = box.castShadow = true;
-      group.add(box);
       SKY.World.addSolid({ x: tr.p[0], y: tr.p[1] - tr.base / 2, z: tr.p[2],
         sx, sy: tr.base, sz });
     }
@@ -1985,7 +2060,13 @@ SKY.Map = (function () {
         def.fog.near !== undefined ? def.fog.near : 30,
         def.fog.far !== undefined ? def.fog.far : 150);
     } else {
-      scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+      // default distance fog now MATCHES THE SKY: color derives from the
+      // active sky's horizon (custom or preset) — a sunset sky used to get
+      // the mood's blue haze, which read completely wrong
+      const S2 = def.skyc ? [def.skyc.top, def.skyc.mid, def.skyc.hor]
+        : D.SKIES[def.sky];
+      const fc = new THREE.Color(S2[2]).lerp(new THREE.Color(S2[1]), 0.3);
+      scene.fog = new THREE.Fog(fc.getHex(), M.fog[1], M.fog[2]);
     }
 
     // terrains FIRST: the sea's per-vertex depth measurement needs them
@@ -2423,6 +2504,7 @@ SKY.Map = (function () {
 
   return { MAPS, load, unload, tick, startOvertime, resetRound, overtimeMsg, displayName,
            setDoor, tryInteract, propCollisionLocal, skyFollow, terrainMaterial,
+           buildTerrainSides,
            lightMul() { return lightMul; },
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; },

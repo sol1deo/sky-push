@@ -1144,6 +1144,26 @@
   /* underwater depth-darkness layer (JS drives opacity) */
   #uw-ov .uwd { position:absolute; inset:0; background:#020d18; opacity:0; }
 
+  /* image cropper */
+  #crop-modal { position:fixed; inset:0; z-index:72; display:flex; align-items:center;
+    justify-content:center; background:rgba(5,7,12,.75); backdrop-filter:blur(6px); }
+  .crop-card { background:var(--bg); border:1px solid var(--line); border-radius:14px;
+    padding:22px 26px; text-align:center; }
+  .crop-title { font-size:12px; font-weight:700; letter-spacing:.22em;
+    text-transform:uppercase; margin-bottom:14px; }
+  #crop-stage { position:relative; margin:0 auto; border-radius:10px; overflow:hidden;
+    border:1px solid var(--line); cursor:grab; touch-action:none; }
+  #crop-stage.round { border-radius:50%; }
+  #crop-stage:active { cursor:grabbing; }
+  #crop-canvas { display:block; }
+  .crop-zoom { display:flex; align-items:center; gap:10px; margin:14px 4px 2px; }
+  .crop-zoom input { flex:1; accent-color:var(--brand); }
+  .crop-zoom span { color:var(--dim); font-weight:800; }
+  .crop-hint { font-size:10px; letter-spacing:.1em; color:var(--faint);
+    text-transform:uppercase; margin:6px 0 4px; }
+  #crop-save { margin-top:8px; width:100%; }
+  #crop-cancel { margin-top:8px; }
+
   /* ============ underwater overlay (camera below a sea surface) ============ */
   #uw-ov { position:fixed; inset:0; z-index:4; pointer-events:none; overflow:hidden;
     background:
@@ -1480,7 +1500,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 50</div>
+  <div id="build-foot" class="rail-foot">prototype · build 51</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1776,6 +1796,20 @@
   </div>
 </div>
 
+<!-- image cropper (avatar / banner uploads): drag to move, scroll/slider to zoom -->
+<div id="crop-modal" class="hidden">
+  <div class="crop-card">
+    <div class="crop-title">Position your image</div>
+    <div id="crop-stage"><canvas id="crop-canvas"></canvas></div>
+    <div class="crop-zoom">
+      <span>−</span><input id="crop-zoom" type="range" min="100" max="400" value="100"><span>+</span>
+    </div>
+    <div class="crop-hint">drag to move · scroll or slide to zoom</div>
+    <button id="crop-save" class="btn">USE THIS</button>
+    <button id="crop-cancel" class="btn small">cancel</button>
+  </div>
+</div>
+
 <!-- friend profile viewer -->
 <div id="fp-modal" class="hidden">
   <div class="fp-card">
@@ -1818,40 +1852,40 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=50"></script>
-<script src="js/profile.js?v=50"></script>
-<script src="js/account.js?v=50"></script>
-<script src="js/accountui.js?v=50"></script>
-<script src="js/utils.js?v=50"></script>
-<script src="js/gfx.js?v=50"></script>
-<script src="js/mapdata.js?v=50"></script>
-<script src="js/audio.js?v=50"></script>
-<script src="js/settings.js?v=50"></script>
-<script src="js/input.js?v=50"></script>
-<script src="js/world.js?v=50"></script>
-<script src="js/effects.js?v=50"></script>
-<script src="js/map.js?v=50"></script>
-<script src="js/characters.js?v=50"></script>
-<script src="js/pawn.js?v=50"></script>
-<script src="js/weapons.js?v=50"></script>
-<script src="js/loot.js?v=50"></script>
-<script src="js/pickups.js?v=50"></script>
-<script src="js/sparks.js?v=50"></script>
-<script src="js/grenades.js?v=50"></script>
-<script src="js/grapple.js?v=50"></script>
-<script src="js/bots.js?v=50"></script>
-<script src="js/hud.js?v=50"></script>
-<script src="js/game.js?v=50"></script>
-<script src="js/attract.js?v=50"></script>
-<script src="js/net.js?v=50"></script>
-<script src="js/dof.js?v=50"></script>
+<script src="js/config.js?v=51"></script>
+<script src="js/profile.js?v=51"></script>
+<script src="js/account.js?v=51"></script>
+<script src="js/accountui.js?v=51"></script>
+<script src="js/utils.js?v=51"></script>
+<script src="js/gfx.js?v=51"></script>
+<script src="js/mapdata.js?v=51"></script>
+<script src="js/audio.js?v=51"></script>
+<script src="js/settings.js?v=51"></script>
+<script src="js/input.js?v=51"></script>
+<script src="js/world.js?v=51"></script>
+<script src="js/effects.js?v=51"></script>
+<script src="js/map.js?v=51"></script>
+<script src="js/characters.js?v=51"></script>
+<script src="js/pawn.js?v=51"></script>
+<script src="js/weapons.js?v=51"></script>
+<script src="js/loot.js?v=51"></script>
+<script src="js/pickups.js?v=51"></script>
+<script src="js/sparks.js?v=51"></script>
+<script src="js/grenades.js?v=51"></script>
+<script src="js/grapple.js?v=51"></script>
+<script src="js/bots.js?v=51"></script>
+<script src="js/hud.js?v=51"></script>
+<script src="js/game.js?v=51"></script>
+<script src="js/attract.js?v=51"></script>
+<script src="js/net.js?v=51"></script>
+<script src="js/dof.js?v=51"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=50"></script>
-<script src="js/vidrender.js?v=50"></script>
-<script src="js/demos.js?v=50"></script>
-<script src="js/locker.js?v=50"></script>
-<script src="js/assets.js?v=50"></script>
-<script src="js/editor.js?v=50"></script>
-<script src="js/main.js?v=50"></script>
+<script src="js/replay.js?v=51"></script>
+<script src="js/vidrender.js?v=51"></script>
+<script src="js/demos.js?v=51"></script>
+<script src="js/locker.js?v=51"></script>
+<script src="js/assets.js?v=51"></script>
+<script src="js/editor.js?v=51"></script>
+<script src="js/main.js?v=51"></script>
 </body>
 </html>

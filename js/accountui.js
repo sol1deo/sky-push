@@ -61,6 +61,101 @@ SKY.AccountUI = (function () {
     return made;
   }
 
+  /* ---------------- image cropper ----------------
+     drag = pan, wheel/slider = zoom; SAVE crops the visible region into an
+     outW x outH blob. `round` shapes the stage like the avatar chip. */
+  const crop = { img: null, scale: 1, min: 1, ox: 0, oy: 0, outW: 0, outH: 0,
+    stW: 0, stH: 0, then: null };
+  function openCropper(file, outW, outH, round, then) {
+    const img = new Image();
+    img.onload = () => {
+      crop.img = img; crop.outW = outW; crop.outH = outH; crop.then = then;
+      const maxW = 320;
+      crop.stW = outW >= outH ? maxW : Math.round(maxW * outW / outH);
+      crop.stH = Math.round(crop.stW * outH / outW);
+      const cv = $('crop-canvas');
+      cv.width = crop.stW; cv.height = crop.stH;
+      $('crop-stage').style.width = crop.stW + 'px';
+      $('crop-stage').style.height = crop.stH + 'px';
+      $('crop-stage').classList.toggle('round', !!round);
+      // cover-fit start
+      crop.min = Math.max(crop.stW / img.width, crop.stH / img.height);
+      crop.scale = crop.min;
+      crop.ox = (crop.stW - img.width * crop.scale) / 2;
+      crop.oy = (crop.stH - img.height * crop.scale) / 2;
+      $('crop-zoom').value = 100;
+      drawCrop();
+      $('crop-modal').classList.remove('hidden');
+    };
+    img.src = URL.createObjectURL(file);
+  }
+  function clampCrop() {
+    const w = crop.img.width * crop.scale, h = crop.img.height * crop.scale;
+    crop.ox = SKY.U.clamp(crop.ox, crop.stW - w, 0);
+    crop.oy = SKY.U.clamp(crop.oy, crop.stH - h, 0);
+  }
+  function drawCrop() {
+    if (!crop.img) return;
+    clampCrop();
+    const g = $('crop-canvas').getContext('2d');
+    g.clearRect(0, 0, crop.stW, crop.stH);
+    g.drawImage(crop.img, crop.ox, crop.oy,
+      crop.img.width * crop.scale, crop.img.height * crop.scale);
+  }
+  function zoomCrop(mult, cxr, cyr) {
+    const old = crop.scale;
+    crop.scale = SKY.U.clamp(old * mult, crop.min, crop.min * 4);
+    const k = crop.scale / old;
+    // zoom around the given stage point (defaults to center)
+    const cx = cxr !== undefined ? cxr : crop.stW / 2;
+    const cy = cyr !== undefined ? cyr : crop.stH / 2;
+    crop.ox = cx - (cx - crop.ox) * k;
+    crop.oy = cy - (cy - crop.oy) * k;
+    $('crop-zoom').value = Math.round((crop.scale / crop.min) * 100);
+    drawCrop();
+  }
+  function finishCrop() {
+    const out = document.createElement('canvas');
+    out.width = crop.outW; out.height = crop.outH;
+    const k = crop.outW / crop.stW;
+    out.getContext('2d').drawImage(crop.img,
+      crop.ox * k, crop.oy * k,
+      crop.img.width * crop.scale * k, crop.img.height * crop.scale * k);
+    $('crop-modal').classList.add('hidden');
+    out.toBlob((b) => { if (crop.then) crop.then(b); },
+      crop.outW > 200 ? 'image/jpeg' : 'image/png', 0.88);
+  }
+  function wireCropper() {
+    const stage = $('crop-stage');
+    let drag = null;
+    stage.addEventListener('pointerdown', (e) => {
+      drag = { x: e.clientX, y: e.clientY };
+      stage.setPointerCapture(e.pointerId);
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      crop.ox += e.clientX - drag.x;
+      crop.oy += e.clientY - drag.y;
+      drag = { x: e.clientX, y: e.clientY };
+      drawCrop();
+    });
+    stage.addEventListener('pointerup', () => { drag = null; });
+    stage.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const r = stage.getBoundingClientRect();
+      zoomCrop(e.deltaY > 0 ? 0.92 : 1.09, e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    $('crop-zoom').addEventListener('input', (e) => {
+      const target = crop.min * (+e.target.value / 100);
+      zoomCrop(target / crop.scale);
+    });
+    $('crop-save').onclick = finishCrop;
+    $('crop-cancel').onclick = () => $('crop-modal').classList.add('hidden');
+    $('crop-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'crop-modal') $('crop-modal').classList.add('hidden');
+    });
+  }
+
   /* ---------------- nav ---------------- */
   function refreshNav() {
     ensureCharIcons();
@@ -209,12 +304,18 @@ SKY.AccountUI = (function () {
       d.onclick = () => acct.updateProfile({ avatar: d.dataset.av }).then(renderPanel);
     });
     const avf = $('pf-av-file');
-    if (avf) avf.onchange = async (e) => {
-      if (e.target.files[0]) { await acct.uploadAvatar(e.target.files[0]); renderPanel(); }
+    if (avf) avf.onchange = (e) => {
+      if (!e.target.files[0]) return;
+      openCropper(e.target.files[0], 128, 128, true,
+        async (b) => { await acct.uploadAvatarBlob(b); renderPanel(); });
+      e.target.value = '';
     };
     const bnf = $('pf-bn-file');
-    if (bnf) bnf.onchange = async (e) => {
-      if (e.target.files[0]) { await acct.uploadBanner(e.target.files[0]); renderPanel(); }
+    if (bnf) bnf.onchange = (e) => {
+      if (!e.target.files[0]) return;
+      openCropper(e.target.files[0], 640, 170, false,
+        async (b) => { await acct.uploadBannerBlob(b); renderPanel(); });
+      e.target.value = '';
     };
     $('pf-bio').onchange = (e) => acct.updateProfile({ bio: e.target.value.slice(0, 120) });
     $('pf-signout').onclick = async () => { await acct.signOut(); renderPanel(); refreshNav(); };
@@ -286,6 +387,7 @@ SKY.AccountUI = (function () {
           chk.title = r.ok ? 'available' : r.why;
         }, 350);
       });
+      wireCropper();
       $('nav-friends').onclick = () => {
         document.getElementById('tab-profile').click();
       };

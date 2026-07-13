@@ -132,6 +132,23 @@ SKY.Account = (function () {
       if (!error) { Object.assign(profile, patch); changed(); }
       return !error;
     },
+    /* pre-cropped blobs from the cropper UI */
+    async uploadAvatarBlob(blob) {
+      if (!api.isLoggedIn() || !blob) return false;
+      const path = session.user.id + '/avatar-' + Date.now() + '.png';
+      const { error } = await sb.storage.from('avatars').upload(path, blob, { upsert: true });
+      if (error) return false;
+      const { data } = sb.storage.from('avatars').getPublicUrl(path);
+      return api.updateProfile({ avatar: data.publicUrl });
+    },
+    async uploadBannerBlob(blob) {
+      if (!api.isLoggedIn() || !blob) return false;
+      const path = session.user.id + '/banner-' + Date.now() + '.jpg';
+      const { error } = await sb.storage.from('avatars').upload(path, blob, { upsert: true });
+      if (error) return false;
+      const { data } = sb.storage.from('avatars').getPublicUrl(path);
+      return api.updateProfile({ banner: data.publicUrl });
+    },
     /* wide custom banner image -> storage -> profiles.banner = url */
     async uploadBanner(file) {
       if (!api.isLoggedIn() || !file) return false;

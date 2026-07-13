@@ -183,7 +183,7 @@ SKY.Assets = (function () {
     // BACKDROP MOUNTAIN — seeded low-poly massif for valley skylines.
     //   size = base radius · height = peak height · peaks = extra summits ·
     //   seed = variation roll · snow = snowline (0 none … 1 fully capped)
-    mountain:   { color: '#8a8f9c', size: 60, height: 55, peaks: 3, seed: 1, snow: 0.5 },
+    mountain:   { color: '#8a8f9c', size: 60, height: 55, peaks: 3, seed: 1, snow: 0.5, detail: 2 },
     // SEA LIFE — real Quaternius creatures (swim clips play on their own).
     // school: size = circle radius, count = fish, speed = swim pace
     school:     { color: '#8fd8ff', size: 8, count: 10, speed: 1 },
@@ -672,61 +672,104 @@ SKY.Assets = (function () {
     g.traverse((oo) => { if (oo.isMesh) oo.castShadow = true; });
   }
 
-  /* seeded low-poly backdrop mountain: displaced faceted cones with per-face
-     shade jitter + a snow cap. Deterministic from `seed`, so every client
-     builds the identical massif and the editor thumbnails stay stable. */
+  /* seeded backdrop mountain v2: fBm + ridged-noise displaced cones with a
+     DETAIL dial (1 = cheap silhouette … 3 = craggy massif that holds up at
+     size 200+), irregular bases, slope-aware coloring (steep = bare cliff,
+     flats hold the snow, striated rock in between). Deterministic from
+     `seed`, so every client builds the identical massif. */
   function buildMountain(g, col, o) {
     const R = Math.max(10, o.size || 60);
     const H = Math.max(8, o.height || 55);
     const peaks = SKY.U.clamp(Math.round(o.peaks !== undefined ? o.peaks : 3), 1, 6);
     const snowline = SKY.U.clamp(o.snow !== undefined ? o.snow : 0.5, 0, 1);
-    // mulberry32 — tiny deterministic PRNG
-    let st = ((o.seed !== undefined ? o.seed : 1) * 7919) | 0 || 1;
+    const detail = SKY.U.clamp(Math.round(o.detail !== undefined ? o.detail : 2), 1, 3);
+    const seed = (o.seed !== undefined ? o.seed : 1);
+    // mulberry32 — per-peak placement rolls
+    let st = (seed * 7919) | 0 || 1;
     const rnd = () => {
       st |= 0; st = (st + 0x6D2B79F5) | 0;
       let t = Math.imul(st ^ (st >>> 15), 1 | st);
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
-    const snowCol = new THREE.Color(0.88, 0.91, 0.95);
+    // stateless value-noise fBm (position-stable, seed-shifted)
+    const h2 = (x, y) => {
+      const v = Math.sin(x * 127.1 + y * 311.7 + seed * 17.23) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    const vn = (x, y) => {
+      const ix = Math.floor(x), iy = Math.floor(y);
+      const fx = x - ix, fy = y - iy;
+      const sx2 = fx * fx * (3 - 2 * fx), sy2 = fy * fy * (3 - 2 * fy);
+      const a = h2(ix, iy), b = h2(ix + 1, iy), c = h2(ix, iy + 1), d = h2(ix + 1, iy + 1);
+      return a + (b - a) * sx2 + (c - a) * sy2 + (a - b - c + d) * sx2 * sy2;
+    };
+    const fbm = (x, y) => vn(x, y) * 0.55 + vn(x * 2.13, y * 2.13) * 0.27 + vn(x * 4.31, y * 4.31) * 0.18;
+    const ridged = (x, y) => 1 - Math.abs(fbm(x, y) * 2 - 1);
+
+    const snowCol = new THREE.Color(0.9, 0.93, 0.97);
+    const cliffCol = col.clone().multiplyScalar(0.42);
     const _c = new THREE.Color();
+    const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _nf = new THREE.Vector3();
+    const radial = 18 + detail * 14;      // 32 / 46 / 60
+    const rings = 5 + detail * 5;         // 10 / 15 / 20
+
     for (let pi = 0; pi < peaks; pi++) {
       const pr = pi === 0 ? R : R * (0.35 + rnd() * 0.4);
       const ph = pi === 0 ? H : H * (0.4 + rnd() * 0.45);
       const px = pi === 0 ? 0 : (rnd() - 0.5) * R * 1.7;
       const pz = pi === 0 ? 0 : (rnd() - 0.5) * R * 1.7;
-      const ridgeN = 3 + Math.floor(rnd() * 4);
-      const ridgePh = rnd() * Math.PI * 2;
-      const geo = new THREE.ConeGeometry(pr, ph, 16, 6).toNonIndexed();
+      const so = pi * 7.31;               // per-peak noise domain shift
+      const geo = new THREE.ConeGeometry(pr, ph, radial, rings).toNonIndexed();
       const pos = geo.attributes.position;
-      // displace: radial ridges + per-ring jitter (skip the apex/base rims)
       for (let i = 0; i < pos.count; i++) {
         const x = pos.array[i * 3], y = pos.array[i * 3 + 1], z = pos.array[i * 3 + 2];
         const rr = Math.hypot(x, z);
         if (rr < 0.01) continue;
         const a = Math.atan2(z, x);
-        const t01 = (y + ph / 2) / ph;                       // 0 base .. 1 apex
-        const ridge = Math.sin(a * ridgeN + ridgePh) * 0.16 +
-          Math.sin(a * (ridgeN * 2.3) - ridgePh * 1.7) * 0.07;
-        const k = 1 + ridge * (1 - t01 * 0.6);
+        const t01 = (y + ph / 2) / ph;                        // 0 base .. 1 apex
+        // sample noise on the cylinder (cos/sin domain = seam-free)
+        const nx = Math.cos(a) * 1.7 + so, nz = Math.sin(a) * 1.7 - so;
+        const f = fbm(nx * 2.0 + t01 * 1.1, nz * 2.0 + t01 * 2.6);
+        const rg = ridged(nx * 3.4 + t01 * 1.6, nz * 3.4 + t01 * 4.2);
+        const k = 1 + (f - 0.5) * 0.72 * (1 - t01 * 0.45)     // bulk mass
+                    + (rg - 0.5) * 0.3 * (1 - t01 * 0.25);    // sharp crests
         pos.array[i * 3] = x * k;
         pos.array[i * 3 + 2] = z * k;
-        pos.array[i * 3 + 1] = y + Math.sin(a * 2.1 + ridgePh + t01 * 5) * ph * 0.015;
+        pos.array[i * 3 + 1] = y + (f - 0.5) * ph * 0.12 * (1 - t01 * 0.55);
       }
-      // per-face flat colors: rock shade jitter, snow above the (jittered) line
+      // per-face flat colors from SLOPE + height: steep faces = bare cliff,
+      // flat-enough high faces hold snow, the rest is striated rock
       const colors = new Float32Array(pos.count * 3);
-      for (let f = 0; f < pos.count; f += 3) {
+      for (let fi = 0; fi < pos.count; fi += 3) {
         let avgY = 0;
-        for (let v = 0; v < 3; v++) avgY += pos.array[(f + v) * 3 + 1];
+        for (let v = 0; v < 3; v++) avgY += pos.array[(fi + v) * 3 + 1];
         avgY = avgY / 3 + ph / 2;
         const frac = avgY / ph;
-        const snowy = snowline > 0 && frac > (1 - snowline) + (rnd() - 0.5) * 0.08;
-        if (snowy) _c.copy(snowCol).multiplyScalar(0.92 + rnd() * 0.1);
-        else _c.copy(col).multiplyScalar(0.62 + rnd() * 0.45);
+        _e1.set(pos.array[(fi + 1) * 3] - pos.array[fi * 3],
+                pos.array[(fi + 1) * 3 + 1] - pos.array[fi * 3 + 1],
+                pos.array[(fi + 1) * 3 + 2] - pos.array[fi * 3 + 2]);
+        _e2.set(pos.array[(fi + 2) * 3] - pos.array[fi * 3],
+                pos.array[(fi + 2) * 3 + 1] - pos.array[fi * 3 + 1],
+                pos.array[(fi + 2) * 3 + 2] - pos.array[fi * 3 + 2]);
+        _nf.crossVectors(_e1, _e2).normalize();
+        const flat = Math.abs(_nf.y);
+        const jitter = h2(fi * 0.713, pi * 3.7);
+        const snowy = snowline > 0 && flat > 0.42 &&
+          frac > (1 - snowline) + (jitter - 0.5) * 0.1;
+        if (snowy) {
+          _c.copy(snowCol).multiplyScalar(0.9 + jitter * 0.12);
+        } else if (flat < 0.34) {
+          _c.copy(cliffCol).multiplyScalar(0.85 + jitter * 0.3);   // sheer faces
+        } else {
+          // striated rock: brightness bands follow altitude
+          const band = 0.9 + 0.12 * Math.sin(avgY * 0.55 + jitter * 4);
+          _c.copy(col).multiplyScalar((0.6 + jitter * 0.4) * band);
+        }
         for (let v = 0; v < 3; v++) {
-          colors[(f + v) * 3] = _c.r;
-          colors[(f + v) * 3 + 1] = _c.g;
-          colors[(f + v) * 3 + 2] = _c.b;
+          colors[(fi + v) * 3] = _c.r;
+          colors[(fi + v) * 3 + 1] = _c.g;
+          colors[(fi + v) * 3 + 2] = _c.b;
         }
       }
       geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));

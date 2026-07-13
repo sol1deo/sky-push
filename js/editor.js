@@ -197,19 +197,15 @@ SKY.Editor = (function () {
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;   // geometry mutates while sculpting
     holder.add(mesh);
-    // base skirt preview (converted blocks keep their solid body)
-    if (tr.base && tr.base > 0.05) {
-      const t0 = (SKY.GFX && SKY.GFX.texture) ? SKY.GFX.texture((tr.texs || ['sand'])[0], 1) : null;
-      const bm = new THREE.Mesh(new THREE.BoxGeometry(sx, tr.base, sz),
-        t0 ? new THREE.MeshLambertMaterial({ map: t0 })
-           : new THREE.MeshLambertMaterial({ color: 0xb9a887 }));
-      bm.position.y = -tr.base / 2;
-      bm.receiveShadow = bm.castShadow = true;
-      bm.raycast = () => {};      // clicks land on the sculpt surface
-      holder.add(bm);
-    }
+    // side walls follow the rim LIVE while sculpting (see map.js builder)
+    const sides = SKY.Map.buildTerrainSides(tr, hts, segs, sx, sz);
+    sides.mesh.raycast = () => {};   // clicks land on the sculpt surface
+    holder.add(sides.mesh);
     holder.position.set(tr.p[0], tr.p[1], tr.p[2]);
-    if (entry) { entry.hts = hts; entry.splat8 = splat8; entry.geo = geo; entry.surf = mesh; }
+    if (entry) {
+      entry.hts = hts; entry.splat8 = splat8; entry.geo = geo;
+      entry.surf = mesh; entry.sidesUpdate = sides.update;
+    }
     return holder;
   }
 
@@ -330,6 +326,7 @@ SKY.Editor = (function () {
     if (touched && tool !== 'paint') {
       pos.needsUpdate = true;
       o.geo.computeVertexNormals();
+      if (o.sidesUpdate) o.sidesUpdate(hts);   // walls track the rim live
     }
   }
 
@@ -516,7 +513,11 @@ SKY.Editor = (function () {
         def.fog.near !== undefined ? def.fog.near : 30,
         def.fog.far !== undefined ? def.fog.far : 150);
     } else {
-      scene.fog = new THREE.Fog(new THREE.Color(M.fog[0]).getHex(), M.fog[1], M.fog[2]);
+      // sky-matched default fog — same derivation as in-game (map.js)
+      const S2 = def.skyc ? [def.skyc.top, def.skyc.mid, def.skyc.hor]
+        : SKY.MapData.SKIES[def.sky];
+      const fc = new THREE.Color(S2[2]).lerp(new THREE.Color(S2[1]), 0.3);
+      scene.fog = new THREE.Fog(fc.getHex(), M.fog[1], M.fog[2]);
     }
     // FULL environment preview — same dome / sun / moon / shafts as in-game
     env = new THREE.Group();
@@ -1010,8 +1011,10 @@ SKY.Editor = (function () {
         <div class="ed-row"><span>Fog color</span><input type="color" data-k="fogCol" value="${def.fog.color}"></div>
         ${numRow('Fog near', def.fog.near !== undefined ? def.fog.near : 30, 'fogNear', 5)}
         ${numRow('Fog far', def.fog.far !== undefined ? def.fog.far : 150, 'fogFar', 10)}
-        <div class="ed-hint">Fog starts at NEAR and is solid past FAR (the sky fades with it).
-        Keep FAR above ~400 for a light haze that leaves the sky visible.</div>` : '') + `
+        <div class="ed-hint">Distance fog: by default its color MATCHES the sky's
+        horizon automatically. Override for full control — fog starts at NEAR
+        and is solid past FAR (the sky fades with it). Keep FAR above ~400 for
+        a light haze that leaves the sky visible.</div>` : '') + `
         <div class="ed-row"><span>Custom sky</span>
           <input type="checkbox" data-k="skycOn" ${def.skyc ? 'checked' : ''}></div>` +
         (def.skyc ? `
@@ -1253,6 +1256,7 @@ SKY.Editor = (function () {
         if (fx.peaks !== undefined) h += numRow('Peaks', fx.peaks, 'fxpeaks', 1);
         if (fx.seed !== undefined) h += numRow('Seed', fx.seed, 'fxseed', 1);
         if (fx.snow !== undefined) h += numRow('Snow 0–1', fx.snow, 'fxsnow', 0.1);
+        if (fx.detail !== undefined) h += numRow('Detail 1–3', fx.detail, 'fxdetail', 1);
         // sea life: school headcount + swim pace
         if (fx.count !== undefined) h += numRow('Count', fx.count, 'fxcount', 1);
         if (fx.speed !== undefined && fx.deepAlpha === undefined) {
@@ -1474,6 +1478,7 @@ SKY.Editor = (function () {
       else if (k === 'fxpeaks') d.fx.peaks = SKY.U.clamp(Math.round(num), 1, 6);
       else if (k === 'fxseed') d.fx.seed = Math.round(num) || 1;
       else if (k === 'fxsnow') d.fx.snow = SKY.U.clamp(num, 0, 1);
+      else if (k === 'fxdetail') d.fx.detail = SKY.U.clamp(Math.round(num), 1, 3);
       else if (k === 'fxdeepa') d.fx.deepAlpha = SKY.U.clamp(num, 0.05, 0.98);
       else if (k === 'fxshallow') d.fx.shallow = e.target.value;
       else if (k === 'fxshalla') d.fx.shallowAlpha = SKY.U.clamp(num, 0.02, 0.98);
