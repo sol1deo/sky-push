@@ -176,6 +176,17 @@ SKY.HUD = (function () {
       api.refreshCustomMaps();
       api.dressSelects('#menu');   // themed dropdowns over every menu select
 
+      // add-friend from the match-end table (in-game friending)
+      const meT = $('me-table');
+      if (meT) meT.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-addfr]');
+        if (!b || !SKY.Account) return;
+        b.disabled = true;
+        SKY.Account.addFriendByUsername(b.dataset.addfr).then((r) => {
+          b.textContent = r.error ? '✕' : '✓';
+          b.title = r.error || 'request sent';
+        });
+      });
       $('play-btn').addEventListener('click', () => api.onPlay && api.onPlay());
       $('resume-btn').addEventListener('click', () => api.onResume && api.onResume());
       $('quit-btn').addEventListener('click', () => api.onQuit && api.onQuit());
@@ -345,6 +356,7 @@ SKY.HUD = (function () {
 
     /* -------- death reward cards: click OR 1/2/3 (or skip) -------- */
     showLoot(choices, onPick, onSkip) {
+      api.showRespawn(null);   // the cards own the screen — no pill underneath
       el.loot.querySelector('.loot-title').textContent = 'Choose a reward';
       el.loot.querySelector('.loot-sub').textContent = 'click · or press 1 / 2 / 3';
       el.lootCards.innerHTML = choices.map((it, i) => {
@@ -437,10 +449,13 @@ SKY.HUD = (function () {
         top(p => p.mk || 0, 'Most KOs', '') +
         top(p => +kd(p), 'Best K/D', '') +
         top(p => p.ma || 0, 'Most assists', '');
+      const canFr = (p) => p.acct && !p.isLocal && SKY.Account && SKY.Account.isLoggedIn() &&
+        !SKY.Account.friends().some(f => String(f.username) === String(p.name));
       $('me-table').innerHTML =
         `<tr><th></th><th>K</th><th>D</th><th>A</th><th>K/D</th></tr>` +
         rows.map(p => `<tr class="${p.isLocal ? 'me' : ''}${p === winner ? ' win' : ''}">
-          <td style="color:${p.color}">${p.name}${p === winner ? ' 👑' : ''}</td>
+          <td style="color:${p.color}">${SKY.U.avatarHtml(p.av, p.color, p.name)} ${p.name}${p === winner ? ' 👑' : ''}
+            ${canFr(p) ? `<button class="fr-btn" data-addfr="${p.name}">+</button>` : ''}</td>
           <td>${p.mk || 0}</td><td>${p.md || 0}</td><td>${p.ma || 0}</td><td>${kd(p)}</td>
         </tr>`).join('');
       $('me-mystats').innerHTML = me
@@ -566,9 +581,11 @@ SKY.HUD = (function () {
         }
       }
       setHTML(el.pips, pipsHtml);
-      // alive dots: one per player, dimmed when down/eliminated (leavers gone)
+      // player icons up top (profile avatars; colored-initial discs for
+      // guests/bots) — dimmed when down, ghosted when eliminated
       setHTML(el.dots, G.pawns.filter(q => !q.left).map(q =>
-        `<span class="pdot${q.eliminated ? ' out' : q.alive ? '' : ' dead'}" style="background:${q.color};color:${q.color}"></span>`).join(''));
+        SKY.U.avatarHtml(q.av, q.color, q.name,
+          q.eliminated ? 'out' : q.alive ? '' : 'dead')).join(''));
       if (G.mode === 'spark') {
         el.lives.classList.add('hidden');
         el.crownStatus.classList.add('hidden');
@@ -732,7 +749,7 @@ SKY.HUD = (function () {
           : p.netId === 'host' ? 'host'
           : (SKY.Net.pings[p.netId] !== undefined ? SKY.Net.pings[p.netId] + 'ms' : '…');
         return `<tr class="${cls}">
-          <td class="sb-name" style="color:${p.color}">${p.name}${p.isLocal ? ' <i>you</i>' : ''}</td>
+          <td class="sb-name" style="color:${p.color}">${SKY.U.avatarHtml(p.av, p.color, p.name)}${p.name}${p.isLocal ? ' <i>you</i>' : ''}</td>
           <td>${'★'.repeat(p.roundWins)}</td>
           <td>${score}</td>
           <td>${p.mk || 0}</td><td>${p.md || 0}</td><td>${p.ma || 0}</td><td>${kd}</td>

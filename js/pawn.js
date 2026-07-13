@@ -298,9 +298,13 @@ window.SKY = window.SKY || {};
         // raycast below keeps contact on ramps/crests instead.
         this.vel.y = 0;
       } else {
-        // GROUND POUND: crouch pressed mid-air, high enough -> slam
+        // GROUND POUND: crouch pressed mid-air, high enough -> slam.
+        // hookLockT (the heavy-knock jam) blocks it: pound killed the
+        // horizontal velocity, so crouch was a FREE knockback cancel —
+        // a clean yeet must stick, same rule as the grapple.
         const A = SKY.TUNING.abilities;
-        if (this.abilities.pound && !this.pounding && cmd.crouch && !this._crouchWas) {
+        if (this.abilities.pound && !this.pounding && cmd.crouch && !this._crouchWas &&
+            this.hookLockT <= 0) {
           _rayO.set(this.pos.x, this.pos.y + 0.2, this.pos.z);
           const below = SKY.World.raycast(_rayO, _down, A.poundMinAir + 0.2);
           if (!below) {
@@ -471,10 +475,13 @@ window.SKY = window.SKY || {};
       if (this.isLocal) SKY.Effects.shake(1);
     }
 
-    /* AIR DASH (death-reward ability, F key) */
+    /* AIR DASH (death-reward ability, F key). Jammed after a heavy knock —
+       dash rewrote velocity toward the look direction, which was ANOTHER
+       free knockback cancel alongside the pound. */
     tryDash() {
       const A = SKY.TUNING.abilities;
       if (!this.abilities.dash || this.dashCd > 0 || !this.alive) return false;
+      if (this.hookLockT > 0) { if (this.isLocal) SKY.SFX.jammed(); return false; }
       this.dashCd = A.dashCooldown;
       const dx = -Math.sin(this.yaw), dz = -Math.cos(this.yaw);
       const spd = Math.max(this.speedH() + A.dashBoost, A.dashSpeed);

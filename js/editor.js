@@ -1110,8 +1110,9 @@ SKY.Editor = (function () {
         after someone grabs it. RANDOM rolls a new item each time; CUSTOM MIX
         rolls the rarity by your percentages (e.g. 80 rare / 20 epic).</div>`;
     } else if (o.kind === 'terrain') {
-      const texList = ['sand', 'rock', 'grass', 'dirt', 'stone', 'snow', 'concrete',
-        'metal', 'planks', 'tiles', 'lava', 'brick', 'marble', 'camo'];
+      const texList = ['sand', 'rock', 'grass', 'dirt', 'gravel', 'cliff', 'scree',
+        'mossrock', 'stone', 'snow', 'concrete', 'metal', 'planks', 'tiles',
+        'lava', 'brick', 'marble', 'camo'];
       h += numRow('Size m', d.size || 60, 'tsize', 5)
         + numRow('Detail', d.segs || 48, 'tsegs', 8)
         + numRow('Tex tiling', d.rep || 10, 'trep', 1);
@@ -1198,6 +1199,15 @@ SKY.Editor = (function () {
         if (fx.width !== undefined) h += numRow('Width', fx.width, 'fxwidth', 0.5);
         if (fx.height !== undefined) h += numRow('Height', fx.height, 'fxheight', 1);
         if (fx.size !== undefined) h += numRow('Size', fx.size, 'fxsize', 1);
+        // hanging rope: sway on/off (off = dead straight, e.g. flag poles)
+        if (fx.sway !== undefined) {
+          h += `<div class="ed-row"><span>Sway</span>
+            <input type="checkbox" data-k="fxsway"${fx.sway ? ' checked' : ''}></div>`;
+        }
+        // backdrop mountain: summits / variation / snowline
+        if (fx.peaks !== undefined) h += numRow('Peaks', fx.peaks, 'fxpeaks', 1);
+        if (fx.seed !== undefined) h += numRow('Seed', fx.seed, 'fxseed', 1);
+        if (fx.snow !== undefined) h += numRow('Snow 0–1', fx.snow, 'fxsnow', 0.1);
         // sea life: school headcount + swim pace
         if (fx.count !== undefined) h += numRow('Count', fx.count, 'fxcount', 1);
         if (fx.speed !== undefined && fx.deepAlpha === undefined) {
@@ -1410,6 +1420,10 @@ SKY.Editor = (function () {
       else if (k === 'fxdur') d.fx.dur = Math.max(1, num);
       else if (k === 'fxchance') d.fx.chance = SKY.U.clamp(num, 0, 100);
       else if (k === 'fxcount') d.fx.count = SKY.U.clamp(Math.round(num), 1, 30);
+      else if (k === 'fxsway') d.fx.sway = e.target.checked ? 1 : 0;
+      else if (k === 'fxpeaks') d.fx.peaks = SKY.U.clamp(Math.round(num), 1, 6);
+      else if (k === 'fxseed') d.fx.seed = Math.round(num) || 1;
+      else if (k === 'fxsnow') d.fx.snow = SKY.U.clamp(num, 0, 1);
       else if (k === 'fxdeepa') d.fx.deepAlpha = SKY.U.clamp(num, 0.05, 0.98);
       else if (k === 'fxshallow') d.fx.shallow = e.target.value;
       else if (k === 'fxshalla') d.fx.shallowAlpha = SKY.U.clamp(num, 0.02, 0.98);

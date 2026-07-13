@@ -42,7 +42,8 @@ SKY.GFX = (function () {
   };
   const TEX_NAMES = ['concrete', 'metal', 'panel', 'hazard', 'grass', 'dirt', 'sand',
     'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid',
-    'crane', 'plywood', 'leather', 'balloon', 'marble', 'carpet', 'circuit', 'camo'];
+    'crane', 'plywood', 'leather', 'balloon', 'marble', 'carpet', 'circuit', 'camo',
+    'gravel', 'cliff', 'scree', 'mossrock'];
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];
@@ -98,7 +99,38 @@ SKY.GFX = (function () {
     'ground_pathRocks', 'fence_simple', 'fence_planks', 'fence_gate', 'fence_bend',
     'bridge_wood', 'bridge_stone', 'bridge_stoneRound', 'statue_column', 'statue_head',
     'statue_obelisk', 'statue_block', 'campfire_logs', 'campfire_stones', 'sign',
-    'pot_large', 'canoe', 'cactus_short', 'cactus_tall'];
+    'pot_large', 'canoe', 'cactus_short', 'cactus_tall',
+    // full cliff system + every rock/stone/river piece from the kit
+    'cliff_blockCave_rock', 'cliff_blockCave_stone', 'cliff_blockDiagonal_rock', 'cliff_blockDiagonal_stone',
+    'cliff_blockHalf_rock', 'cliff_blockHalf_stone', 'cliff_blockQuarter_rock', 'cliff_blockQuarter_stone',
+    'cliff_blockSlopeHalfWalls_rock', 'cliff_blockSlopeHalfWalls_stone', 'cliff_blockSlopeWalls_rock', 'cliff_blockSlopeWalls_stone',
+    'cliff_blockSlope_rock', 'cliff_blockSlope_stone', 'cliff_block_rock', 'cliff_block_stone',
+    'cliff_cave_rock', 'cliff_cave_stone', 'cliff_cornerInnerLarge_rock', 'cliff_cornerInnerLarge_stone',
+    'cliff_cornerInnerTop_rock', 'cliff_cornerInnerTop_stone', 'cliff_cornerInner_rock', 'cliff_cornerInner_stone',
+    'cliff_cornerLarge_rock', 'cliff_cornerLarge_stone', 'cliff_cornerTop_rock', 'cliff_cornerTop_stone',
+    'cliff_corner_rock', 'cliff_corner_stone', 'cliff_diagonal_rock', 'cliff_diagonal_stone',
+    'cliff_halfCornerInner_rock', 'cliff_halfCornerInner_stone', 'cliff_halfCorner_rock', 'cliff_halfCorner_stone',
+    'cliff_half_rock', 'cliff_half_stone', 'cliff_large_rock', 'cliff_large_stone',
+    'cliff_rock', 'cliff_stepsCornerInner_rock', 'cliff_stepsCornerInner_stone', 'cliff_stepsCorner_rock',
+    'cliff_stepsCorner_stone', 'cliff_steps_rock', 'cliff_steps_stone', 'cliff_stone',
+    'cliff_topDiagonal_rock', 'cliff_topDiagonal_stone', 'cliff_top_rock', 'cliff_top_stone',
+    'cliff_waterfallTop_rock', 'cliff_waterfallTop_stone', 'cliff_waterfall_rock', 'cliff_waterfall_stone',
+    'crops_bambooStageA', 'crops_bambooStageB', 'ground_riverBend', 'ground_riverCorner',
+    'ground_riverCross', 'ground_riverRocks', 'ground_riverStraight', 'path_stone',
+    'path_stoneCircle', 'rock_largeB', 'rock_largeD', 'rock_largeE',
+    'rock_largeF', 'rock_smallB', 'rock_smallC', 'rock_smallE',
+    'rock_smallF', 'rock_smallFlatA', 'rock_smallFlatB', 'rock_smallFlatC',
+    'rock_smallG', 'rock_smallH', 'rock_smallI', 'rock_smallTopA',
+    'rock_smallTopB', 'rock_tallB', 'rock_tallC', 'rock_tallE',
+    'rock_tallF', 'rock_tallG', 'rock_tallH', 'rock_tallI',
+    'rock_tallJ', 'stone_largeB', 'stone_largeC', 'stone_largeD',
+    'stone_largeE', 'stone_largeF', 'stone_smallA', 'stone_smallB',
+    'stone_smallC', 'stone_smallD', 'stone_smallE', 'stone_smallF',
+    'stone_smallFlatA', 'stone_smallFlatB', 'stone_smallFlatC', 'stone_smallG',
+    'stone_smallH', 'stone_smallI', 'stone_smallTopA', 'stone_smallTopB',
+    'stone_tallA', 'stone_tallC', 'stone_tallD', 'stone_tallE',
+    'stone_tallF', 'stone_tallG', 'stone_tallH', 'stone_tallI',
+    'stone_tallJ'];
   // Kenney Pirate Kit — ships (walkable decks!), palms, sea props (folder: pirate/)
   const PIRATE_NAMES = ['ship-pirate-large', 'ship-pirate-medium', 'ship-pirate-small',
     'ship-large', 'ship-medium', 'ship-small', 'ship-ghost', 'ship-wreck',
@@ -526,6 +558,8 @@ SKY.GFX = (function () {
     /* editor asset-panel folder for a pack prop */
     propFolder(name) {
       if (name.indexOf('life-') === 0) return 'sea life';
+      // the cliff/rock system is big enough to deserve its own drawer
+      if (/^nat-(cliff|rock|stone)_/.test(name)) return 'cliffs & rocks';
       for (const p of EXTRA_PACKS) {
         if (name.indexOf(p.prefix) === 0) return p.folder;
       }

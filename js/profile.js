@@ -63,6 +63,12 @@ SKY.Profile = (function () {
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {}
+    // logged-in players carry their cosmetics on the account (debounced push)
+    if (SKY.Account && SKY.Account.pushCosmetics) SKY.Account.pushCosmetics();
+  }
+  /* purchases REQUIRE an account once the account system is configured */
+  function purchasesLocked() {
+    return !!(SKY.Account && SKY.Account.enabled && !SKY.Account.isLoggedIn());
   }
 
   function charDef(id) { return CHARS.find(c => c.id === id) || null; }
@@ -147,8 +153,10 @@ SKY.Profile = (function () {
         data.ownedFinishes.includes(id);
     },
 
+    purchasesLocked,
     buyChar(id) {
       const def = charDef(id);
+      if (purchasesLocked()) return false;
       if (!def || api.ownsChar(id) || data.coins < def.price) return false;
       data.coins -= def.price;
       data.ownedChars.push(id);
@@ -158,6 +166,7 @@ SKY.Profile = (function () {
     },
     buyFinish(kind, id) {
       const def = finishDef(id);
+      if (purchasesLocked()) return false;
       if (!def || api.ownsFinish(kind, id) || data.coins < def.price) return false;
       data.coins -= def.price;
       data.ownedFinishes.push(kind + ':' + id);

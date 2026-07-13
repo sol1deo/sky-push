@@ -234,8 +234,11 @@ SKY.Net = (function () {
   }
 
   function nickname() {
+    if (SKY.Account && SKY.Account.isLoggedIn()) return SKY.Account.username();
     return (SKY.Settings.data.nickname || '').trim() || 'BEAN-' + randCode(3);
   }
+  function myAv() { return SKY.Account ? SKY.Account.avatarDesc() : null; }
+  function myAcct() { return !!(SKY.Account && SKY.Account.isLoggedIn()); }
 
   function destroyPeer() {
     sessionId++;
@@ -284,7 +287,8 @@ SKY.Net = (function () {
         openedAny = true;
         api.online = true; api.role = 'host'; api.code = code; api.isPublic = isPublic;
         api.myId = 'host';
-        api.roster = [{ id: 'host', name: nickname(), color: COLORS[0], cos: myCos() }];
+        api.roster = [{ id: 'host', name: nickname(), color: COLORS[0], cos: myCos(),
+                        av: myAv(), acct: myAcct() }];
         pings.host = 0;
         showLobby();
         status('');
@@ -379,7 +383,8 @@ SKY.Net = (function () {
         conn.__id = id; conn.__name = m.name;
         conn.__seen = performance.now();
         conns.set(id, conn);
-        api.roster.push({ id, name: m.name, color: COLORS[api.roster.length % COLORS.length], cos: m.cos || null });
+        api.roster.push({ id, name: m.name, color: COLORS[api.roster.length % COLORS.length],
+          cos: m.cos || null, av: m.av || null, acct: !!m.acct });
         conn.send({ t: 'welcome', you: id, roster: api.roster, settings: api.settings,
                     mapDef: SKY.MapData.get(api.settings.map) || null });
         broadcast({ t: 'roster', roster: api.roster }, id);
@@ -501,7 +506,7 @@ SKY.Net = (function () {
         conn.on('open', () => {
           if (sess !== sessionId) return;
           status('Connected — entering lobby…');
-          conn.send({ t: 'hello', name: nickname(), cos: myCos() });
+          conn.send({ t: 'hello', name: nickname(), cos: myCos(), av: myAv(), acct: myAcct() });
         });
         conn.on('data', (m) => {
           if (sess !== sessionId) return;
@@ -654,7 +659,8 @@ SKY.Net = (function () {
     destroyPeer();
     api.online = true; api.role = 'host'; api.code = 'direct'; api.isPublic = false;
     api.myId = 'host';
-    api.roster = [{ id: 'host', name: nickname(), color: COLORS[0], cos: myCos() }];
+    api.roster = [{ id: 'host', name: nickname(), color: COLORS[0], cos: myCos(),
+                    av: myAv(), acct: myAcct() }];
     pings.host = 0;
     showLobby();
     status('');
@@ -699,7 +705,7 @@ SKY.Net = (function () {
       conn.on('open', () => {
         if (sess !== sessionId) return;
         status('Connected — entering lobby…');
-        conn.send({ t: 'hello', name: nickname(), cos: myCos() });
+        conn.send({ t: 'hello', name: nickname(), cos: myCos(), av: myAv(), acct: myAcct() });
       });
       conn.on('data', (m) => {
         if (sess !== sessionId) return;
@@ -1165,9 +1171,14 @@ SKY.Net = (function () {
     }
     $('lobby-code').textContent = api.code.replace('priv-', '').replace('pub-', 'PUBLIC ');
     $('lobby-type').textContent = api.isPublic || api.code.startsWith('pub') ? 'public lobby' : 'private — share the code';
+    const canBefriend = (r) => r.acct && r.id !== api.myId &&
+      SKY.Account && SKY.Account.isLoggedIn() &&
+      SKY.Account.username() !== r.name &&
+      !SKY.Account.friends().some(f => String(f.username) === String(r.name));
     $('lobby-players').innerHTML = api.roster.filter(r => !r.bot).map(r =>
       `<div class="lob-player" style="border-color:${r.color}">
-        <span style="color:${r.color}">●</span> ${r.name}${r.id === 'host' ? ' (host)' : ''}${r.id === api.myId ? ' (you)' : ''}
+        ${SKY.U.avatarHtml(r.av, r.color, r.name)} ${r.name}${r.id === 'host' ? ' (host)' : ''}${r.id === api.myId ? ' (you)' : ''}
+        ${canBefriend(r) ? `<button class="fr-btn" data-addfr="${r.name}">+ FRIEND</button>` : ''}
       </div>`).join('');
     const isHost = api.role === 'host';
     const S = api.settings;
@@ -1235,13 +1246,14 @@ SKY.Net = (function () {
   }
 
   function selectTab(id) {
-    for (const t of ['tab-offline', 'tab-locker', 'tab-matches']) {
+    for (const t of ['tab-offline', 'tab-locker', 'tab-matches', 'tab-profile']) {
       $(t).classList.toggle('sel', t === id);
     }
     $('panel-offline').classList.toggle('hidden', id !== 'tab-offline');
     $('panel-locker').classList.toggle('hidden', id !== 'tab-locker');
     $('panel-matches').classList.toggle('hidden', id !== 'tab-matches');
-    // the card wrapper only exists for locker/matches — hide it on PLAY
+    $('panel-profile').classList.toggle('hidden', id !== 'tab-profile');
+    // the card wrapper only exists for locker/matches/profile — hide it on PLAY
     $('menu-panel').classList.toggle('hidden', id === 'tab-offline');
   }
 
@@ -1283,6 +1295,20 @@ SKY.Net = (function () {
       selectTab('tab-matches');
       SKY.Demos.renderPanel();
     };
+    $('tab-profile').onclick = () => {
+      if (api.online) return;
+      selectTab('tab-profile');
+      if (SKY.AccountUI) SKY.AccountUI.renderPanel();
+    };
+    // add-friend buttons inside the live lobby list (rows re-render often)
+    $('lobby-players').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-addfr]');
+      if (!b || !SKY.Account) return;
+      b.disabled = true;
+      SKY.Account.addFriendByUsername(b.dataset.addfr).then((r) => {
+        b.textContent = r.error ? '✕ ' + r.error : '✓ SENT';
+      });
+    });
     $('srv-refresh').onclick = () => { if (!api._browsing) refreshServers(); };
     $('mp-nick').onclick = () => promptNickname();
     $('mp-quick').onclick = () => ensureNickname(() => quickJoin(1));
@@ -1347,7 +1373,17 @@ SKY.Net = (function () {
       if (api.online) return;
       ensureNickname(() => quickJoin(1));
     },
-    renameNick() { promptNickname(); },
+    renameNick() {
+      // accounts own naming: guests get auto names, members use their username
+      if (SKY.Account && SKY.Account.enabled) {
+        if (SKY.Account.isLoggedIn()) { $('tab-profile').click(); return; }
+        if (SKY.AccountUI) { SKY.AccountUI.openModal('up'); return; }
+      }
+      promptNickname();
+    },
+    /* friends: the joinable code of the current lobby ('direct' can't be) */
+    codePublic() { return api.code && api.code !== 'direct' ? api.code : null; },
+    joinCode(code) { ensureNickname(() => join(code)); },
     /* test hooks */
     _host: host, _join: join, _start: hostStart,
 

@@ -266,6 +266,7 @@ SKY.Locker = (function () {
         const id = cCard.dataset.char;
         if (id === '__random') { P.equipChar(null); }
         else if (P.ownsChar(id)) { P.equipChar(id); }
+        else if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
         else if (P.buyChar(id)) { P.equipChar(id); SKY.SFX.init(); SKY.SFX.pick(); }
         else { flashPoor(cCard); return; }
         renderPanel(); rebuildPreview();
@@ -274,11 +275,18 @@ SKY.Locker = (function () {
       if (fCard) {
         const id = fCard.dataset.fin;
         if (P.ownsFinish(selWeapon, id)) { P.equipFinish(selWeapon, id); }
+        else if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
         else if (P.buyFinish(selWeapon, id)) { P.equipFinish(selWeapon, id); SKY.SFX.init(); SKY.SFX.pick(); }
         else { flashPoor(fCard); return; }
         renderPanel();
       }
     };
+  }
+
+  /* purchases need an account (only once the account system is configured) */
+  function needAccount() {
+    SKY.SFX.init(); SKY.SFX.dry();
+    if (SKY.AccountUI) SKY.AccountUI.openModal('up');
   }
 
   function flashPoor(el) {

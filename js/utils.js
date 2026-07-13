@@ -26,6 +26,16 @@ SKY.U = {
     return out;
   },
 
+  /* player icon chip (replaces the old colored ● markers everywhere).
+     av: 'e:🙂' emoji preset | image URL | null → colored initial disc */
+  avatarHtml(av, color, name, cls) {
+    const c = 'pav' + (cls ? ' ' + cls : '');
+    if (av && av.indexOf('e:') === 0) return `<span class="${c}">${av.slice(2)}</span>`;
+    if (av && /^https?:/.test(av)) return `<span class="${c}"><img src="${av}" alt=""></span>`;
+    const ch = String(name || '?').replace(/[^A-Za-z0-9]/g, '').charAt(0).toUpperCase() || '?';
+    return `<span class="${c} pav-d" style="background:${color || '#8a94a8'}">${ch}</span>`;
+  },
+
   /* --- procedural checkerboard texture (grids make speed readable!) ---
      Cached by palette+repeat: maps reuse the same few palettes dozens of
      times — sharing one texture per palette saves GPU memory and binds. */
@@ -319,6 +329,38 @@ SKY.U = {
           g.ellipse(x, y, r, r * 0.65, Math.random() * Math.PI, 0, Math.PI * 2);
           g.fill();
         }
+      },
+      /* --- mountain set (real tileables in assets/tex; these are the
+             file:// fallbacks + editor swatch sources) --- */
+      gravel(g, s) {
+        g.fillStyle = '#8c8578'; g.fillRect(0, 0, s, s);
+        speck(g, s, 320, ['rgba(60,56,50,0.5)', 'rgba(180,172,158,0.5)', 'rgba(110,102,92,0.6)'], 1.5, 4);
+      },
+      cliff(g, s) {
+        g.fillStyle = '#7d8288'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(40,44,50,0.4)'; g.lineWidth = 2;
+        for (let i = 0; i < 14; i++) {
+          const x = Math.random() * s;
+          g.beginPath(); g.moveTo(x, 0);
+          g.lineTo(x + (Math.random() * 2 - 1) * 20, s);
+          g.stroke();
+        }
+        speck(g, s, 60, ['rgba(255,255,255,0.06)', 'rgba(0,0,0,0.1)'], 3, 9);
+      },
+      scree(g, s) {
+        g.fillStyle = '#9a9284'; g.fillRect(0, 0, s, s);
+        for (let i = 0; i < 90; i++) {
+          g.fillStyle = ['#847c6e', '#aca496', '#6e675c'][i % 3];
+          const x = Math.random() * s, y = Math.random() * s, r = 4 + Math.random() * 9;
+          g.beginPath();
+          g.moveTo(x, y - r); g.lineTo(x + r, y + r * 0.6); g.lineTo(x - r, y + r * 0.7);
+          g.closePath(); g.fill();
+        }
+      },
+      mossrock(g, s) {
+        g.fillStyle = '#767c80'; g.fillRect(0, 0, s, s);
+        speck(g, s, 40, ['rgba(0,0,0,0.1)', 'rgba(255,255,255,0.06)'], 4, 12);
+        speck(g, s, 60, ['rgba(84,140,72,0.55)', 'rgba(110,168,90,0.45)'], 3, 10);
       },
     };
   })(),

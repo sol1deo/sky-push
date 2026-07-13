@@ -95,6 +95,8 @@
   SKY.Editor.init(scene, camera);
   SKY.Net.init();
   SKY.Locker.init();
+  SKY.AccountUI.init();
+  SKY.Account.init();   // async; no-op until the Supabase keys are pasted in
 
   /* ---------------------------------------------------------------------
    * Boot loading screen: new players used to land on a menu whose models,

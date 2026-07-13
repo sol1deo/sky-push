@@ -122,6 +122,7 @@ SKY.Assets = (function () {
     { id: 'fx:triangle',   name: 'EVENT · bermuda triangle', folder: 'water' },
     { id: 'fx:kraken',     name: 'EVENT · kraken attack', folder: 'water' },
     { id: 'fx:shark',      name: 'EVENT · shark patrol', folder: 'water' },
+    { id: 'fx:mountain',   name: 'mountain (backdrop)', folder: 'cliffs & rocks' },
     { id: 'fx:school',     name: 'fish school (swims)', folder: 'sea life' },
     { id: 'fx:sharkpatrol', name: 'shark — ambient swimmer', folder: 'sea life' },
     { id: 'fx:monster',    name: 'sea monster (animated)', folder: 'sea life' },
@@ -172,12 +173,16 @@ SKY.Assets = (function () {
     // shark: power = bite knock, size = patrol circle radius
     shark:      { color: '#d8e4ee', power: 16, size: 11,
                   start: 20, every: 35, dur: 12, chance: 100 },
+    // BACKDROP MOUNTAIN — seeded low-poly massif for valley skylines.
+    //   size = base radius · height = peak height · peaks = extra summits ·
+    //   seed = variation roll · snow = snowline (0 none … 1 fully capped)
+    mountain:   { color: '#8a8f9c', size: 60, height: 55, peaks: 3, seed: 1, snow: 0.5 },
     // SEA LIFE — real Quaternius creatures (swim clips play on their own).
     // school: size = circle radius, count = fish, speed = swim pace
     school:     { color: '#8fd8ff', size: 8, count: 10, speed: 1 },
     sharkpatrol: { color: '#9fb6c8', size: 10, speed: 1 },
     monster:    { color: '#b98fe0', speed: 1 },
-    rope:       { color: '#d8c49a', range: 8 },   // range = rope length (m)
+    rope:       { color: '#d8c49a', range: 8, sway: 1 },   // range = length (m); sway 0 = dead straight
     plane:      { color: '#d0483e' },
     planewreck: { color: '#8a92a0' },
     heli:       { color: '#d0483e' },
@@ -455,10 +460,11 @@ SKY.Assets = (function () {
       // Hangs DOWN from where you place it — put it on a crane arm / mast.
       const len = Math.max(1, o.range);
       const swayG = new THREE.Group();
+      const sag = (o.sway === undefined || o.sway) ? len * 0.035 : 0;   // straight when sway is off
       const pts = [];
       for (let i = 0; i <= 8; i++) {
         const t = i / 8;
-        pts.push(new THREE.Vector3(Math.sin(t * Math.PI) * len * 0.035, -t * len, 0));
+        pts.push(new THREE.Vector3(Math.sin(t * Math.PI) * sag, -t * len, 0));
       }
       const rope = new THREE.Mesh(
         new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.04, 6),
@@ -470,12 +476,15 @@ SKY.Assets = (function () {
       const mount = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.16, 8), lam(0x2c3140));
       swayG.add(rope, knot);
       g.add(swayG, mount);
-      const phase = Math.random() * Math.PI * 2;
-      rope.onBeforeRender = () => {
-        const t = performance.now() * 0.0007 + phase;
-        swayG.rotation.z = Math.sin(t) * 0.055;
-        swayG.rotation.x = Math.cos(t * 0.8) * 0.045;
-      };
+      // sway 0 = a dead-straight static rope (creator toggle in the inspector)
+      if (o.sway === undefined || o.sway) {
+        const phase = Math.random() * Math.PI * 2;
+        rope.onBeforeRender = () => {
+          const t = performance.now() * 0.0007 + phase;
+          swayG.rotation.z = Math.sin(t) * 0.055;
+          swayG.rotation.x = Math.cos(t * 0.8) * 0.045;
+        };
+      }
     } else if (name === 'tsunami') {
       // editor-only marker: the wave wall footprint + a travel-direction arrow
       const mk = marker(new THREE.BoxGeometry(o.size || 60, o.height || 7, 1.6), col);
@@ -512,8 +521,78 @@ SKY.Assets = (function () {
       buildAviation(name, g, col.clone().convertSRGBToLinear(), o);
     } else if (name === 'school' || name === 'sharkpatrol' || name === 'monster') {
       buildSeaLife(name, g, col.clone().convertSRGBToLinear(), o, marker);
+    } else if (name === 'mountain') {
+      buildMountain(g, col.clone().convertSRGBToLinear(), o);
     }
     return g;
+  }
+
+  /* seeded low-poly backdrop mountain: displaced faceted cones with per-face
+     shade jitter + a snow cap. Deterministic from `seed`, so every client
+     builds the identical massif and the editor thumbnails stay stable. */
+  function buildMountain(g, col, o) {
+    const R = Math.max(10, o.size || 60);
+    const H = Math.max(8, o.height || 55);
+    const peaks = SKY.U.clamp(Math.round(o.peaks !== undefined ? o.peaks : 3), 1, 6);
+    const snowline = SKY.U.clamp(o.snow !== undefined ? o.snow : 0.5, 0, 1);
+    // mulberry32 — tiny deterministic PRNG
+    let st = ((o.seed !== undefined ? o.seed : 1) * 7919) | 0 || 1;
+    const rnd = () => {
+      st |= 0; st = (st + 0x6D2B79F5) | 0;
+      let t = Math.imul(st ^ (st >>> 15), 1 | st);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const snowCol = new THREE.Color(0.88, 0.91, 0.95);
+    const _c = new THREE.Color();
+    for (let pi = 0; pi < peaks; pi++) {
+      const pr = pi === 0 ? R : R * (0.35 + rnd() * 0.4);
+      const ph = pi === 0 ? H : H * (0.4 + rnd() * 0.45);
+      const px = pi === 0 ? 0 : (rnd() - 0.5) * R * 1.7;
+      const pz = pi === 0 ? 0 : (rnd() - 0.5) * R * 1.7;
+      const ridgeN = 3 + Math.floor(rnd() * 4);
+      const ridgePh = rnd() * Math.PI * 2;
+      const geo = new THREE.ConeGeometry(pr, ph, 16, 6).toNonIndexed();
+      const pos = geo.attributes.position;
+      // displace: radial ridges + per-ring jitter (skip the apex/base rims)
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.array[i * 3], y = pos.array[i * 3 + 1], z = pos.array[i * 3 + 2];
+        const rr = Math.hypot(x, z);
+        if (rr < 0.01) continue;
+        const a = Math.atan2(z, x);
+        const t01 = (y + ph / 2) / ph;                       // 0 base .. 1 apex
+        const ridge = Math.sin(a * ridgeN + ridgePh) * 0.16 +
+          Math.sin(a * (ridgeN * 2.3) - ridgePh * 1.7) * 0.07;
+        const k = 1 + ridge * (1 - t01 * 0.6);
+        pos.array[i * 3] = x * k;
+        pos.array[i * 3 + 2] = z * k;
+        pos.array[i * 3 + 1] = y + Math.sin(a * 2.1 + ridgePh + t01 * 5) * ph * 0.015;
+      }
+      // per-face flat colors: rock shade jitter, snow above the (jittered) line
+      const colors = new Float32Array(pos.count * 3);
+      for (let f = 0; f < pos.count; f += 3) {
+        let avgY = 0;
+        for (let v = 0; v < 3; v++) avgY += pos.array[(f + v) * 3 + 1];
+        avgY = avgY / 3 + ph / 2;
+        const frac = avgY / ph;
+        const snowy = snowline > 0 && frac > (1 - snowline) + (rnd() - 0.5) * 0.08;
+        if (snowy) _c.copy(snowCol).multiplyScalar(0.92 + rnd() * 0.1);
+        else _c.copy(col).multiplyScalar(0.62 + rnd() * 0.45);
+        for (let v = 0; v < 3; v++) {
+          colors[(f + v) * 3] = _c.r;
+          colors[(f + v) * 3 + 1] = _c.g;
+          colors[(f + v) * 3 + 2] = _c.b;
+        }
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
+        vertexColors: true, flatShading: true }));
+      m.position.set(px, ph / 2, pz);
+      m.rotation.y = rnd() * Math.PI * 2;
+      m.castShadow = m.receiveShadow = true;
+      g.add(m);
+    }
   }
 
   /* ambient sea life — REAL Quaternius creatures (CC0) swimming on their own:

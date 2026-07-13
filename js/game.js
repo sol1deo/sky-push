@@ -146,6 +146,8 @@ SKY.Game = (function () {
 
       const myName = (SKY.Settings.data.nickname || '').trim() || 'YOU';
       api.player = new SKY.Pawn({ name: myName, color: '#ffd34d', isLocal: true });
+      api.player.av = SKY.Account ? SKY.Account.avatarDesc() : null;
+      api.player.acct = !!(SKY.Account && SKY.Account.isLoggedIn());
       // offline pawns carry the LOCKER picks the same way net pawns do —
       // without this, replays/ragdolls of you showed the default look
       api.player.cos = SKY.Profile ? SKY.Profile.equipped() : null;
@@ -175,6 +177,8 @@ SKY.Game = (function () {
         const isLocal = r.id === cfg.myId;
         const p = new SKY.Pawn({ name: r.name, color: r.color, isLocal });
         p.netId = r.id;
+        p.av = r.av || null;      // profile icon (accounts) — HUD markers
+        p.acct = !!r.acct;        // real account = befriendable by username
         p.cos = r.cos || null;   // synced cosmetics: {char, fin:{kind:finishId}}
         p.isBot = !!r.bot;
         p.isRemote = !isLocal && !(amHost && r.bot);   // host simulates bots
@@ -553,8 +557,10 @@ SKY.Game = (function () {
                             ((p.isLocal && api.lootChoices) ||
                              (SKY.Net.online && p.isRemote && SKY.Net.hostWaitingLoot(p)));
             if (p.isLocal) {
+              // while the cards are open THEY are the message — the old
+              // "pick a reward" pill sat right under the skip button
               SKY.HUD.showRespawn(waiting
-                ? 'Pick a reward to respawn'
+                ? null
                 : 'Respawning in ' + Math.max(0, p.deadT).toFixed(1));
             }
             if (p.deadT <= 0 && !waiting) this.respawn(p);
