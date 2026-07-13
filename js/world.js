@@ -280,8 +280,9 @@ SKY.World = (function () {
     /* -----------------------------------------------------------------
      * Raycast against all solids (slab test in each box's local frame).
      * Returns { t, point, normal, solid } or null.
+     * skipTerrain: solids only (grapple rope-snap ignores heightfields).
      * ----------------------------------------------------------------- */
-    raycast(origin, dir, maxDist) {
+    raycast(origin, dir, maxDist, skipTerrain) {
       let best = null;
       for (const s of api.solids) {
         _d.copy(origin).sub(s.c);
@@ -314,7 +315,7 @@ SKY.World = (function () {
         };
       }
       // heightfields: coarse march, then a short bisection to sharpen the hit
-      if (api.terrains.length) {
+      if (api.terrains.length && !skipTerrain) {
         const limit = best ? best.t : maxDist;
         const step = 0.45;
         let prevT = 0;

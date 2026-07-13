@@ -73,10 +73,15 @@ SKY.Editor = (function () {
       tex.repeat.set(b.rep || 1, b.rep || 1);
       return new THREE.MeshLambertMaterial({ map: tex });
     }
+    // painted '#hex' = sRGB-decoded like a texture texel, so pipetted colors
+    // render identically to the surface they came from (game side matches)
+    const flatPaint = (hex) => {
+      const m = new THREE.MeshLambertMaterial();
+      m.color.set(hex).convertSRGBToLinear();
+      return m;
+    };
     const single = () => {
-      if (b.ptex && b.ptex[0] === '#') {                 // painted flat color
-        return new THREE.MeshLambertMaterial({ color: b.ptex });
-      }
+      if (b.ptex && b.ptex[0] === '#') return flatPaint(b.ptex);
       if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
         return new THREE.MeshLambertMaterial({ map: edBlockTex(b, b.ptex) });
       }
@@ -93,7 +98,7 @@ SKY.Editor = (function () {
       for (let f = 0; f < 6; f++) {
         const pf = b.ptexF[f];
         mats.push(pf && pf[0] === '#'
-          ? new THREE.MeshLambertMaterial({ color: pf })
+          ? flatPaint(pf)
           : pf && SKY.U.PROC_TEX[pf]
           ? new THREE.MeshLambertMaterial({ map: edBlockTex(b, pf) })
           : single());
@@ -103,7 +108,65 @@ SKY.Editor = (function () {
     return single();
   }
 
-  /* eyedropper: read the actual rendered pixel under the cursor (fresh
+  /* pipette: prefer the surface's TRUE albedo (texture texel / vertex color /
+     material color). The framebuffer pixel has lighting + tonemapping baked
+     in, so painting it back never matched the source surface. */
+  function albedoAt(hit) {
+    let m = hit.object.material;
+    if (Array.isArray(m)) m = m[hit.face ? hit.face.materialIndex : 0];
+    if (!m) return null;
+    if (m.userData && m.userData.splatBlend) return null;   // terrain: blended
+    const c = new THREE.Color(1, 1, 1);
+    let has = false;
+    if (m.map && m.map.image && m.map.image.width && hit.uv) {
+      try {
+        const img = m.map.image;
+        let u = hit.uv.x * m.map.repeat.x + m.map.offset.x;
+        let v = hit.uv.y * m.map.repeat.y + m.map.offset.y;
+        u -= Math.floor(u); v -= Math.floor(v);
+        if (m.map.flipY) v = 1 - v;   // canvas textures upload flipped
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 1;
+        const g2 = cv.getContext('2d');
+        g2.drawImage(img,
+          Math.min(img.width - 1, Math.floor(u * img.width)),
+          Math.min(img.height - 1, Math.floor(v * img.height)), 1, 1, 0, 0, 1, 1);
+        const d = g2.getImageData(0, 0, 1, 1).data;
+        if (d[3] === 0) return null;              // transparent texel
+        c.setRGB(d[0] / 255, d[1] / 255, d[2] / 255).convertSRGBToLinear();
+        has = true;
+      } catch (err) { return null; }              // exotic image — framebuffer
+    } else if (hit.face && hit.object.geometry.attributes.color) {
+      const ca = hit.object.geometry.attributes.color;
+      c.setRGB(ca.getX(hit.face.a), ca.getY(hit.face.a), ca.getZ(hit.face.a));
+      has = true;
+    }
+    if (m.color) { c.multiply(m.color); has = true; }
+    if (!has) return null;
+    return '#' + c.convertLinearToSRGB().getHexString();
+  }
+
+  function sampleSceneColor(cx, cy) {
+    _m.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
+    ray.setFromCamera(_m, camera);
+    const hits = ray.intersectObjects(scene.children, true);
+    for (const h of hits) {
+      const o = h.object;
+      if (!o.isMesh) continue;                    // sprites (sun glow) etc.
+      let skip = false;
+      for (let p = o; p; p = p.parent) {
+        if (p === gizmo || p === brushRing || p.visible === false ||
+            p.name === 'edmarker' || p.name === 'edcoll') { skip = true; break; }
+      }
+      if (skip) continue;
+      const hex = albedoAt(h);
+      if (hex) return hex;
+      break;                                      // terrain splat → framebuffer
+    }
+    return samplePixel(cx, cy);
+  }
+
+  /* fallback: read the actual rendered pixel under the cursor (fresh
      render — the drawing buffer isn't preserved between frames) */
   function samplePixel(cx, cy) {
     const r = SKY.DBG && SKY.DBG.renderer;
@@ -570,7 +633,7 @@ SKY.Editor = (function () {
     if (def.fog) {
       const fogHex = new THREE.Color(def.fog.color).getHex();
       if (def.fog.exp > 0) {
-        scene.fog = new THREE.FogExp2(fogHex, def.fog.exp * 0.0004);
+        scene.fog = new THREE.FogExp2(fogHex, def.fog.exp * 0.0025);
       } else {
         scene.fog = new THREE.Fog(fogHex,
           def.fog.near !== undefined ? def.fog.near : 30,
@@ -1079,9 +1142,9 @@ SKY.Editor = (function () {
         ${numRow('Fog far', def.fog.far !== undefined ? def.fog.far : 150, 'fogFar', 10)}`}
         <div class="ed-hint">Distance fog: by default its color MATCHES the sky's
         horizon automatically. Override for full control. DENSITY &gt; 0 =
-        exponential atmosphere fog — one dial, thicker with distance (NEAR/FAR
-        are ignored). At 0 the fog is linear: starts at NEAR, solid past FAR
-        (keep FAR above ~400 for a light haze).</div>` : '') + `
+        exponential atmosphere fog (NEAR/FAR are ignored): 1-3 subtle haze,
+        5-15 moody, 30+ pea soup. At 0 the fog is linear: starts at NEAR,
+        solid past FAR (keep FAR above ~400 for a light haze).</div>` : '') + `
         <div class="ed-row"><span>Custom sky</span>
           <input type="checkbox" data-k="skycOn" ${def.skyc ? 'checked' : ''}></div>` +
         (def.skyc ? `
@@ -2333,7 +2396,7 @@ SKY.Editor = (function () {
         downX = e.clientX; downY = e.clientY;
         // pipette: this click SAMPLES a color instead of selecting/painting
         if (pipette && !(e.target.closest && e.target.closest('#editor-ov'))) {
-          const hex = samplePixel(e.clientX, e.clientY);
+          const hex = sampleSceneColor(e.clientX, e.clientY);
           const pip = pipette;
           exitPipette();
           pipSkip = true;

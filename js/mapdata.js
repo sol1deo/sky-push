@@ -128,7 +128,7 @@ SKY.MapData = (function () {
     if (typeof def.light !== 'number') def.light = 1;
     if (def.skyc && typeof def.skyc !== 'object') def.skyc = null;
     if (def.fog && typeof def.fog !== 'object') def.fog = null;
-    if (def.fog && typeof def.fog.exp !== 'number') def.fog.exp = 0;
+    if (def.fog && !(typeof def.fog.exp === 'number' && def.fog.exp > 0)) def.fog.exp = 0;
     if (def.fog && def.fog.near === undefined) {
       // legacy density dial -> explicit near/far range
       const d = typeof def.fog.density === 'number' ? def.fog.density : 0.3;

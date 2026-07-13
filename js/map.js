@@ -90,6 +90,18 @@ SKY.Map = (function () {
     if (!_matCache[key]) _matCache[key] = new THREE.MeshLambertMaterial({ color });
     return _matCache[key];
   }
+  /* painted '#hex' colors: decode sRGB → linear like a texture texel would be,
+     so a pipetted color renders EXACTLY like the surface it was picked from
+     (raw assignment reads the hex as linear = noticeably brighter/washed) */
+  function flatPaint(color) {
+    const key = 'fp' + color;
+    if (!_matCache[key]) {
+      const m = new THREE.MeshLambertMaterial();
+      m.color.set(color).convertSRGBToLinear();
+      _matCache[key] = m;
+    }
+    return _matCache[key];
+  }
 
   function plat(x, y, z, sx, sy, sz, opts) {
     opts = opts || {};
@@ -1247,7 +1259,7 @@ SKY.Map = (function () {
     const rep = b.rep || Math.max(2, Math.round(Math.max(b.s[0], b.s[2]) / 3));
     if (b.tex) return new THREE.MeshLambertMaterial({ map: texFromDataURL(b.tex, b.rep ? rep : 1) });
     const single = () => {
-      if (b.ptex && b.ptex[0] === '#') return flat(b.ptex);   // painted flat color
+      if (b.ptex && b.ptex[0] === '#') return flatPaint(b.ptex);   // painted flat color
       if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
         return new THREE.MeshLambertMaterial({ map: blockTex(b, b.ptex) });
       }
@@ -1260,7 +1272,7 @@ SKY.Map = (function () {
       const mats = [];
       for (let f = 0; f < 6; f++) {
         const pf = b.ptexF[f];
-        mats.push(pf && pf[0] === '#' ? flat(pf)
+        mats.push(pf && pf[0] === '#' ? flatPaint(pf)
           : pf && SKY.U.PROC_TEX[pf]
           ? new THREE.MeshLambertMaterial({ map: blockTex(b, pf) })
           : single());
@@ -1925,6 +1937,7 @@ SKY.Map = (function () {
     if (!t0) return new THREE.MeshLambertMaterial({ color: 0xd8c49a });  // file:// look
     const t1 = t(texs[1]) || t0, t2 = t(texs[2]) || t0, t3 = t(texs[3]) || t0;
     const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: t0 });
+    mat.userData.splatBlend = true;   // pipette: .map alone isn't the surface
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uT1 = { value: t1 };
       sh.uniforms.uT2 = { value: t2 };
@@ -2016,7 +2029,8 @@ SKY.Map = (function () {
     const wsrc = texs[1] || texs[0];
     let mat;
     if (wsrc && wsrc[0] === '#') {
-      mat = new THREE.MeshLambertMaterial({ color: wsrc, side: THREE.DoubleSide });
+      mat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
+      mat.color.set(wsrc).convertSRGBToLinear();
     } else {
       const wt = (SKY.GFX && SKY.GFX.texture)
         ? (SKY.GFX.texture(wsrc, 1) || SKY.GFX.texture(texs[0], 1)) : null;
@@ -2097,7 +2111,7 @@ SKY.Map = (function () {
       // (one dial, ignores near/far); otherwise the linear near/far range
       const fogHex = new THREE.Color(def.fog.color).getHex();
       if (def.fog.exp > 0) {
-        scene.fog = new THREE.FogExp2(fogHex, def.fog.exp * 0.0004);
+        scene.fog = new THREE.FogExp2(fogHex, def.fog.exp * 0.0025);
       } else {
         scene.fog = new THREE.Fog(fogHex,
           def.fog.near !== undefined ? def.fog.near : 30,

@@ -22,7 +22,6 @@ SKY.Grapple = (function () {
   const _b = new THREE.Vector3();
   const _ptRay = new THREE.Vector3();
   const _ptSeg = new THREE.Vector3();
-  const _losPt = new THREE.Vector3();
   const _ray = new THREE.Ray();
   const _start = new THREE.Vector3();
   const _ctrl = new THREE.Vector3();
@@ -136,6 +135,7 @@ SKY.Grapple = (function () {
       point: hit.point.clone(),
       solid: hit.solid,   // null for terrain hits — terrain never moves
       local: hit.solid ? hit.point.clone().sub(hit.solid.c) : null,
+      n: hit.normal ? hit.normal.clone() : null,   // surface normal at attach
       len: Math.max(hit.point.distanceTo(_eye), 1.2),
       t: 0,
     };
@@ -212,25 +212,6 @@ SKY.Grapple = (function () {
     }
     _to.multiplyScalar(1 / dist);
 
-    // rope SNAPS when geometry gets between you and the hook point — hooking
-    // a floor from underneath no longer drags you up through the slab.
-    // Debounced + grace period: mesh-collided props (cliff assets) have
-    // BUMPY voxel collision that grazed this check and killed ~27% of
-    // legit hooks the instant they attached ("the hook doesn't register").
-    if (dist > 1.5 && g.t > 0.25) {
-      _losPt.copy(g.point).addScaledVector(_to, -0.7);
-      if (!SKY.World.los(_mid, _losPt)) {
-        g._losFails = (g._losFails || 0) + 1;
-        if (g._losFails >= 3) {          // ~3 ticks of REAL occlusion
-          release(pawn);
-          if (pawn.isLocal) SKY.SFX.grapMiss();
-          return;
-        }
-      } else {
-        g._losFails = 0;
-      }
-    }
-
     // momentum reel: a near-vertical rope barely winches — climb by SWINGING
     // (tangential speed restores the full rate); dead-hanging goes nowhere
     let rm = Math.max(G.hangReelMin,
@@ -243,10 +224,21 @@ SKY.Grapple = (function () {
     g.len = Math.max(G.breakDist + 0.3, g.len - reel * rm * dt);
 
     // pendulum constraint: outside the rope length, pull back in and kill
-    // outward velocity (this is what makes it swing instead of drag)
+    // outward velocity (this is what makes it swing instead of drag).
+    // The position correction is CAPPED at the first solid in the way — the
+    // old teleport-style step (up to ~1m/tick) was what yanked players
+    // THROUGH floors hooked from underneath. The LOS rope-snap that used to
+    // guard that exploit is gone: it kept false-firing on bumpy voxel cliff
+    // hulls and terrain-buried blocks ("hook attaches then insta-detaches"),
+    // while this cap kills the exploit at the source — you just dangle.
     if (dist > g.len) {
       const excess = dist - g.len;
-      pawn.pos.addScaledVector(_to, Math.min(excess, 1.2) * 0.85);
+      let step = Math.min(excess, 1.2) * 0.85;
+      if (step > 0.05) {
+        const wall = SKY.World.raycast(_mid, _to, step + 0.3);
+        if (wall) step = Math.max(0, wall.t - 0.3);
+      }
+      pawn.pos.addScaledVector(_to, step);
       const vr = pawn.vel.dot(_to);
       if (vr < 0) pawn.vel.addScaledVector(_to, -vr);
       pawn.grounded = false;
