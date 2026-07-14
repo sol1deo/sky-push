@@ -230,9 +230,56 @@
   .lk-card.lk-poor { animation:lkpoor .3s; border-color:var(--danger); }
   @keyframes lkpoor { 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
   /* MYTHIC skins get the living border + badge */
-  .lk-card.lk-mythic { border-color:#a05cff; box-shadow:0 0 14px rgba(160,92,255,.22) inset, 0 0 10px rgba(160,92,255,.18);
+  .lk-card.lk-mythic, .lk-detail.lk-mythic, .lk-feat.lk-mythic { border-color:#a05cff;
+    box-shadow:0 0 14px rgba(160,92,255,.22) inset, 0 0 10px rgba(160,92,255,.18);
     animation:lkmythic 2.6s ease-in-out infinite; }
   @keyframes lkmythic { 50% { box-shadow:0 0 22px rgba(160,92,255,.4) inset, 0 0 16px rgba(160,92,255,.35); } }
+  /* ---------- skin-first weapons shop ---------- */
+  .lk-schip { display:inline-block; font-size:8px; font-weight:800; letter-spacing:.14em;
+    padding:2px 6px; border-radius:4px; color:#10131c; }
+  .lk-schip-corner { position:absolute; top:5px; right:5px; z-index:2; pointer-events:none; }
+  .lk-sgrid { grid-template-columns:repeat(4, 1fr); }
+  .lk-card.lk-skin { border-color:color-mix(in srgb, var(--tierc) 45%, transparent); }
+  .lk-card.lk-skin:hover { border-color:var(--tierc); }
+  .lk-feat { position:relative; display:flex; gap:14px; align-items:center; margin-bottom:16px;
+    border:1px solid rgba(255,211,77,.4); border-radius:14px; padding:12px 16px; cursor:pointer;
+    background:linear-gradient(115deg, #131a2e 0%, #0c1120 55%, #1b1430 100%); overflow:hidden; }
+  .lk-feat::after { content:''; position:absolute; top:-60%; bottom:-60%; width:60px;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.09), transparent);
+    animation:lkshine 3.2s ease-in-out infinite; }
+  @keyframes lkshine { 0% { left:-80px; } 55%, 100% { left:110%; } }
+  .lk-featart img { width:240px; height:128px; object-fit:contain;
+    filter:drop-shadow(0 6px 18px rgba(0,0,0,.5)); }
+  .lk-featinfo h2 { margin:2px 0 4px; font-size:24px; font-style:italic; letter-spacing:.04em; }
+  .lk-featlbl { font-size:9px; font-weight:800; letter-spacing:.3em; color:#ffd34d; }
+  .lk-featrow { display:flex; align-items:center; gap:12px; margin-top:10px; }
+  .lk-featprice { font-size:16px; font-weight:800; font-style:italic; color:#ffd34d; }
+  .lk-buy { padding:9px 22px; border-radius:8px; border:none; cursor:pointer; font-family:inherit;
+    font-size:12px; font-weight:800; font-style:italic; letter-spacing:.1em;
+    background:linear-gradient(100deg,#ffd34d,#ffb347); color:#1a1405; transition:filter .12s; }
+  .lk-buy:hover { filter:brightness(1.12); }
+  .lk-buy.lk-eqd { background:var(--bg2); color:#7dff9e; border:1px solid var(--line2); }
+  .lk-back { background:none; border:none; color:var(--dim); font-family:inherit; font-size:11px;
+    font-weight:800; letter-spacing:.14em; cursor:pointer; padding:0 0 10px; }
+  .lk-back:hover { color:var(--txt); }
+  .lk-detail { display:flex; gap:18px; align-items:center; border:1px solid var(--line2);
+    border-radius:14px; padding:14px 18px; background:#0c1120; }
+  .lk-dbig img { width:300px; height:160px; object-fit:contain;
+    filter:drop-shadow(0 8px 22px rgba(0,0,0,.55)); }
+  .lk-dinfo h2 { margin:6px 0 4px; font-size:26px; font-style:italic; letter-spacing:.04em; }
+  .lk-ddesc { font-size:11px; color:var(--dim); line-height:1.5; max-width:290px; }
+  .lk-dwpn { font-size:10px; color:var(--faint); letter-spacing:.12em; margin-top:8px; }
+  .lk-dwpn b { color:var(--txt); }
+  .lk-dbtns { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  .lk-wstrip { display:flex; gap:6px; flex-wrap:wrap; }
+  .lk-wthumb { position:relative; width:calc((100% - 42px) / 8); aspect-ratio:16/9;
+    border:1px solid var(--line2); border-radius:8px; cursor:pointer; background:#10141f;
+    transition:border-color .12s, transform .12s; }
+  .lk-wthumb:hover { border-color:var(--line); transform:translateY(-2px); }
+  .lk-wthumb.sel { border-color:#ffd34d; }
+  .lk-wthumb img { width:100%; height:100%; object-fit:contain; pointer-events:none; }
+  .lk-weq { position:absolute; top:2px; right:4px; font-size:10px; color:#7dff9e; pointer-events:none; }
+  .lk-weq.lk-wown { color:#ffd34d; font-size:8px; }
   .lk-mytag { position:absolute; top:5px; right:5px; font-size:8px; font-weight:800;
     letter-spacing:.14em; padding:2px 5px; border-radius:4px; color:#fff;
     background:linear-gradient(120deg,#7a2cff,#c04dff,#ff4dd2); pointer-events:none; }
@@ -1625,7 +1672,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 63</div>
+  <div id="build-foot" class="rail-foot">prototype · build 64</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1984,43 +2031,43 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=63"></script>
-<script src="js/profile.js?v=63"></script>
-<script src="js/account.js?v=63"></script>
-<script src="js/accountui.js?v=63"></script>
-<script src="js/utils.js?v=63"></script>
-<script src="js/gfx.js?v=63"></script>
-<script src="js/mapdata.js?v=63"></script>
-<script src="js/audio.js?v=63"></script>
-<script src="js/sfxlab.js?v=63"></script>
-<script src="js/voice.js?v=63"></script>
-<script src="js/settings.js?v=63"></script>
-<script src="js/input.js?v=63"></script>
-<script src="js/world.js?v=63"></script>
-<script src="js/effects.js?v=63"></script>
-<script src="js/map.js?v=63"></script>
-<script src="js/characters.js?v=63"></script>
-<script src="js/pawn.js?v=63"></script>
-<script src="js/weapons.js?v=63"></script>
-<script src="js/loot.js?v=63"></script>
-<script src="js/pickups.js?v=63"></script>
-<script src="js/sparks.js?v=63"></script>
-<script src="js/grenades.js?v=63"></script>
-<script src="js/grapple.js?v=63"></script>
-<script src="js/bots.js?v=63"></script>
-<script src="js/hud.js?v=63"></script>
-<script src="js/game.js?v=63"></script>
-<script src="js/attract.js?v=63"></script>
-<script src="js/net.js?v=63"></script>
-<script src="js/dof.js?v=63"></script>
+<script src="js/config.js?v=64"></script>
+<script src="js/profile.js?v=64"></script>
+<script src="js/account.js?v=64"></script>
+<script src="js/accountui.js?v=64"></script>
+<script src="js/utils.js?v=64"></script>
+<script src="js/gfx.js?v=64"></script>
+<script src="js/mapdata.js?v=64"></script>
+<script src="js/audio.js?v=64"></script>
+<script src="js/sfxlab.js?v=64"></script>
+<script src="js/voice.js?v=64"></script>
+<script src="js/settings.js?v=64"></script>
+<script src="js/input.js?v=64"></script>
+<script src="js/world.js?v=64"></script>
+<script src="js/effects.js?v=64"></script>
+<script src="js/map.js?v=64"></script>
+<script src="js/characters.js?v=64"></script>
+<script src="js/pawn.js?v=64"></script>
+<script src="js/weapons.js?v=64"></script>
+<script src="js/loot.js?v=64"></script>
+<script src="js/pickups.js?v=64"></script>
+<script src="js/sparks.js?v=64"></script>
+<script src="js/grenades.js?v=64"></script>
+<script src="js/grapple.js?v=64"></script>
+<script src="js/bots.js?v=64"></script>
+<script src="js/hud.js?v=64"></script>
+<script src="js/game.js?v=64"></script>
+<script src="js/attract.js?v=64"></script>
+<script src="js/net.js?v=64"></script>
+<script src="js/dof.js?v=64"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=63"></script>
-<script src="js/vidrender.js?v=63"></script>
-<script src="js/demos.js?v=63"></script>
-<script src="js/locker.js?v=63"></script>
-<script src="js/store.js?v=63"></script>
-<script src="js/assets.js?v=63"></script>
-<script src="js/editor.js?v=63"></script>
-<script src="js/main.js?v=63"></script>
+<script src="js/replay.js?v=64"></script>
+<script src="js/vidrender.js?v=64"></script>
+<script src="js/demos.js?v=64"></script>
+<script src="js/locker.js?v=64"></script>
+<script src="js/store.js?v=64"></script>
+<script src="js/assets.js?v=64"></script>
+<script src="js/editor.js?v=64"></script>
+<script src="js/main.js?v=64"></script>
 </body>
 </html>

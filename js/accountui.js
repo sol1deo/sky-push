@@ -162,7 +162,9 @@ SKY.AccountUI = (function () {
     const acct = A();
     const nick = $('nav-nick');
     const fr = $('nav-friends');
-    $('tab-profile').classList.toggle('hidden', !acct.enabled);
+    // profile lives behind the top-right nickname / friends chips — the nav
+    // tab stays hidden (still click()-able programmatically for those flows)
+    $('tab-profile').classList.add('hidden');
     if (!acct.enabled) { fr.classList.add('hidden'); return; }
     if (acct.isLoggedIn()) {
       const p = acct.profile();

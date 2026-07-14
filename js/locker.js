@@ -9,12 +9,43 @@ SKY.Locker = (function () {
   const $ = (id) => document.getElementById(id);
   let panel = null;
   let selWeapon = 'pistol';
+  let selSkin = null;       // finish id open in the detail view (null = browsing)
   let lkTab = 'char';       // char | style | weapons — kills the giant scroll
   const charThumbs = {};    // charId -> dataURL
 
+  /* skin-first shop copy: the card sells the FANTASY, mythics list their FX */
+  const SKIN_DESC = {
+    fade: 'three-color chrome fade along the body',
+    spectrum: 'cycles the entire rainbow, forever',
+    carbonviper: 'woven carbon fiber, serpent-red weave',
+    sakura: 'hanami lacquer with gold-leaf flecks',
+    gilded: 'baroque gold filigree over dark gunmetal',
+    toxic: 'it drips. it glows. it bubbles.',
+    cybergrid: 'live circuitry with a traveling scanline',
+    frostbite: 'glacier-core ice with a cold shimmer',
+    aurora: 'polar lights flowing over midnight ice',
+    dragonfire: 'molten scales · rising embers · FLAME TRACERS',
+    nebula: 'a galaxy in your hands · star halo · VIOLET TRACERS',
+    voidwalker: 'abyssal smoke · orbiting shards · VOID TRACERS',
+    tempest: 'living lightning strikes the body · STORM TRACERS',
+    phoenix: 'flame plumage · wing stream · FIRE TRACERS · SPIN RELOAD',
+    midas: 'liquid gold · golden drip · GILDED TRACERS · SPIN RELOAD',
+  };
+  const TIER_CHIP = {
+    std: ['PAINT', '#8a9cb8'],
+    anim: ['ANIMATED', '#40c8ff'],
+    epic: ['PREMIUM', '#d92cff'],
+    mythic: ['MYTHIC', '#a05cff'],
+  };
+
   const WEAPON_ROW = ['pistol', 'blaster', 'scatter', 'smg', 'burst', 'bouncer',
     'piston', 'longshot', 'magnum', 'mega', 'lobber', 'boomstick', 'quad',
-    'minigun', 'flamer', 'hookgun'];
+    'minigun', 'flamer', 'hookgun', 'cannon'];
+  /* kinds that aren't TUNING.weapons entries still get locker cards */
+  const EXTRA_DEFS = {
+    hookgun: { short: 'HOOK', label: 'GRAPPLE HOOK', color: '#d8c49a' },
+    cannon: { short: 'CANNON', label: 'AIR CANNON', color: '#8fd4ff' },
+  };
 
   /* ---------------- character thumbnails (posed, cached) ---------------- */
   let thumbRig = null;
@@ -200,40 +231,89 @@ SKY.Locker = (function () {
           ${P.OUTFIT_COLORS.map((c) =>
             `<span class="lk-dot ${P.data.outfit === c ? 'sel' : ''}" data-outfit="${c}" style="background:${c}"></span>`).join('')}
         </div>`;
-    } else {
-      // weapons: a real icon grid to PICK the weapon, then its paint jobs
-      const wpnCards = WEAPON_ROW.map((k) => {
-        const W = SKY.TUNING.weapons[k] || { short: 'HOOK', color: '#d8c49a' };
-        const icon = SKY.Effects.weaponWireIcon(k, W.color);
-        const fin = P.finishFor(k);
-        return `<div class="lk-wcard ${k === selWeapon ? 'sel' : ''}" data-w="${k}">
-          ${icon ? `<img src="${icon}" draggable="false">` : ''}
-          <div class="lk-name">${W.short}</div>
-          ${fin !== 'stock' ? '<div class="lk-wdot"></div>' : ''}
+    } else if (selSkin) {
+      // ---------- SKIN DETAIL: big preview + pick the gun to wear it ----------
+      const f = P.finishDef(selSkin);
+      const [chipTxt, chipCol] = TIER_CHIP[f.tier || 'std'];
+      const bigImg = SKY.Effects.weaponThumb(selWeapon, f.id);
+      const owned = P.ownsFinish(selWeapon, f.id);
+      const equipped = P.finishFor(selWeapon) === f.id;
+      const held = (P.data.wpn || 'pistol') === selWeapon;
+      const strip = WEAPON_ROW.map((k) => {
+        const img = SKY.Effects.weaponThumb(k, f.id);
+        const own = P.ownsFinish(k, f.id);
+        const eq = P.finishFor(k) === f.id;
+        return `<div class="lk-wthumb ${k === selWeapon ? 'sel' : ''}" data-w="${k}"
+          title="${(SKY.TUNING.weapons[k] || EXTRA_DEFS[k] || {}).label || k}">
+          ${img ? `<img src="${img}" draggable="false">` : ''}
+          ${eq ? '<span class="lk-weq">✓</span>' : own ? '<span class="lk-weq lk-wown">●</span>' : ''}
         </div>`;
       }).join('');
-      const finCards = P.FINISHES.map((f) => {
-        const owned = P.ownsFinish(selWeapon, f.id);
-        const equipped = P.finishFor(selWeapon) === f.id;
-        const img = SKY.Effects.weaponThumb(selWeapon, f.id === 'stock' ? undefined : f.id);
-        return `<div class="lk-card lk-fin ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}${f.mythic ? ' lk-mythic' : ''}" data-fin="${f.id}">
-          ${f.mythic ? '<div class="lk-mytag">MYTHIC</div>' : ''}
+      const WSel = SKY.TUNING.weapons[selWeapon] || EXTRA_DEFS[selWeapon] || { label: selWeapon };
+      body = `
+        <button class="lk-back" id="lk-back">← ALL SKINS</button>
+        <div class="lk-detail${f.mythic ? ' lk-mythic' : ''}">
+          <div class="lk-dbig">${bigImg ? `<img src="${bigImg}" draggable="false">` : '<div class="lk-ph"></div>'}</div>
+          <div class="lk-dinfo">
+            <span class="lk-schip" style="background:${chipCol}">${chipTxt}</span>
+            <h2>${f.name}</h2>
+            <div class="lk-ddesc">${SKIN_DESC[f.id] || ''}</div>
+            <div class="lk-dwpn">on: <b>${(WSel.label || selWeapon).toUpperCase()}</b></div>
+            <div class="lk-dbtns">
+              ${equipped
+                ? '<button class="lk-buy lk-eqd" data-act="unequip">EQUIPPED — TAP TO REMOVE</button>'
+                : owned
+                ? '<button class="lk-buy" data-act="equip">EQUIP</button>'
+                : `<button class="lk-buy" data-act="buy">BUY — ⬡ ${f.price}</button>`}
+              ${selWeapon === 'hookgun' || selWeapon === 'cannon' ? '' :
+                `<button class="lk-wbtn${held ? ' sel' : ''}" id="lk-hold">
+                  ${held ? 'HELD IN LOBBY' : 'HOLD IN LOBBY'}</button>`}
+            </div>
+          </div>
+        </div>
+        <h4 class="lk-h">PICK YOUR GUN <small>✓ equipped · ● owned — each gun wears it its own way</small></h4>
+        <div class="lk-wstrip">${strip}</div>`;
+    } else {
+      // ---------- SKIN BROWSER: the skin is the product, the gun comes after ----------
+      const show = P.data.wpn || 'pistol';       // showcase = the gun you pose with
+      const skins = P.FINISHES.filter(x => x.id !== 'stock')
+        .slice().sort((a, b) => b.price - a.price);
+      // FEATURED: the priciest skin you don't own yet, rotating daily
+      const unowned = skins.filter(x => !WEAPON_ROW.some(k => P.ownsFinish(k, x.id)));
+      const feat = unowned.length
+        ? unowned[Math.floor(Date.now() / 864e5) % Math.min(unowned.length, 6)] : null;
+      const featHtml = feat ? (() => {
+        const img = SKY.Effects.weaponThumb(show, feat.id);
+        const [chipTxt, chipCol] = TIER_CHIP[feat.tier || 'std'];
+        return `<div class="lk-feat${feat.mythic ? ' lk-mythic' : ''}" data-sk="${feat.id}">
+          <div class="lk-featart">${img ? `<img src="${img}" draggable="false">` : ''}</div>
+          <div class="lk-featinfo">
+            <div class="lk-featlbl">FEATURED</div>
+            <h2>${feat.name}</h2>
+            <div class="lk-ddesc">${SKIN_DESC[feat.id] || ''}</div>
+            <div class="lk-featrow">
+              <span class="lk-schip" style="background:${chipCol}">${chipTxt}</span>
+              <span class="lk-featprice">⬡ ${feat.price}</span>
+              <button class="lk-buy" data-sk="${feat.id}">VIEW</button>
+            </div>
+          </div>
+        </div>`;
+      })() : '';
+      const cards = skins.map((f) => {
+        const img = SKY.Effects.weaponThumb(show, f.id);
+        const ownedN = WEAPON_ROW.filter(k => P.ownsFinish(k, f.id)).length;
+        const [chipTxt, chipCol] = TIER_CHIP[f.tier || 'std'];
+        return `<div class="lk-card lk-fin lk-skin${f.mythic ? ' lk-mythic' : ''}" data-sk="${f.id}"
+            style="--tierc:${chipCol}">
+          <span class="lk-schip lk-schip-corner" style="background:${chipCol}">${chipTxt}</span>
           ${img ? `<img src="${img}" draggable="false">` : '<div class="lk-ph"></div>'}
           <div class="lk-name">${f.name}</div>
-          <div class="lk-tag">${equipped ? 'EQUIPPED' : owned ? 'OWNED' : '⬡ ' + f.price}</div>
+          <div class="lk-tag">${ownedN ? `OWNED · ${ownedN} GUN${ownedN > 1 ? 'S' : ''}` : '⬡ ' + f.price}</div>
         </div>`;
       }).join('');
-      const WSel = SKY.TUNING.weapons[selWeapon] || { label: 'GRAPPLE HOOK' };
-      const held = (P.data.wpn || 'pistol') === selWeapon;
-      body = `
-        <div class="lk-wgrid">${wpnCards}</div>
-        <h4 class="lk-h" style="display:flex;align-items:center;justify-content:space-between">
-          <span>${(WSel.label || selWeapon).toUpperCase()} — PAINT JOBS</span>
-          ${selWeapon === 'hookgun' ? '' :
-            `<button class="lk-wbtn${held ? ' sel' : ''}" id="lk-hold">
-              ${held ? 'HELD IN LOBBY' : 'HOLD IN LOBBY'}</button>`}
-        </h4>
-        <div class="lk-grid">${finCards}</div>`;
+      body = `${featHtml}
+        <h4 class="lk-h">ALL SKINS <small>pick the look — then choose which guns wear it</small></h4>
+        <div class="lk-grid lk-sgrid">${cards}</div>`;
     }
 
     panel.innerHTML = `
@@ -248,17 +328,32 @@ SKY.Locker = (function () {
 
     panel.onclick = (e) => {
       const tab = e.target.closest('.lk-tab');
-      if (tab) { lkTab = tab.dataset.tab; renderPanel(); return; }
+      if (tab) { lkTab = tab.dataset.tab; selSkin = null; renderPanel(); return; }
       if (e.target.id === 'lk-dev') {
         SKY.Profile.addCoins(1000);
         SKY.SFX.init(); SKY.SFX.cash();
         return;
       }
+      if (e.target.id === 'lk-back') { selSkin = null; renderPanel(); return; }
       if (e.target.id === 'lk-hold') {
         // this weapon is what your character shows off in lobby lineups
         SKY.Profile.setLobbyWeapon(selWeapon);
         renderPanel();
         if (SKY.HUD && SKY.HUD._botsLobby) SKY.HUD.botsLobby(true);   // live refresh
+        return;
+      }
+      // detail view: BUY / EQUIP / UNEQUIP the open skin on the selected gun
+      const act = e.target.closest('[data-act]');
+      if (act && selSkin) {
+        const a = act.dataset.act;
+        if (a === 'unequip') { P.equipFinish(selWeapon, 'stock'); }
+        else if (a === 'equip') { P.equipFinish(selWeapon, selSkin); }
+        else if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
+        else if (P.buyFinish(selWeapon, selSkin)) {
+          P.equipFinish(selWeapon, selSkin);
+          SKY.SFX.init(); SKY.SFX.cash();
+        } else { flashPoor(act.closest('.lk-detail') || act); return; }
+        renderPanel();
         return;
       }
       const skinDot = e.target.closest('[data-skin]');
@@ -276,9 +371,15 @@ SKY.Locker = (function () {
         return;
       }
       const cCard = e.target.closest('[data-char]');
-      const fCard = e.target.closest('[data-fin]');
-      const wBtn = e.target.closest('.lk-wcard');
+      const skCard = e.target.closest('[data-sk]');
+      const wBtn = e.target.closest('.lk-wthumb');
       if (wBtn) { selWeapon = wBtn.dataset.w; renderPanel(); return; }
+      if (skCard) {                       // open the skin's detail page
+        selSkin = skCard.dataset.sk;
+        if (!WEAPON_ROW.includes(selWeapon)) selWeapon = 'pistol';
+        renderPanel();
+        return;
+      }
       if (cCard) {
         const id = cCard.dataset.char;
         if (id === '__random') { P.equipChar(null); }
@@ -288,14 +389,6 @@ SKY.Locker = (function () {
         else { flashPoor(cCard); return; }
         renderPanel(); rebuildPreview();
         return;
-      }
-      if (fCard) {
-        const id = fCard.dataset.fin;
-        if (P.ownsFinish(selWeapon, id)) { P.equipFinish(selWeapon, id); }
-        else if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
-        else if (P.buyFinish(selWeapon, id)) { P.equipFinish(selWeapon, id); SKY.SFX.init(); SKY.SFX.pick(); }
-        else { flashPoor(fCard); return; }
-        renderPanel();
       }
     };
   }

@@ -81,6 +81,15 @@ SKY.Weapons = (function () {
     return v;
   }
 
+  /* the finish riding a pawn's CURRENT weapon (mythics restyle the bullets):
+     local reads the live profile, remotes read the cos bundle, bots none */
+  function skinDefOf(pawn, kind) {
+    const id = pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor(kind)
+      : pawn.cos && pawn.cos.fin ? pawn.cos.fin[kind] : null;
+    if (!id || id === 'stock') return null;
+    return SKY.Profile ? SKY.Profile.finishDef(id) : null;
+  }
+
   /* opts: burstShot (follow-up shot of a burst — skips the cooldown gate),
      chargeMul / speedMul / recoilMul (piston charge release) */
   function tryFirePrimary(pawn, opts) {
@@ -169,6 +178,8 @@ SKY.Weapons = (function () {
     // ReferenceError right before recoil/muzzle/sfx = "guns broke")
     const pspd = W.projSpeed * (opts.speedMul || 1);
     const pgrav = (W.projGravity || 0) * (opts.gravMul || 1);
+    const skinDef = skinDefOf(pawn, pawn.weapon);
+    const sTracer = skinDef && skinDef.tracer;
     for (let i = 0; i < (W.pellets || 1); i++) {
       _pdir.copy(_dir);
       if (spread > 0) {
@@ -187,11 +198,13 @@ SKY.Weapons = (function () {
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
         bounces: W.bounces || 0,
         flame: !!W.flameJet,
+        skin: sTracer || null,          // mythic tracer color + trail style
         owner: pawn, auth,
         life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         life0: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, _muzzle),
       });
+      SKY.Effects.tintTracer(bullets[bullets.length - 1].vis, sTracer ? sTracer.color : null);
       SKY.Replay.bullet(_muzzle, bullets[bullets.length - 1].vel,
         pgrav, W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15));
     }
@@ -218,7 +231,7 @@ SKY.Weapons = (function () {
         SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
       }
     } else {
-      SKY.Effects.muzzle(_muzzle, W.color, pawn.isLocal, W.kick);
+      SKY.Effects.muzzle(_muzzle, (skinDef && skinDef.muzzleColor) || W.color, pawn.isLocal, W.kick);
       SKY.Effects.muzzleLight(_muzzle);
       SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
     }
@@ -478,6 +491,8 @@ SKY.Weapons = (function () {
         if (Math.random() < dt * 12) SKY.Effects.flamePuff(b.pos, 0.5 + age * 1.5);
       } else {
         SKY.Effects.poseTracer(b.vis, b.pos, _dir, Math.min(2.2, segLen * 6 + 0.5));
+        // mythic skins shed their signature particles along the flight path
+        if (b.skin && Math.random() < dt * 24) SKY.Effects.skinTrail(b.pos, b.skin.trail);
       }
 
       if (b.life <= 0 || b.pos.y < SKY.World.killY - 6) removeBullet(i);
@@ -615,6 +630,8 @@ SKY.Weapons = (function () {
     const ori = new THREE.Vector3(m.ori[0], m.ori[1], m.ori[2]);
     const pspd = m.spd || W.projSpeed;
     const pgrav = m.grv !== undefined ? m.grv : (W.projGravity || 0);
+    const skinDef = skinDefOf(pawn, m.w);      // their mythic tracers show here too
+    const sTracer = skinDef && skinDef.tracer;
     for (const d of m.dirs) {
       bullets.push({
         pos: ori.clone(), prev: ori.clone(),
@@ -625,13 +642,15 @@ SKY.Weapons = (function () {
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
         bounces: W.bounces || 0,
         flame: !!W.flameJet,
+        skin: sTracer || null,
         owner: pawn, auth: false,
         life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         life0: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, ori),
       });
+      SKY.Effects.tintTracer(bullets[bullets.length - 1].vis, sTracer ? sTracer.color : null);
     }
-    SKY.Effects.muzzle(ori, W.color, false, W.kick);
+    SKY.Effects.muzzle(ori, (skinDef && skinDef.muzzleColor) || W.color, false, W.kick);
     SKY.SFX.fire(m.w, m.tier / 3, W.kick * 0.6, listenDist(ori));
     // remote pawns don't tick cooldowns here — raise their gun arm anyway
     if (pawn.avatar && pawn.avatar.hotFor) pawn.avatar.hotFor(0.9);

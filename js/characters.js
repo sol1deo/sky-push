@@ -444,13 +444,16 @@ SKY.Characters = (function () {
     }
 
     setWeapon(kind) {
-      if (this.gunKind === kind) return;
+      // the LOCAL player's finish reads live from the profile (a locker equip
+      // must show up next round without a page reload); remotes use cos
+      const fin = this.pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor(kind)
+        : this.pawn.cos && this.pawn.cos.fin ? (this.pawn.cos.fin[kind] || null) : null;
+      if (this.gunKind === kind && this.gunFin === fin) return;
       this.gunKind = kind;
+      this.gunFin = fin;
       while (this.gunHolder.children.length) this.gunHolder.remove(this.gunHolder.children[0]);
       while (this.proxyGunHolder.children.length) this.proxyGunHolder.remove(this.proxyGunHolder.children[0]);
       if (!kind) return;                 // bare hands (IT runners)
-      const fin = this.pawn.cos && this.pawn.cos.fin ? (this.pawn.cos.fin[kind] || null)
-        : (this.pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor(kind) : null);
       const g1 = SKY.Effects.buildWeaponMesh(kind, fin);
       g1.scale.setScalar(this.isGltf ? 1.05 : 1.25);
       this.gunHolder.add(g1);
@@ -648,7 +651,7 @@ SKY.Characters = (function () {
       const held = p.grapple ? 'hookgun'
         : p._cannonT > 0 ? 'cannon'
         : p.weapon;
-      if (held !== this.gunKind) this.setWeapon(held);
+      this.setWeapon(held);   // guards internally on kind+finish (live skin equips)
 
       if (p.ragdoll) {
         if (!this.ragActive) this.startRagdoll();

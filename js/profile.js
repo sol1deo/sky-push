@@ -30,22 +30,46 @@ SKY.Profile = (function () {
        anim    — how the glow lives: lava (breathing), scan (scanline sweep),
                  drift (texture slowly scrolls), void (dark pulse), shimmer
        orbitFx — mythic particle rig: embers | stars | shards */
+  /* tier: std (flat price paint) | anim (animated) | epic | mythic.
+     Mythics also carry: tracer {color, trail} = every bullet you fire wears
+     the skin (trail styles live in weapons.js skinTrail), muzzleColor tints
+     the flash, reload names a viewmodel flourish (effects.js vm). */
   const FINISHES = [
-    { id: 'stock',      name: 'STOCK',      price: 0 },
-    { id: 'fade',       name: 'FADE',       price: 400,  fx: 'fade' },      // cyan→pink→gold
-    { id: 'spectrum',   name: 'SPECTRUM',   price: 600,  fx: 'spectrum' },  // animated hue cycle
-    { id: 'gilded',     name: 'GILDED AGE', price: 800,  skin: 'gilded',
+    { id: 'stock',      name: 'STOCK',      price: 0,    tier: 'std' },
+    { id: 'fade',       name: 'FADE',       price: 400,  tier: 'anim', fx: 'fade' },
+    { id: 'spectrum',   name: 'SPECTRUM',   price: 600,  tier: 'anim', fx: 'spectrum' },
+    { id: 'carbonviper', name: 'CARBON VIPER', price: 700, tier: 'std', skin: 'carbonviper',
+      glowLo: 0.52, glowAmt: 0.45 },
+    { id: 'sakura',     name: 'SAKURA',     price: 750,  tier: 'std', skin: 'sakura',
+      glowLo: 0.93, glowAmt: 0.25 },
+    { id: 'gilded',     name: 'GILDED AGE', price: 800,  tier: 'epic', skin: 'gilded',
       glowLo: 0.72, glowAmt: 0.3 },
-    { id: 'cybergrid',  name: 'CYBERGRID',  price: 900,  skin: 'cybergrid',
+    { id: 'toxic',      name: 'TOXIC OOZE', price: 850,  tier: 'epic', skin: 'toxic',
+      glowLo: 0.4, glowAmt: 0.9, anim: 'ooze' },
+    { id: 'cybergrid',  name: 'CYBERGRID',  price: 900,  tier: 'epic', skin: 'cybergrid',
       glowLo: 0.42, glowAmt: 0.85, anim: 'scan', scanColor: '#59f7ff' },
-    { id: 'frostbite',  name: 'FROSTBITE',  price: 1000, skin: 'frostbite',
+    { id: 'frostbite',  name: 'FROSTBITE',  price: 1000, tier: 'epic', skin: 'frostbite',
       glowLo: 0.88, glowAmt: 0.45, anim: 'shimmer' },
-    { id: 'dragonfire', name: 'DRAGONFIRE', price: 1800, skin: 'dragonfire', mythic: true,
-      glowLo: 0.34, glowAmt: 1.15, anim: 'lava', orbitFx: 'embers' },
-    { id: 'nebula',     name: 'NEBULA',     price: 2000, skin: 'nebula', mythic: true,
-      glowLo: 0.45, glowAmt: 0.95, anim: 'drift', orbitFx: 'stars' },
-    { id: 'voidwalker', name: 'VOIDWALKER', price: 2500, skin: 'voidwalker', mythic: true,
-      glowLo: 0.4, glowAmt: 1.05, anim: 'void', orbitFx: 'shards' },
+    { id: 'aurora',     name: 'AURORA',     price: 1200, tier: 'epic', skin: 'aurora',
+      glowLo: 0.5, glowAmt: 0.8, anim: 'drift' },
+    { id: 'dragonfire', name: 'DRAGONFIRE', price: 1800, tier: 'mythic', mythic: true,
+      skin: 'dragonfire', glowLo: 0.34, glowAmt: 1.15, anim: 'lava', orbitFx: 'embers',
+      tracer: { color: '#ff7a20', trail: 'flame' }, muzzleColor: '#ff8830' },
+    { id: 'nebula',     name: 'NEBULA',     price: 2000, tier: 'mythic', mythic: true,
+      skin: 'nebula', glowLo: 0.45, glowAmt: 0.95, anim: 'drift', orbitFx: 'stars',
+      tracer: { color: '#b46bff', trail: 'star' }, muzzleColor: '#b46bff' },
+    { id: 'voidwalker', name: 'VOIDWALKER', price: 2500, tier: 'mythic', mythic: true,
+      skin: 'voidwalker', glowLo: 0.4, glowAmt: 1.05, anim: 'void', orbitFx: 'shards',
+      tracer: { color: '#8a4dff', trail: 'void' }, muzzleColor: '#7a3dff' },
+    { id: 'tempest',    name: 'TEMPEST',    price: 2600, tier: 'mythic', mythic: true,
+      skin: 'tempest', glowLo: 0.5, glowAmt: 1.1, anim: 'strobe', orbitFx: 'arcs',
+      tracer: { color: '#59d8ff', trail: 'spark' }, muzzleColor: '#59d8ff' },
+    { id: 'phoenix',    name: 'PHOENIX',    price: 2800, tier: 'mythic', mythic: true,
+      skin: 'phoenix', glowLo: 0.42, glowAmt: 1.2, anim: 'lava', orbitFx: 'wings',
+      tracer: { color: '#ffb020', trail: 'flame' }, muzzleColor: '#ffc040', reload: 'spin' },
+    { id: 'midas',      name: 'MIDAS',      price: 3000, tier: 'mythic', mythic: true,
+      skin: 'midas', glowLo: 0.55, glowAmt: 0.9, anim: 'shimmer', orbitFx: 'coins',
+      tracer: { color: '#ffd34d', trail: 'gold' }, muzzleColor: '#ffd34d', reload: 'spin' },
   ];
 
   /* free cosmetic palettes (no purchase — just identity options) */
@@ -209,6 +233,13 @@ SKY.Profile = (function () {
         else if (f.anim === 'shimmer') sh.uniforms.uGlowAmt.value = base * (0.75 + 0.25 * Math.sin(t * 1.7));
         else if (f.anim === 'void') sh.uniforms.uGlowAmt.value = base * (0.6 + 0.4 * Math.sin(t * 1.4));
         else if (f.anim === 'drift') sh.uniforms.uGlowAmt.value = base * (0.8 + 0.2 * Math.sin(t * 1.1));
+        else if (f.anim === 'ooze') sh.uniforms.uGlowAmt.value = base * (0.65 + 0.35 * Math.sin(t * 0.9));
+        else if (f.anim === 'strobe') {
+          // lightning: mostly calm, with sharp random-feeling double flashes
+          const ph = t * 1.9;
+          const burst = Math.max(0, Math.sin(ph * 7) * Math.sin(ph * 1.3) - 0.55) * 2.2;
+          sh.uniforms.uGlowAmt.value = base * (0.45 + burst);
+        }
       };
       if (SKY.Effects && SKY.Effects.registerAnimMat) SKY.Effects.registerAnimMat(m);
     }
@@ -264,7 +295,51 @@ SKY.Profile = (function () {
       if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
       return;
     }
-    const N = type === 'embers' ? 12 : 10;
+    if (type === 'arcs') {             // TEMPEST: jagged lightning crawling the gun
+      const fx = new THREE.Group();
+      const arcs = [];
+      for (let i = 0; i < 3; i++) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(7 * 3), 3));
+        const l = new THREE.Line(g, new THREE.LineBasicMaterial({
+          color: 0x9de8ff, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, depthWrite: false,
+        }));
+        l.frustumCulled = false;
+        arcs.push({ l, g, next: 0, ph: i * 1.3 });
+        fx.add(l);
+      }
+      fx.userData.tick = (t) => {
+        for (const ac of arcs) {
+          if (t > ac.next) {           // re-strike: new zigzag along the body
+            ac.next = t + 0.09 + ((t * 997 + ac.ph) % 1) * 0.35;
+            const z0 = box.min.z + ((t * 131 + ac.ph) % 1) * len;
+            const z1 = z0 + (((t * 173) % 1) - 0.5) * len * 0.5;
+            const a = ac.g.attributes.position.array;
+            for (let k = 0; k < 7; k++) {
+              const f2 = k / 6;
+              a[k * 3] = c.x + (((t * 37 + k * 13 + ac.ph) % 1) - 0.5) * rad * 2.4;
+              a[k * 3 + 1] = c.y + (((t * 53 + k * 29) % 1) - 0.5) * rad * 2.4;
+              a[k * 3 + 2] = z0 + (z1 - z0) * f2;
+            }
+            ac.g.attributes.position.needsUpdate = true;
+            ac.l.material.opacity = 0.9;
+          }
+          ac.l.material.opacity *= 0.82;   // strikes decay fast
+        }
+      };
+      group.add(fx);
+      if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
+      return;
+    }
+    const KINDS = {
+      embers: { n: 12, color: 0xff7a20, size: 0.009 },
+      stars: { n: 10, color: 0xaad4ff, size: 0.007 },
+      wings: { n: 14, color: 0xffc040, size: 0.01 },
+      coins: { n: 9, color: 0xffd34d, size: 0.008 },
+    };
+    const K = KINDS[type] || KINDS.embers;
+    const N = K.n;
     const pos = new Float32Array(N * 3);
     const seeds = [];
     for (let i = 0; i < N; i++) {
@@ -276,8 +351,7 @@ SKY.Profile = (function () {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const mat = new THREE.PointsMaterial({
-      color: type === 'embers' ? 0xff7a20 : 0xaad4ff,
-      size: type === 'embers' ? 0.009 : 0.007,
+      color: K.color, size: K.size,
       map: softDot(), transparent: true, opacity: 0.8, depthWrite: false,
       blending: THREE.AdditiveBlending, sizeAttenuation: true,
     });
@@ -293,6 +367,18 @@ SKY.Profile = (function () {
           a[i * 3 + 1] = box.max.y + cyc * 0.09;
           a[i * 3 + 2] = s.z;
           if (i === 0) mat.opacity = 0.85;
+        } else if (type === 'wings') { // PHOENIX: flame feathers streaming back
+          const cyc = ((t * s.sp * 0.5 + s.ph) % 1 + 1) % 1;
+          a[i * 3] = c.x + s.x * 0.7 + Math.sin(t * 3 + s.ph) * 0.012;
+          a[i * 3 + 1] = c.y + Math.abs(s.x) * 0.6 + cyc * 0.05 + Math.sin(cyc * 9 + s.ph) * 0.012;
+          a[i * 3 + 2] = box.max.z * 0.2 + cyc * (len * 0.9);   // muzzle → past the stock
+          mat.opacity = 0.9;
+        } else if (type === 'coins') { // MIDAS: gold dripping off the gun
+          const cyc = ((t * s.sp * 0.4 + s.ph) % 1 + 1) % 1;
+          a[i * 3] = c.x + s.x * 0.8;
+          a[i * 3 + 1] = box.min.y + 0.02 - cyc * cyc * 0.12;   // accelerating drip
+          a[i * 3 + 2] = s.z;
+          mat.opacity = 0.85;
         } else {                       // stars drift in a slow halo + twinkle
           const an = t * 0.5 * s.sp + s.ph;
           a[i * 3] = c.x + Math.cos(an) * (rad + 0.04);
@@ -400,6 +486,8 @@ SKY.Profile = (function () {
       if (id === 'stock') delete data.finishes[kind];
       else data.finishes[kind] = id;
       save();
+      // live-refresh the viewmodel/hook/cannon — no page reload needed
+      if (SKY.Effects && SKY.Effects.refreshSkins) SKY.Effects.refreshSkins();
       if (api.onChange) api.onChange();
       return true;
     },

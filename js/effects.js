@@ -793,7 +793,10 @@ SKY.Effects = (function () {
   function mountWeapon(kind) {
     if (vm.group) camera.remove(vm.group);
     vm.kind = kind;
-    vm.group = buildWeaponMesh(kind, SKY.Profile && SKY.Profile.finishFor(kind));
+    const fin = SKY.Profile && SKY.Profile.finishFor(kind);
+    vm.group = buildWeaponMesh(kind, fin);
+    // mythic finishes can carry a signature reload flourish
+    vm.finReload = (fin && SKY.Profile && SKY.Profile.finishDef(fin).reload) || null;
     vm.group.scale.setScalar(0.85);
     vm.group.position.set(0.3, -0.27, -0.52);
     vm.group.visible = vm.visible;
@@ -826,12 +829,22 @@ SKY.Effects = (function () {
   function cannonPop() {
     if (!camera) return;
     if (!vm.cannon) {
-      vm.cannon = buildWeaponMesh('cannon');
+      vm.cannon = buildWeaponMesh('cannon', SKY.Profile && SKY.Profile.finishFor('cannon'));
       vm.cannon.scale.setScalar(0.85);
       vm.cannon.visible = false;
       camera.add(vm.cannon);
     }
     vm.cannonT = 0.0001;
+  }
+
+  /* a locker equip changed a finish — rebuild every cached weapon mesh so the
+     new skin shows without a page reload (third-person rebuilds itself via
+     the gunFin guard in characters.setWeapon) */
+  function refreshSkins() {
+    if (!camera) return;
+    if (vm.kind) mountWeapon(vm.kind);            // remove+rebuild in place
+    if (vm.hook) { camera.remove(vm.hook); vm.hook = null; }     // lazy rebuild
+    if (vm.cannon) { camera.remove(vm.cannon); vm.cannon = null; }
   }
 
   function hookTip() {
@@ -1037,6 +1050,43 @@ SKY.Effects = (function () {
     vis.trail.geometry.attributes.position.needsUpdate = true;
   }
 
+  /* mythic-skin bullets: tint the pooled tracer (null = back to stock warm) */
+  function tintTracer(vis, colorHex) {
+    vis.head.material.color.set(colorHex || 0xfff2d0);
+    vis.trail.material.color.set(colorHex || 0xffe2a8);
+  }
+
+  /* mythic-skin bullet trail — one light particle per call, throttled by the
+     caller. Styles match the finish: flame/spark/void/star/gold. */
+  function skinTrail(pos, style) {
+    const p = pos.clone();
+    if (style === 'flame') {
+      spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-0.4, 0.4), SKY.U.rand(0.5, 1.4), SKY.U.rand(-0.4, 0.4)),
+        life: SKY.U.rand(0.22, 0.34), size: SKY.U.rand(0.14, 0.24), sizeEnd: 0.04,
+        color: Math.random() < 0.6 ? '#ff7a20' : '#ffc23c', gravity: -2, drag: 1.2,
+        blend: 'normal', opacity: 0.9 });
+    } else if (style === 'spark') {
+      spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-2.5, 2.5), SKY.U.rand(-2.5, 2.5), SKY.U.rand(-2.5, 2.5)),
+        life: SKY.U.rand(0.08, 0.16), size: 0.09, sizeEnd: 0.02,
+        color: Math.random() < 0.7 ? '#59d8ff' : '#e8fbff', drag: 2 });
+    } else if (style === 'void') {
+      spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-0.3, 0.3), SKY.U.rand(-0.2, 0.4), SKY.U.rand(-0.3, 0.3)),
+        life: SKY.U.rand(0.3, 0.45), size: 0.12, sizeEnd: SKY.U.rand(0.3, 0.45),
+        color: '#241040', opacity: 0.55, drag: 0.8, blend: 'normal' });
+      if (Math.random() < 0.3) {
+        spawn({ pos: p, life: 0.15, size: 0.08, sizeEnd: 0.02, color: '#8a4dff' });
+      }
+    } else if (style === 'star') {
+      spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-0.5, 0.5), SKY.U.rand(-0.5, 0.5), SKY.U.rand(-0.5, 0.5)),
+        life: SKY.U.rand(0.25, 0.45), size: 0.07, sizeEnd: 0.015,
+        color: Math.random() < 0.75 ? '#b46bff' : '#ffffff', drag: 0.5 });
+    } else if (style === 'gold') {
+      spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-0.4, 0.4), SKY.U.rand(-0.6, 0.2), SKY.U.rand(-0.4, 0.4)),
+        life: SKY.U.rand(0.25, 0.4), size: 0.08, sizeEnd: 0.02,
+        color: Math.random() < 0.6 ? '#ffd34d' : '#fff4c0', gravity: 3, drag: 0.6 });
+    }
+  }
+
   /* ================================================================= */
   return {
     shakeOffset: shakeOff,
@@ -1169,16 +1219,23 @@ SKY.Effects = (function () {
       const d = SKY.Input.takeFrameDelta();
       vm.sway.x = SKY.U.damp(vm.sway.x, SKY.U.clamp(-d.dx * 0.0022, -0.09, 0.09), 9, dt);
       vm.sway.y = SKY.U.damp(vm.sway.y, SKY.U.clamp(d.dy * 0.0022, -0.07, 0.07), 9, dt);
-      let spin = 0, dip = 0;
+      let spin = 0, dip = 0, roll = 0;
       if (reloadFrac !== undefined && reloadFrac >= 0) {
         const k = reloadFrac * reloadFrac * (3 - 2 * reloadFrac);   // smoothstep
-        spin = -Math.PI * 2 * k;
-        dip = Math.sin(Math.PI * reloadFrac) * 0.07;
+        if (vm.finReload === 'spin') {
+          // mythic flourish: sideways BARREL ROLL instead of the stock backflip
+          roll = -Math.PI * 2 * k;
+          dip = Math.sin(Math.PI * reloadFrac) * 0.05;
+        } else {
+          spin = -Math.PI * 2 * k;
+          dip = Math.sin(Math.PI * reloadFrac) * 0.07;
+        }
       }
       vm.group.rotation.y = vm.sway.x;
       vm.group.rotation.x = vm.kick * 0.5 + vm.sway.y + spin +
         SKY.U.clamp(velY * 0.004, -0.08, 0.08);
-      vm.group.rotation.z = SKY.U.damp(vm.group.rotation.z, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
+      vm.rz = SKY.U.damp(vm.rz || 0, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
+      vm.group.rotation.z = vm.rz + roll;
       // base (rest/bob) position is tracked SEPARATELY from the anim offsets:
       // damping the final position would fight the dip/holster offsets and
       // blow them up ~16x while airborne (the old jump-mid-reload glitch)
@@ -1229,7 +1286,7 @@ SKY.Effects = (function () {
     cannonPop,
     getFovKick() { return fovKick; },
     ring(pos, color, size, life) { ring(pos, color, size, life); },
-    burst, blastBoom, registerAnimMat, registerAnimObj, invalidateThumbs,
+    burst, blastBoom, registerAnimMat, registerAnimObj, invalidateThumbs, refreshSkins,
 
     /* ---------------- gameplay-facing effect recipes ---------------- */
     /* muzzle profile scales with the weapon's kick weight: light guns get a
@@ -1274,7 +1331,7 @@ SKY.Effects = (function () {
     },
     tracer, muzzleLight, buildWeaponMesh, buildNadeMesh, weaponThumb, weaponSideIcon,
     weaponWireIcon, nadeWireIcon,
-    makeTracer, poseTracer, resetTracer,
+    makeTracer, poseTracer, resetTracer, tintTracer, skinTrail,
     flame, swirl, flameJet, flamePuff,
     /* decals */
     bulletHole(pos, normal) {
