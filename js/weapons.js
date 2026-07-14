@@ -613,7 +613,9 @@ SKY.Weapons = (function () {
     if (pawn.inWater) pawn._uwHitT = 0.6;   // let the jet impulse actually carry
     if (pawn.vel.y > 1) pawn.grounded = false;
     pawn._cannonT = 0.7;     // third-person hands show the cannon briefly
-    SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone());
+    const cSkin = skinDefOf(pawn, 'cannon');
+    SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone(),
+      (cSkin && cSkin.tracer) || null);
     if (!pawn.isLocal) SKY.SFX.airCannon(listenDist(_eye));   // local heard it at press
     if (pawn.isLocal) {
       SKY.Effects.shake(1.25);

@@ -150,15 +150,27 @@ SKY.Grapple = (function () {
     const frac = G.minCdFrac + (1 - G.minCdFrac) * SKY.U.clamp01(pawn.grapple.t / G.maxDuration);
     pawn.grapple = null;
     pawn.grappleCd = G.cooldown * frac * pawn.mods.grappleCdMult;
-    if (pawn._rope) pawn._rope.visible = false;
+    hideRope(pawn);
   }
 
   function disposeRope(pawn) {
     if (!pawn._rope) return;
+    const glow = pawn._rope.userData.glow;
+    if (glow) {
+      scene.remove(glow);
+      glow.geometry.dispose();
+      glow.material.dispose();
+    }
     scene.remove(pawn._rope);
     if (pawn._rope.geometry) pawn._rope.geometry.dispose();
     if (pawn._rope.material) pawn._rope.material.dispose();
     pawn._rope = null;
+  }
+
+  function hideRope(pawn) {
+    if (!pawn._rope) return;
+    pawn._rope.visible = false;
+    if (pawn._rope.userData.glow) pawn._rope.userData.glow.visible = false;
   }
 
   /* physics — runs at the fixed tick */
@@ -274,7 +286,37 @@ SKY.Grapple = (function () {
     return mesh;
   }
 
-  function updateRopeGeometry(mesh) {
+  /* a MYTHIC hookgun skin restyles the rope: energy-colored core + additive
+     glow sheath + the skin's particles racing up the line */
+  function restyleRope(rope, finId) {
+    rope.userData.fin = finId || '';
+    const def = finId && SKY.Profile ? SKY.Profile.finishDef(finId) : null;
+    const tr = def && def.tracer;
+    if (rope.userData.glow) {              // clear a previous style
+      scene.remove(rope.userData.glow);
+      rope.userData.glow.geometry.dispose();
+      rope.userData.glow.material.dispose();
+      rope.userData.glow = null;
+    }
+    rope.userData.style = null;
+    if (!tr) {
+      rope.material.color.set(0xd8c49a);   // manila
+      return;
+    }
+    rope.material.color.set(tr.color);
+    rope.userData.style = tr.trail;
+    const glow = makeRopeMesh();
+    glow.material.color.set(tr.color);
+    glow.material.transparent = true;
+    glow.material.opacity = 0.3;
+    glow.material.blending = THREE.AdditiveBlending;
+    glow.material.depthWrite = false;
+    rope.userData.glow = glow;
+    scene.add(glow);
+  }
+
+  function updateRopeGeometry(mesh, radius) {
+    const r = radius || ROPE_R;
     const pos = mesh.geometry.attributes.position;
     for (let i = 0; i <= ROPE_SEGS; i++) {
       const t = i / ROPE_SEGS;
@@ -288,7 +330,7 @@ SKY.Grapple = (function () {
       _nrm.crossVectors(_bin, _tan);
       for (let j = 0; j <= ROPE_RADIAL; j++) {
         const a = (j / ROPE_RADIAL) * Math.PI * 2;
-        const cs = Math.cos(a) * ROPE_R, sn = Math.sin(a) * ROPE_R;
+        const cs = Math.cos(a) * r, sn = Math.sin(a) * r;
         const k = (i * (ROPE_RADIAL + 1) + j) * 3;
         pos.array[k]     = _p.x + _nrm.x * cs + _bin.x * sn;
         pos.array[k + 1] = _p.y + _nrm.y * cs + _bin.y * sn;
@@ -304,7 +346,7 @@ SKY.Grapple = (function () {
       const g = pawn.grapple;
       // dead pawns keep no rope (net-replicated grapples have no tick to
       // release them — the alive flag is the reliable signal)
-      if (!g || !pawn.alive) { if (pawn._rope) pawn._rope.visible = false; continue; }
+      if (!g || !pawn.alive) { hideRope(pawn); continue; }
 
       // rope start: the HOOK-GUN tip for the local player (and the replay's
       // POV ghost — pawn._pov), hand-ish for everyone else
@@ -328,13 +370,31 @@ SKY.Grapple = (function () {
       _curve.v1.copy(_ctrl);
       _curve.v2.copy(g.point);
 
-      // thin manila rope — reads on both bright and dark maps
+      // thin manila rope — reads on both bright and dark maps. A mythic
+      // hookgun skin turns it into an energy line (see restyleRope).
       if (!pawn._rope) {
         pawn._rope = makeRopeMesh();
+        pawn._rope.userData.fin = undefined;   // force the first style pass
         scene.add(pawn._rope);
       }
+      const finId = pawn.isLocal && SKY.Profile ? SKY.Profile.finishFor('hookgun')
+        : pawn.cos && pawn.cos.fin ? (pawn.cos.fin.hookgun || null) : null;
+      if (pawn._rope.userData.fin !== (finId || '')) restyleRope(pawn._rope, finId);
       updateRopeGeometry(pawn._rope);
       pawn._rope.visible = true;
+      const glow = pawn._rope.userData.glow;
+      if (glow) {
+        const now = performance.now();
+        updateRopeGeometry(glow, 0.05);
+        glow.material.opacity = 0.24 + 0.14 * Math.sin(now * 0.005);   // breathing sheath
+        glow.visible = true;
+        // the skin's particles race UP the rope toward the hook point
+        if (!pawn._ropeFxT || now > pawn._ropeFxT) {
+          pawn._ropeFxT = now + 70;
+          _curve.getPoint((now * 0.0007) % 1, _p);
+          SKY.Effects.skinTrail(_p, pawn._rope.userData.style);
+        }
+      }
     }
   }
 

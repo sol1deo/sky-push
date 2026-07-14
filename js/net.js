@@ -959,7 +959,11 @@ SKY.Net = (function () {
     const pos = new THREE.Vector3(m.p[0], m.p[1], m.p[2]);
     const dir = new THREE.Vector3(m.d[0], m.d[1], m.d[2]);
     pawn._cannonT = 0.7;
-    SKY.Effects.cannonBlast(pos.clone().addScaledVector(dir, 1.2), dir);
+    // their mythic cannon skin colors the blast on our screen too
+    const cFin = pawn.cos && pawn.cos.fin ? pawn.cos.fin.cannon : null;
+    const cDef = cFin && SKY.Profile ? SKY.Profile.finishDef(cFin) : null;
+    SKY.Effects.cannonBlast(pos.clone().addScaledVector(dir, 1.2), dir,
+      (cDef && cDef.tracer) || null);
     const me = SKY.Game.player;
     SKY.SFX.airCannon(me ? me.pos.distanceTo(pos) : 12);
   }

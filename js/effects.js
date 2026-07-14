@@ -1401,20 +1401,28 @@ SKY.Effects = (function () {
     clearDecals() {
       for (const d of decals) { d.life = 0; d.mesh.visible = false; }
     },
-    cannonBlast(pos, dir) {
+    cannonBlast(pos, dir, skin) {
       // a proper pressure wave: dense forward cone + white core flash +
-      // double expanding rings that travel with the blast direction
+      // double expanding rings that travel with the blast direction.
+      // A mythic cannon skin recolors the whole wave and salts it with the
+      // skin's signature particles (skin = finish tracer {color, trail}).
+      const cone = skin ? skin.color : '#bfe9ff';
       for (let i = 0; i < 26; i++) {
         const v = dir.clone().multiplyScalar(SKY.U.rand(5, 16));
         v.x += SKY.U.rand(-3.5, 3.5); v.y += SKY.U.rand(-1.5, 3.5); v.z += SKY.U.rand(-3.5, 3.5);
-        spawn({ pos, vel: v, life: SKY.U.rand(0.25, 0.55), size: SKY.U.rand(0.7, 1.3), color: '#bfe9ff', gravity: 2, drag: 2.5 });
+        spawn({ pos, vel: v, life: SKY.U.rand(0.25, 0.55), size: SKY.U.rand(0.7, 1.3), color: cone, gravity: 2, drag: 2.5 });
       }
       spawn({ pos, life: 0.15, size: 2.2, sizeEnd: 4.5, color: '#ffffff' });
-      ring(pos, '#bfe9ff', 6.5, 0.38);
+      ring(pos, cone, 6.5, 0.38);
       const p2 = pos.clone().addScaledVector(dir, 2.2);
-      ring(p2, '#e8f4ff', 4.5, 0.3);
+      ring(p2, skin ? skin.color : '#e8f4ff', 4.5, 0.3);
       const p3 = pos.clone().addScaledVector(dir, 4.5);
-      ring(p3, '#bfe9ff', 3, 0.26);
+      ring(p3, cone, 3, 0.26);
+      if (skin) {
+        for (let i = 0; i < 10; i++) {
+          skinTrail(pos.clone().addScaledVector(dir, SKY.U.rand(0.4, 4)), skin.trail);
+        }
+      }
     },
     padRing(pos) { ring(pos, '#7dff9e', 3.2, 0.4); burst(pos, { count: 8, speed: 3, color: '#7dff9e', gravity: -2, life: 0.4 }); },
     trailPuff(pos, color) { spawn({ pos, life: 0.28, size: 0.34, sizeEnd: 0.05, color, opacity: 0.8 }); },
