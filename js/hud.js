@@ -519,8 +519,17 @@ SKY.HUD = (function () {
         </div>`;
       }).join('');
       el.loot.classList.remove('hidden');
+      // accidental-pick guards: inputs held from the fight (mouse button,
+      // repeating keys) used to land on a card the instant it appeared —
+      // ignore everything in the first grace window, only accept presses
+      // that START on the card (pointerdown), and never synthetic clicks
+      const openT = performance.now();
+      const fresh = () => performance.now() - openT > 350;
       el.lootCards.querySelectorAll('.loot-card').forEach(card => {
-        card.addEventListener('click', () => onPick(parseInt(card.dataset.i, 10)));
+        card.addEventListener('pointerdown', (e) => {
+          if (!fresh() || e.button !== 0) return;
+          onPick(parseInt(card.dataset.i, 10));
+        });
       });
       // SKIP: respawn without taking anything
       const oldSkip = el.loot.querySelector('#loot-skip');
@@ -529,11 +538,16 @@ SKY.HUD = (function () {
       skip.className = 'btn small';
       skip.id = 'loot-skip';
       skip.textContent = 'Skip — no reward';
-      skip.addEventListener('click', () => (onSkip || (() => SKY.Game.skipLoot()))());
+      skip.addEventListener('pointerdown', (e) => {
+        if (!fresh() || e.button !== 0) return;
+        (onSkip || (() => SKY.Game.skipLoot()))();
+      });
       el.loot.appendChild(skip);
+      skip.blur();                       // Space/Enter must never "click" it
       // key picks handled here (inside the event = valid user gesture for
       // re-locking the pointer afterwards)
       lootKeyHandler = (e) => {
+        if (e.repeat || !fresh()) return;   // a HELD key is not a choice
         const m = e.code.match(/^Digit([123])$/);
         if (m) onPick(parseInt(m[1], 10) - 1);
       };

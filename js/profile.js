@@ -178,8 +178,13 @@ SKY.Profile = (function () {
     return h;
   }
 
-  function skinMaterial(f, localMat, scale, off) {
-    const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  function skinMaterial(f, localMat, scale, off, baseMap) {
+    // keeping the ORIGINAL colormap bound gives the shader the gun's real
+    // paint: dark texels = scopes/rails/grips, which STAY unskinned so the
+    // wrap reads as a tailored paint job, not a shrink-wrap over everything
+    const m = new THREE.MeshLambertMaterial({ color: 0xffffff, map: baseMap || null });
+    const rimBase = f.mythic ? 0.28 : 0;
+    const rimCol = (f.tracer && f.tracer.color) || f.scanColor || '#ffffff';
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uSkinMap = { value: skinTex(f.skin) };
       sh.uniforms.uSkinLocal = { value: localMat };
@@ -190,45 +195,66 @@ SKY.Profile = (function () {
       sh.uniforms.uDrift = { value: f.anim === 'drift' ? 0.014 : 0 };
       sh.uniforms.uScan = { value: f.anim === 'scan' ? 0.55 : 0 };
       sh.uniforms.uScanCol = { value: new THREE.Color(f.scanColor || '#59f7ff') };
+      sh.uniforms.uRim = { value: rimBase };
+      sh.uniforms.uRimCol = { value: new THREE.Color(rimCol) };
       sh.uniforms.uTime = { value: 0 };
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>',
-          '#include <common>\nuniform mat4 uSkinLocal;\nvarying vec3 vSkinP;\nvarying vec3 vSkinN;')
+          '#include <common>\nuniform mat4 uSkinLocal;\nvarying vec3 vSkinP;\nvarying vec3 vSkinN;\n' +
+          'varying vec3 vSkinWP;\nvarying vec3 vSkinWN;')
         .replace('#include <begin_vertex>',
           '#include <begin_vertex>\n' +
           'vSkinP = (uSkinLocal * vec4(position, 1.0)).xyz;\n' +
-          'vSkinN = normalize(mat3(uSkinLocal) * normal);');
+          'vSkinN = normalize(mat3(uSkinLocal) * normal);\n' +
+          'vSkinWP = (modelMatrix * vec4(position, 1.0)).xyz;\n' +
+          'vSkinWN = normalize(mat3(modelMatrix) * normal);');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>',
           '#include <common>\n' +
           'uniform sampler2D uSkinMap; uniform float uSkinScale; uniform vec2 uSkinOff;\n' +
           'uniform float uGlowLo; uniform float uGlowAmt; uniform float uDrift;\n' +
           'uniform float uScan; uniform vec3 uScanCol; uniform float uTime;\n' +
-          'varying vec3 vSkinP; varying vec3 vSkinN;')
+          'uniform float uRim; uniform vec3 uRimCol;\n' +
+          'varying vec3 vSkinP; varying vec3 vSkinN;\n' +
+          'varying vec3 vSkinWP; varying vec3 vSkinWN;')
         .replace('#include <map_fragment>',
           'vec3 sw = abs(vSkinN); sw = pow(sw, vec3(3.0)); sw /= (sw.x + sw.y + sw.z + 1e-4);\n' +
           'vec2 sOff = uSkinOff + uTime * uDrift * vec2(1.0, 0.62);\n' +
           'vec4 skinCol = texture2D(uSkinMap, vSkinP.zy * uSkinScale + sOff) * sw.x\n' +
           '  + texture2D(uSkinMap, vSkinP.xz * uSkinScale + sOff) * sw.y\n' +
           '  + texture2D(uSkinMap, vSkinP.xy * uSkinScale + sOff) * sw.z;\n' +
-          'diffuseColor.rgb *= skinCol.rgb;')
+          'float skinMix = 1.0;\n' +
+          '#ifdef USE_MAP\n' +
+          '  vec4 baseCol = texture2D(map, vUv);\n' +
+          '  float baseLum = dot(baseCol.rgb, vec3(0.299, 0.587, 0.114));\n' +
+          '  skinMix = smoothstep(0.028, 0.085, baseLum);\n' +   // dark attachments keep base paint
+          '  diffuseColor.rgb = mix(baseCol.rgb, skinCol.rgb, skinMix);\n' +
+          '#else\n' +
+          '  diffuseColor.rgb *= skinCol.rgb;\n' +
+          '#endif')
         .replace('#include <emissivemap_fragment>',
           '#include <emissivemap_fragment>\n' +
           'float sLum = dot(skinCol.rgb, vec3(0.299, 0.587, 0.114));\n' +
-          'totalEmissiveRadiance += skinCol.rgb * smoothstep(uGlowLo, 1.0, sLum) * uGlowAmt;\n' +
+          'totalEmissiveRadiance += skinCol.rgb * smoothstep(uGlowLo, 1.0, sLum) * uGlowAmt * skinMix;\n' +
           'if (uScan > 0.0) {\n' +
           '  float band = smoothstep(0.09, 0.0, abs(fract(vSkinP.z * uSkinScale * 0.6 - uTime * 0.45) - 0.5));\n' +
-          '  totalEmissiveRadiance += uScanCol * band * uScan;\n' +
+          '  totalEmissiveRadiance += uScanCol * band * uScan * skinMix;\n' +
+          '}\n' +
+          'if (uRim > 0.0) {\n' +
+          '  vec3 rV = normalize(cameraPosition - vSkinWP);\n' +
+          '  float rim = pow(1.0 - max(0.0, dot(normalize(vSkinWN), rV)), 4.0);\n' +
+          '  totalEmissiveRadiance += uRimCol * rim * uRim;\n' +
           '}');
       m.userData.shader = sh;
     };
-    if (f.anim) {
+    if (f.anim || f.mythic) {
       const base = f.glowAmt || 0.6;
       m.userData.animFx = 'skin';
       m.userData.skinTick = (t) => {
         const sh = m.userData.shader;
         if (!sh) return;
         sh.uniforms.uTime.value = t;
+        if (rimBase) sh.uniforms.uRim.value = rimBase * (0.65 + 0.35 * Math.sin(t * 2.6));
         if (f.anim === 'lava') sh.uniforms.uGlowAmt.value = base * (0.55 + 0.45 * Math.sin(t * 2.2));
         else if (f.anim === 'shimmer') sh.uniforms.uGlowAmt.value = base * (0.75 + 0.25 * Math.sin(t * 1.7));
         else if (f.anim === 'void') sh.uniforms.uGlowAmt.value = base * (0.6 + 0.4 * Math.sin(t * 1.4));
@@ -405,7 +431,7 @@ SKY.Profile = (function () {
     group.traverse((o) => {
       if (!o.isMesh || !o.material || o.name === 'tierglow') return;
       const local = inv.clone().multiply(o.matrixWorld);
-      o.material = skinMaterial(f, local, scale, off);
+      o.material = skinMaterial(f, local, scale, off, o.material.map || null);
     });
     if (f.orbitFx) attachOrbitFx(group, box, f.orbitFx);
   }

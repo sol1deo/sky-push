@@ -790,6 +790,13 @@ SKY.Effects = (function () {
     visible: true,
   };
 
+  /* first-person weapons live on render layer 1: the main loop draws them in
+     a second, depth-cleared pass so they can't poke through walls */
+  const VM_LAYER = 1;
+  function toVmLayer(grp) {
+    grp.traverse((o) => o.layers.set(VM_LAYER));
+  }
+
   function mountWeapon(kind) {
     if (vm.group) camera.remove(vm.group);
     vm.kind = kind;
@@ -800,6 +807,7 @@ SKY.Effects = (function () {
     vm.group.scale.setScalar(0.85);
     vm.group.position.set(0.3, -0.27, -0.52);
     vm.group.visible = vm.visible;
+    toVmLayer(vm.group);
     camera.add(vm.group);
   }
 
@@ -816,6 +824,7 @@ SKY.Effects = (function () {
     vm.hook.scale.setScalar(0.85);
     vm.hook.position.set(-0.32, -0.9, -0.5);
     vm.hook.visible = vm.visible;
+    toVmLayer(vm.hook);
     camera.add(vm.hook);
   }
 
@@ -832,6 +841,7 @@ SKY.Effects = (function () {
       vm.cannon = buildWeaponMesh('cannon', SKY.Profile && SKY.Profile.finishFor('cannon'));
       vm.cannon.scale.setScalar(0.85);
       vm.cannon.visible = false;
+      toVmLayer(vm.cannon);
       camera.add(vm.cannon);
     }
     vm.cannonT = 0.0001;
@@ -990,6 +1000,7 @@ SKY.Effects = (function () {
   function muzzleLight(pos) {
     if (!muzzleLightObj) {
       muzzleLightObj = new THREE.PointLight(0xffd9a0, 0, 9, 2);
+      muzzleLightObj.layers.enableAll();   // must also light the vm pass
       scene.add(muzzleLightObj);
     }
     muzzleLightObj.position.copy(pos);
@@ -1050,10 +1061,56 @@ SKY.Effects = (function () {
     vis.trail.geometry.attributes.position.needsUpdate = true;
   }
 
-  /* mythic-skin bullets: tint the pooled tracer (null = back to stock warm) */
+  /* mythic-skin bullets: tint the pooled tracer (null = back to stock warm);
+     skinned rounds also get a slightly larger, hotter head */
   function tintTracer(vis, colorHex) {
     vis.head.material.color.set(colorHex || 0xfff2d0);
     vis.trail.material.color.set(colorHex || 0xffe2a8);
+    const s = colorHex ? 0.5 : 0.38;
+    vis.head.scale.set(s, s, 1);
+  }
+
+  /* skin-styled bullet IMPACT — replaces the stock white spark burst so the
+     whole shot (muzzle → tracer → trail → impact) wears the mythic */
+  function skinImpact(pos, normal, style) {
+    const p = pos.clone().addScaledVector(normal, 0.05);
+    const kick = (spd, spread) => new THREE.Vector3(
+      normal.x * spd + SKY.U.rand(-spread, spread),
+      normal.y * spd + SKY.U.rand(-spread * 0.5, spread),
+      normal.z * spd + SKY.U.rand(-spread, spread));
+    if (style === 'flame') {
+      spawn({ pos: p.clone(), life: 0.16, size: 0.45, sizeEnd: 0.95, color: '#ff9838', opacity: 0.85 });
+      for (let i = 0; i < 6; i++) {
+        spawn({ pos: p.clone(), vel: kick(2.6, 2.2), life: SKY.U.rand(0.25, 0.42),
+          size: 0.1, sizeEnd: 0.02, color: i % 2 ? '#ff7a20' : '#ffc23c', gravity: -2, drag: 1.2 });
+      }
+    } else if (style === 'spark') {
+      spawn({ pos: p.clone(), life: 0.1, size: 0.55, sizeEnd: 0.2, color: '#bdefff' });
+      for (let i = 0; i < 9; i++) {
+        spawn({ pos: p.clone(), vel: kick(4.5, 4.2), life: SKY.U.rand(0.09, 0.2),
+          size: 0.08, sizeEnd: 0.015, color: i % 3 ? '#59d8ff' : '#ffffff', drag: 1.5 });
+      }
+      ring(p, '#59d8ff', 0.9, 0.18);
+    } else if (style === 'void') {
+      spawn({ pos: p.clone(), life: 0.12, size: 0.4, sizeEnd: 0.12, color: '#8a4dff' });
+      for (let i = 0; i < 5; i++) {
+        spawn({ pos: p.clone(), vel: kick(1.4, 1.2), life: SKY.U.rand(0.3, 0.5),
+          size: 0.14, sizeEnd: SKY.U.rand(0.4, 0.6), color: '#241040',
+          opacity: 0.6, drag: 1, blend: 'normal' });
+      }
+    } else if (style === 'star') {
+      spawn({ pos: p.clone(), life: 0.14, size: 0.5, sizeEnd: 0.15, color: '#b46bff' });
+      for (let i = 0; i < 7; i++) {
+        spawn({ pos: p.clone(), vel: kick(3, 2.6), life: SKY.U.rand(0.2, 0.4),
+          size: 0.07, sizeEnd: 0.012, color: i % 2 ? '#e0c8ff' : '#ffffff', drag: 0.8 });
+      }
+    } else if (style === 'gold') {
+      spawn({ pos: p.clone(), life: 0.14, size: 0.45, sizeEnd: 0.15, color: '#ffd34d' });
+      for (let i = 0; i < 8; i++) {
+        spawn({ pos: p.clone(), vel: kick(2.6, 2.4), life: SKY.U.rand(0.3, 0.5),
+          size: 0.08, sizeEnd: 0.015, color: i % 2 ? '#ffd34d' : '#fff4c0', gravity: 5, drag: 0.7 });
+      }
+    }
   }
 
   /* mythic-skin bullet trail — one light particle per call, throttled by the
@@ -1091,6 +1148,7 @@ SKY.Effects = (function () {
   return {
     shakeOffset: shakeOff,
     splash, underwater, stream,
+    camera() { return camera; },   // map culler / anyone needing the live cam
 
     init(sc, cam) {
       scene = sc; camera = cam;
@@ -1331,7 +1389,7 @@ SKY.Effects = (function () {
     },
     tracer, muzzleLight, buildWeaponMesh, buildNadeMesh, weaponThumb, weaponSideIcon,
     weaponWireIcon, nadeWireIcon,
-    makeTracer, poseTracer, resetTracer, tintTracer, skinTrail,
+    makeTracer, poseTracer, resetTracer, tintTracer, skinTrail, skinImpact,
     flame, swirl, flameJet, flamePuff,
     /* decals */
     bulletHole(pos, normal) {

@@ -10,7 +10,8 @@ SKY.Locker = (function () {
   let panel = null;
   let selWeapon = 'pistol';
   let selSkin = null;       // finish id open in the detail view (null = browsing)
-  let lkTab = 'char';       // char | style | weapons — kills the giant scroll
+  let showWeapon = null;    // browse-grid showcase gun (null = lobby weapon)
+  let lkTab = 'weapons';    // weapons | char | style — skins are the storefront
   const charThumbs = {};    // charId -> dataURL
 
   /* skin-first shop copy: the card sells the FANTASY, mythics list their FX */
@@ -194,7 +195,7 @@ SKY.Locker = (function () {
     const ready = SKY.GFX && SKY.GFX.charReady();
 
     const tabs = `<div class="lk-tabs">
-      ${[['char', 'Character'], ['style', 'Colors'], ['weapons', 'Weapons']].map(([id, label]) =>
+      ${[['weapons', 'Weapons'], ['char', 'Character'], ['style', 'Colors']].map(([id, label]) =>
         `<button class="lk-tab ${lkTab === id ? 'sel' : ''}" data-tab="${id}">${label}</button>`).join('')}
     </div>`;
 
@@ -235,25 +236,35 @@ SKY.Locker = (function () {
       // ---------- SKIN DETAIL: big preview + pick the gun to wear it ----------
       const f = P.finishDef(selSkin);
       const [chipTxt, chipCol] = TIER_CHIP[f.tier || 'std'];
-      const bigImg = SKY.Effects.weaponThumb(selWeapon, f.id);
       const owned = P.ownsFinish(selWeapon, f.id);
       const equipped = P.finishFor(selWeapon) === f.id;
       const held = (P.data.wpn || 'pistol') === selWeapon;
       const strip = WEAPON_ROW.map((k) => {
+        const W = SKY.TUNING.weapons[k] || EXTRA_DEFS[k] || { short: k.toUpperCase() };
         const img = SKY.Effects.weaponThumb(k, f.id);
         const own = P.ownsFinish(k, f.id);
-        const eq = P.finishFor(k) === f.id;
+        const cur = P.finishFor(k);
+        const eq = cur === f.id;
+        // status line: wearing THIS skin / wearing another / bare
+        let st = '<span class="lk-wst lk-mute">stock</span>';
+        if (eq) st = '<span class="lk-wst lk-this">THIS SKIN</span>';
+        else if (cur !== 'stock') {
+          const other = P.finishDef(cur);
+          st = `<span class="lk-wst" style="color:${(TIER_CHIP[other.tier || 'std'] || [])[1]}">${other.name}</span>`;
+        }
         return `<div class="lk-wthumb ${k === selWeapon ? 'sel' : ''}" data-w="${k}"
           title="${(SKY.TUNING.weapons[k] || EXTRA_DEFS[k] || {}).label || k}">
           ${img ? `<img src="${img}" draggable="false">` : ''}
           ${eq ? '<span class="lk-weq">✓</span>' : own ? '<span class="lk-weq lk-wown">●</span>' : ''}
+          <div class="lk-wname">${W.short}</div>
+          ${st}
         </div>`;
       }).join('');
       const WSel = SKY.TUNING.weapons[selWeapon] || EXTRA_DEFS[selWeapon] || { label: selWeapon };
       body = `
         <button class="lk-back" id="lk-back">← ALL SKINS</button>
         <div class="lk-detail${f.mythic ? ' lk-mythic' : ''}">
-          <div class="lk-dbig">${bigImg ? `<img src="${bigImg}" draggable="false">` : '<div class="lk-ph"></div>'}</div>
+          <div class="lk-dbig" id="lk-dbig"><div class="lk-inshint">drag to spin — live FX</div></div>
           <div class="lk-dinfo">
             <span class="lk-schip" style="background:${chipCol}">${chipTxt}</span>
             <h2>${f.name}</h2>
@@ -275,7 +286,23 @@ SKY.Locker = (function () {
         <div class="lk-wstrip">${strip}</div>`;
     } else {
       // ---------- SKIN BROWSER: the skin is the product, the gun comes after ----------
-      const show = P.data.wpn || 'pistol';       // showcase = the gun you pose with
+      const show = showWeapon || P.data.wpn || 'pistol';   // showcase gun for every card
+      // YOUR LOADOUT: which gun wears what, at a glance — click one to
+      // showcase the whole grid on it
+      const loadout = WEAPON_ROW.map((k) => {
+        const W = SKY.TUNING.weapons[k] || EXTRA_DEFS[k] || { short: k.toUpperCase() };
+        const cur = P.finishFor(k);
+        const curDef = cur === 'stock' ? null : P.finishDef(cur);
+        const img = SKY.Effects.weaponThumb(k, cur === 'stock' ? undefined : cur);
+        return `<div class="lk-wthumb lk-lo ${k === show ? 'sel' : ''}" data-show="${k}"
+          title="${W.label || k} — click to showcase the skins below on it">
+          ${img ? `<img src="${img}" draggable="false">` : ''}
+          <div class="lk-wname">${W.short}</div>
+          ${curDef
+            ? `<span class="lk-wst" style="color:${(TIER_CHIP[curDef.tier || 'std'] || [])[1]}">${curDef.name}</span>`
+            : '<span class="lk-wst lk-mute">stock</span>'}
+        </div>`;
+      }).join('');
       const skins = P.FINISHES.filter(x => x.id !== 'stock')
         .slice().sort((a, b) => b.price - a.price);
       // FEATURED: the priciest skin you don't own yet, rotating daily
@@ -311,7 +338,10 @@ SKY.Locker = (function () {
           <div class="lk-tag">${ownedN ? `OWNED · ${ownedN} GUN${ownedN > 1 ? 'S' : ''}` : '⬡ ' + f.price}</div>
         </div>`;
       }).join('');
-      body = `${featHtml}
+      body = `
+        <h4 class="lk-h">YOUR LOADOUT <small>what each gun wears — click one to preview the skins on it</small></h4>
+        <div class="lk-wstrip lk-lorow">${loadout}</div>
+        ${featHtml}
         <h4 class="lk-h">ALL SKINS <small>pick the look — then choose which guns wear it</small></h4>
         <div class="lk-grid lk-sgrid">${cards}</div>`;
     }
@@ -325,6 +355,15 @@ SKY.Locker = (function () {
       ${tabs}
       ${body}
       <div class="lk-note">earn ⬡ by finishing matches — KOs and wins pay extra</div>`;
+
+    // detail view: mount the persistent live-inspect canvas
+    if (lkTab === 'weapons' && selSkin) {
+      const mount = panel.querySelector('#lk-dbig');
+      if (mount && ensureInspectRig()) {
+        buildInspect(selWeapon, selSkin);
+        mount.insertBefore(ins.canvas, mount.firstChild);
+      }
+    }
 
     panel.onclick = (e) => {
       const tab = e.target.closest('.lk-tab');
@@ -372,7 +411,9 @@ SKY.Locker = (function () {
       }
       const cCard = e.target.closest('[data-char]');
       const skCard = e.target.closest('[data-sk]');
-      const wBtn = e.target.closest('.lk-wthumb');
+      const loBtn = e.target.closest('[data-show]');
+      if (loBtn) { showWeapon = loBtn.dataset.show; selWeapon = showWeapon; renderPanel(); return; }
+      const wBtn = e.target.closest('.lk-wthumb[data-w]');
       if (wBtn) { selWeapon = wBtn.dataset.w; renderPanel(); return; }
       if (skCard) {                       // open the skin's detail page
         selSkin = skCard.dataset.sk;
@@ -393,6 +434,71 @@ SKY.Locker = (function () {
     };
   }
 
+  /* ---------------- live 3D skin inspect (detail page) ----------------
+     One persistent canvas+renderer, re-parented into each render of the
+     detail view. The real buildWeaponMesh output spins here, so glow anims,
+     lightning arcs, embers — everything the skin does in-game — runs live. */
+  const ins = { renderer: null, canvas: null, scene: null, cam: null,
+    grp: null, key: '', drag: null, yaw: 0.6, pitch: 0.18, auto: true };
+  function ensureInspectRig() {
+    if (ins.renderer) return true;
+    try {
+      ins.canvas = document.createElement('canvas');
+      ins.canvas.id = 'lk-inspect';
+      ins.renderer = new THREE.WebGLRenderer({ canvas: ins.canvas, antialias: true, alpha: true });
+      ins.renderer.setSize(340, 190);
+      ins.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      ins.renderer.outputEncoding = THREE.sRGBEncoding;
+      ins.scene = new THREE.Scene();
+      ins.scene.add(new THREE.HemisphereLight(0xe8f0ff, 0x3a4150, 1.1));
+      const key = new THREE.DirectionalLight(0xffffff, 1.4);
+      key.position.set(1.4, 1.9, 1.2);
+      ins.scene.add(key);
+      ins.cam = new THREE.PerspectiveCamera(26, 340 / 190, 0.01, 10);
+      // drag to rotate; let go and it drifts on its own again
+      ins.canvas.style.cssText = 'cursor:grab; touch-action:none;';
+      ins.canvas.addEventListener('pointerdown', (e) => {
+        ins.drag = { x: e.clientX, y: e.clientY };
+        ins.auto = false;
+        ins.canvas.setPointerCapture(e.pointerId);
+        ins.canvas.style.cursor = 'grabbing';
+      });
+      ins.canvas.addEventListener('pointermove', (e) => {
+        if (!ins.drag) return;
+        ins.yaw += (e.clientX - ins.drag.x) * 0.012;
+        ins.pitch = SKY.U.clamp(ins.pitch + (e.clientY - ins.drag.y) * 0.008, -1.2, 1.2);
+        ins.drag = { x: e.clientX, y: e.clientY };
+      });
+      const drop = () => { ins.drag = null; ins.auto = true; ins.canvas.style.cursor = 'grab'; };
+      ins.canvas.addEventListener('pointerup', drop);
+      ins.canvas.addEventListener('pointercancel', drop);
+      return true;
+    } catch (e) { return false; }
+  }
+  function buildInspect(kind, skin) {
+    const k = kind + ':' + skin;
+    if (ins.key === k && ins.grp) return;
+    ins.key = k;
+    if (ins.grp) { ins.scene.remove(ins.grp); ins.grp = null; }
+    const mesh = SKY.Effects.buildWeaponMesh(kind, skin);
+    const box = new THREE.Box3().setFromObject(mesh);
+    const c = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    mesh.position.sub(c);
+    ins.grp = new THREE.Group();
+    ins.grp.add(mesh);
+    ins.scene.add(ins.grp);
+    ins.cam.position.set(0, 0.04, Math.max(0.2, size) * 1.35);
+    ins.cam.lookAt(0, 0, 0);
+  }
+  function tickInspect(dt) {
+    if (!ins.renderer || !ins.grp || !selSkin) return;
+    if (!ins.canvas.isConnected) return;            // detail view closed
+    if (ins.auto) ins.yaw += dt * 0.55;
+    ins.grp.rotation.set(ins.pitch, ins.yaw, 0);
+    ins.renderer.render(ins.scene, ins.cam);
+  }
+
   /* purchases need an account (only once the account system is configured) */
   function needAccount() {
     SKY.SFX.init(); SKY.SFX.dry();
@@ -408,7 +514,7 @@ SKY.Locker = (function () {
 
   return {
     renderPanel,
-    tick(dt) { tickPreview(dt); },
+    tick(dt) { tickPreview(dt); tickInspect(dt); },
     refreshPreview() { rebuildPreview(); },
     init() {
       const refreshCoins = () => {

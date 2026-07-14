@@ -2062,11 +2062,15 @@ SKY.Map = (function () {
     mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
     mesh.receiveShadow = true;
     group.add(mesh);
+    mesh.updateMatrixWorld(true);
+    mesh.matrixAutoUpdate = false;       // terrain never moves — skip the math
     // sculpt-following side walls (+ bottom cap and body collision when the
     // terrain came from a converted block)
     const sides = buildTerrainSides(tr, heights, segs, sx, sz);
     sides.mesh.position.set(tr.p[0], tr.p[1], tr.p[2]);
     group.add(sides.mesh);
+    sides.mesh.updateMatrixWorld(true);
+    sides.mesh.matrixAutoUpdate = false;
     if (tr.base && tr.base > 0.05) {
       SKY.World.addSolid({ x: tr.p[0], y: tr.p[1] - tr.base / 2, z: tr.p[2],
         sx, sy: tr.base, sz });
@@ -2126,6 +2130,13 @@ SKY.Map = (function () {
         : D.SKIES[def.sky];
       const fc = new THREE.Color(S2[2]).lerp(new THREE.Color(S2[1]), 0.3);
       scene.fog = new THREE.Fog(fc.getHex(), M.fog[1], M.fog[2]);
+    }
+
+    // anything the fog fully swallows stops rendering (culler cap)
+    if (scene.fog) {
+      cullCap = scene.fog.isFogExp2
+        ? 2.2 / Math.max(1e-4, scene.fog.density)
+        : scene.fog.far * 1.15;
     }
 
     // terrains FIRST: the sea's per-vertex depth measurement needs them
@@ -2371,6 +2382,21 @@ SKY.Map = (function () {
           else if (carved) for (const b of carved) SKY.World.addSolid(toSolid(b.c, b.s));
           else SKY.World.addSolid(solidOpts);
         }
+        // ---- perf: asset-heavy maps live or die here ----
+        // small props stop casting shadows (the shadow pass was re-drawing
+        // hundreds of pebbles/planks every frame)
+        const dim = Math.max(s.x, s.y, s.z);
+        if (dim < 1.3) obj.traverse((o2) => { if (o2.isMesh) o2.castShadow = false; });
+        // static props: freeze their matrices + register for distance culling
+        // (skips doors, fx entities, the sea, and anything skinned/animated)
+        let animated = doorIdx >= 0 || !!pr.fx || !!(obj.userData && obj.userData.postPlace);
+        if (!animated) obj.traverse((o2) => { if (o2.isSkinnedMesh || o2.isBone) animated = true; });
+        if (!animated) {
+          obj.updateMatrixWorld(true);
+          obj.traverse((o2) => { o2.matrixAutoUpdate = false; });
+          const wc = new THREE.Box3().setFromObject(obj).getCenter(new THREE.Vector3());
+          cullables.push({ obj, x: wc.x, y: wc.y, z: wc.z, r: dim * 0.5 });
+        }
       }, pr.fx);
     }
     // bots: auto roam/anchor points — big static block tops + spawns
@@ -2388,6 +2414,27 @@ SKY.Map = (function () {
   let lightMul = 1;    // creator light dial — underwater darkness reads it
   let lobbySpotDef = null;   // custom map's lobby-lineup spot {p:[x,y,z], yaw}
 
+  /* ---- distance culling: static props stop rendering once they're too far
+     to read. Visible range scales with the prop's size, capped by the map's
+     fog (anything the fog swallowed was pure wasted GPU). ---- */
+  const cullables = [];
+  let cullIdx = 0, cullCap = Infinity;
+  function tickCulling() {
+    if (!cullables.length) return;
+    const cam = SKY.Effects && SKY.Effects.camera && SKY.Effects.camera();
+    if (!cam) return;
+    const cp = cam.position;
+    const n = Math.min(cullables.length, 48);      // round-robin, ~3 frames/sweep
+    for (let i = 0; i < n; i++) {
+      cullIdx = (cullIdx + 1) % cullables.length;
+      const cu = cullables[cullIdx];
+      const d = Math.min(45 + cu.r * 30, cullCap);
+      const dx = cu.x - cp.x, dy = cu.y - cp.y, dz = cu.z - cp.z;
+      const vis = dx * dx + dy * dy + dz * dz < d * d;
+      if (cu.obj.visible !== vis) cu.obj.visible = vis;
+    }
+  }
+
   /* ====================== lifecycle ====================== */
   function load(sc, id) {
     scene = sc;
@@ -2403,6 +2450,7 @@ SKY.Map = (function () {
     overtime = false; dirty = false;
     starLayer = null; meteor = null; meteorT = 6;
     doors.length = 0;
+    cullables.length = 0; cullIdx = 0; cullCap = Infinity;
     eventCfg = null; eventT = SKY.U.rand(8, 14);
     SKY.World.reset();
     SKY.World.rideSolids = [];
@@ -2450,6 +2498,7 @@ SKY.Map = (function () {
   }
 
   function tick(dt, time) {
+    tickCulling();
     for (const c of clouds) {
       c.a += c.speed * dt * 0.02;
       c.mesh.position.x = Math.cos(c.a) * c.r;

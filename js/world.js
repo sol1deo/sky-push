@@ -237,10 +237,13 @@ SKY.World = (function () {
           }
         }
       }
-      // sculpted terrain: feet never sink below the heightfield
+      // sculpted terrain: feet never sink below the heightfield — but only
+      // within a shallow band. Deep below = legitimately UNDER the terrain
+      // shell (skirt interior, grapple under a floating edge); snapping from
+      // there teleported players onto the surface.
       if (api.terrains.length) {
         const th = api.terrainHeight(pos.x, pos.z);
-        if (isFinite(th) && pos.y < th) {
+        if (isFinite(th) && pos.y < th && pos.y > th - 1.5) {
           pos.y = th;
           api.terrainNormal(pos.x, pos.z, _n);
           const vn = vel.dot(_n);
@@ -272,7 +275,7 @@ SKY.World = (function () {
       }
       if (api.terrains.length) {
         const th = api.terrainHeight(p.x, p.z);
-        if (isFinite(th) && p.y - r < th) { p.y = th + r; grounded = true; }
+        if (isFinite(th) && p.y - r < th && p.y - r > th - 1.5) { p.y = th + r; grounded = true; }
       }
       return grounded;
     },
@@ -372,10 +375,17 @@ SKY.World = (function () {
         const dx = pawn.pos.x - p.x, dz = pawn.pos.z - p.z;
         if (dx * dx + dz * dz > p.r * p.r) continue;
         if (pawn.pos.y < p.y - 0.6 || pawn.pos.y > p.y + 0.9) continue;
+        // deterministic launch: same start height + exact launch velocity.
+        // coyote/buffered jumps must be cleared or a HELD space (auto-bhop)
+        // fires a normal jump one tick later and OVERWRITES the launch —
+        // that was the "pads feel random" bug.
+        pawn.pos.y = p.y + 0.05;
         pawn.vel.y = p.launch.y;
         pawn.vel.x = pawn.vel.x * 0.5 + p.launch.x;
         pawn.vel.z = pawn.vel.z * 0.5 + p.launch.z;
         pawn.grounded = false;
+        pawn.coyoteT = 0;
+        pawn.jumpBufferT = 0;
         pawn.padLockT = 0.4;
         return p;
       }

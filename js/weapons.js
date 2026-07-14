@@ -425,9 +425,10 @@ SKY.Weapons = (function () {
           b.vel.addScaledVector(n, -2 * vd);
           b.pos.copy(point).addScaledVector(n, 0.03);
           b.prev.copy(b.pos);
-          SKY.Effects.impactSpark(point.clone(), n.clone());
+          if (b.skin) SKY.Effects.skinImpact(point.clone(), n.clone(), b.skin.trail);
+          else SKY.Effects.impactSpark(point.clone(), n.clone());
           SKY.Effects.bulletHole(point.clone(), n.clone());
-          SKY.Effects.ring(point.clone(), b.color, 0.7, 0.18);
+          SKY.Effects.ring(point.clone(), b.skin ? b.skin.color : b.color, 0.7, 0.18);
           SKY.SFX.bounce(listenDist(point));
           continue;
         }
@@ -462,8 +463,9 @@ SKY.Weapons = (function () {
               SKY.Effects.floatText(point.clone().add(new THREE.Vector3(0, 0.6, 0)), 'BONK!', '#ff6a6a');
             }
           } else {
-            SKY.Effects.hitBurst(point.clone(), b.tier, b.color);
-            SKY.Effects.impactSpark(point.clone(), _dir.clone().negate());  // backsplash
+            SKY.Effects.hitBurst(point.clone(), b.tier, b.skin ? b.skin.color : b.color);
+            if (b.skin) SKY.Effects.skinImpact(point.clone(), _dir.clone().negate(), b.skin.trail);
+            else SKY.Effects.impactSpark(point.clone(), _dir.clone().negate());  // backsplash
             SKY.Effects.muzzleLight(point);              // impact flash
             SKY.SFX.hit(b.tier / 3, listenDist(point));
             if (b.owner && b.owner.isLocal) {
@@ -474,9 +476,10 @@ SKY.Weapons = (function () {
           if (victim.isLocal) SKY.Effects.shake(SKY.TUNING.camera.shakeHitTaken);
         } else if (res.pawn) {
           // remote-owned bullet: cosmetic impact only (their sim decides)
-          SKY.Effects.hitBurst(point.clone(), 0, b.color);
+          SKY.Effects.hitBurst(point.clone(), 0, b.skin ? b.skin.color : b.color);
         } else {
-          SKY.Effects.impactSpark(point, res.world.normal);
+          if (b.skin) SKY.Effects.skinImpact(point, res.world.normal, b.skin.trail);
+          else SKY.Effects.impactSpark(point, res.world.normal);
           SKY.Effects.bulletHole(point, res.world.normal);
         }
         removeBullet(i);

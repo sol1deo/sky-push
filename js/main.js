@@ -173,6 +173,33 @@
   let booted = false;
   let fpsAcc = 0, fpsN = 0;
   const fpsEl = document.getElementById('fps');
+  const PR_STEPS = [1.5, 1.25, 1.05, 0.85];   // dynamic-resolution ladder
+  let prIdx = 0, prRecover = 0;
+
+  /* gameplay render = two passes: the world, then the first-person weapons
+     (layer 1) over a CLEARED depth buffer — guns no longer clip into walls.
+     Lights sit on layer 0, so they're periodically swept onto all layers or
+     the vm pass would render unlit. */
+  let lightSweepT = 0;
+  function renderWorld(rdt) {
+    lightSweepT -= rdt;
+    if (lightSweepT <= 0) {
+      lightSweepT = 1;
+      scene.traverse((o) => { if (o.isLight) o.layers.enableAll(); });
+    }
+    camera.layers.disable(1);
+    renderer.render(scene, camera);
+    camera.layers.set(1);
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    scene.matrixWorldAutoUpdate = false;   // matrices are fresh from pass 1
+    renderer.render(scene, camera);
+    scene.matrixWorldAutoUpdate = true;
+    renderer.autoClear = true;
+    // leave the camera permissive: one-off renders elsewhere see everything
+    camera.layers.enable(0);
+    camera.layers.enable(1);
+  }
 
   function loop(now) {
     requestAnimationFrame(loop);
@@ -202,14 +229,29 @@
         SKY.Game.renderTick(rdt);
       }
     }
-    if (!rendered) renderer.render(scene, camera);
+    if (!rendered) renderWorld(rdt);
     SKY.Locker.tick(Math.min(rdt, 0.05));   // menu character preview
     if (SKY.Voice) SKY.Voice.tick(camera);  // push-to-talk + 3D voice positions
 
     // fps counter (updates twice a second)
     fpsAcc += rdt; fpsN++;
     if (fpsAcc >= 0.5) {
-      if (fpsEl && SKY.Settings.data.showFps) fpsEl.textContent = Math.round(fpsN / fpsAcc) + ' FPS';
+      const fps = fpsN / fpsAcc;
+      if (fpsEl && SKY.Settings.data.showFps) fpsEl.textContent = Math.round(fps) + ' FPS';
+      // DYNAMIC RESOLUTION: sustained sub-48 sheds pixels one step at a
+      // time; a solid 3s above 58 earns a step back. Heavy custom maps sit
+      // playable instead of chugging at native res.
+      if (SKY.Game.state === 'playing') {
+        if (fps < 48 && prIdx < PR_STEPS.length - 1) {
+          prIdx++; prRecover = 0;
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio, PR_STEPS[prIdx]));
+        } else if (fps > 58 && prIdx > 0) {
+          if (++prRecover >= 6) {
+            prIdx--; prRecover = 0;
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, PR_STEPS[prIdx]));
+          }
+        } else prRecover = 0;
+      }
       fpsAcc = 0; fpsN = 0;
     }
 
