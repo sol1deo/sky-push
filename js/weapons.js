@@ -152,6 +152,11 @@ SKY.Weapons = (function () {
     // shooter-authoritative bullets: mine, or a bot's if I'm the host
     const auth = !SKY.Net.online || pawn.isLocal || (SKY.Net.role === 'host' && pawn.isBot);
     const netDirs = [];
+    // OUTSIDE the pellet loop — sendFire below reads these too (declaring
+    // them inside scoped them out and every ONLINE shot threw a
+    // ReferenceError right before recoil/muzzle/sfx = "guns broke")
+    const pspd = W.projSpeed * (opts.speedMul || 1);
+    const pgrav = (W.projGravity || 0) * (opts.gravMul || 1);
     for (let i = 0; i < (W.pellets || 1); i++) {
       _pdir.copy(_dir);
       if (spread > 0) {
@@ -160,8 +165,6 @@ SKY.Weapons = (function () {
         _pdir.addScaledVector(_right, Math.cos(a) * r).addScaledVector(_up, Math.sin(a) * r).normalize();
       }
       netDirs.push([+_pdir.x.toFixed(3), +_pdir.y.toFixed(3), +_pdir.z.toFixed(3)]);
-      const pspd = W.projSpeed * (opts.speedMul || 1);
-      const pgrav = (W.projGravity || 0) * (opts.gravMul || 1);
       bullets.push({
         pos: _muzzle.clone(),
         prev: _muzzle.clone(),
@@ -174,6 +177,7 @@ SKY.Weapons = (function () {
         flame: !!W.flameJet,
         owner: pawn, auth,
         life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
+        life0: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, _muzzle),
       });
       SKY.Replay.bullet(_muzzle, bullets[bullets.length - 1].vel,
@@ -192,12 +196,22 @@ SKY.Weapons = (function () {
     // recoil + feedback
     pawn.vel.addScaledVector(_dir, -W.selfRecoil * (opts.recoilMul || 1));
     if (pawn.grounded && pawn.vel.y > 1) pawn.grounded = false;
-    SKY.Effects.muzzle(_muzzle, W.color, pawn.isLocal, W.kick);
-    SKY.Effects.muzzleLight(_muzzle);
-    if (W.flameJet) SKY.Effects.flame(_muzzle, 0.55);   // flamethrower breath
-    SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
+    if (W.flameJet) {
+      // flamethrower: a dedicated billowing cone; the per-shot muzzle burst,
+      // shake and full-rate sfx at 18 rps were the spam-fps-drop
+      SKY.Effects.flameJet(_muzzle, _dir, pspd);
+      SKY.Effects.muzzleLight(_muzzle);
+      if ((pawn._jetSfxT || 0) <= SKY.Game.time) {
+        pawn._jetSfxT = SKY.Game.time + 0.16;
+        SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
+      }
+    } else {
+      SKY.Effects.muzzle(_muzzle, W.color, pawn.isLocal, W.kick);
+      SKY.Effects.muzzleLight(_muzzle);
+      SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
+    }
     if (pawn.isLocal) {
-      SKY.Effects.shake(SKY.TUNING.camera.shakeFire * W.kick);
+      if (!W.flameJet) SKY.Effects.shake(SKY.TUNING.camera.shakeFire * W.kick);
       // RECOIL: kick the view up with a hair of horizontal jitter — recovers
       // by the player pulling back down (per-weapon TUNING.weapons.*.kickPitch)
       SKY.Input.pitch = SKY.U.clamp(SKY.Input.pitch + (W.kickPitch || 0), -1.55, 1.55);
@@ -445,11 +459,11 @@ SKY.Weapons = (function () {
       }
 
       // streak visual: bright head + tapered glow ribbon behind — except
-      // flame rounds, which read as FIRE (puffs + tongues, no dart)
+      // flame rounds, which read as FIRE that BILLOWS as it travels
       if (b.flame) {
         b.vis.g.visible = false;
-        if (Math.random() < dt * 22) SKY.Effects.trailPuff(b.pos.clone(), '#ff7a2e');
-        if (Math.random() < dt * 8) SKY.Effects.flame(b.pos, 0.35);
+        const age = b.life0 ? 1 - b.life / b.life0 : 0.5;
+        if (Math.random() < dt * 12) SKY.Effects.flamePuff(b.pos, 0.5 + age * 1.5);
       } else {
         SKY.Effects.poseTracer(b.vis, b.pos, _dir, Math.min(2.2, segLen * 6 + 0.5));
       }
@@ -597,6 +611,7 @@ SKY.Weapons = (function () {
         flame: !!W.flameJet,
         owner: pawn, auth: false,
         life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
+        life0: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, ori),
       });
     }

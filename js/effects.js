@@ -425,6 +425,35 @@ SKY.Effects = (function () {
     }
   }
 
+  /* flamethrower muzzle: billowing tongues launched along the aim — the
+     sprites GROW as they fly (sizeEnd >> size), so holding the trigger reads
+     as one big rolling flame cone instead of confetti */
+  function flameJet(pos, dir, speed) {
+    const jx = SKY.U.rand(-1.4, 1.4), jy = SKY.U.rand(-0.6, 1.2), jz = SKY.U.rand(-1.4, 1.4);
+    spawn({ pos, vel: new THREE.Vector3(dir.x * speed * 0.85 + jx,
+        dir.y * speed * 0.85 + jy + 1, dir.z * speed * 0.85 + jz),
+      life: SKY.U.rand(0.3, 0.42), size: 0.35, sizeEnd: SKY.U.rand(1.6, 2.4),
+      color: '#ff5a16', gravity: -2, drag: 1.8, blend: 'normal', opacity: 0.92 });
+    spawn({ pos, vel: new THREE.Vector3(dir.x * speed * 0.95,
+        dir.y * speed * 0.95 + 0.5, dir.z * speed * 0.95),
+      life: SKY.U.rand(0.22, 0.3), size: 0.3, sizeEnd: SKY.U.rand(0.9, 1.3),
+      color: '#ffc23c', gravity: -1.5, drag: 1.6, blend: 'normal', opacity: 0.95 });
+    if (Math.random() < 0.4) {   // darker outer roll
+      spawn({ pos, vel: new THREE.Vector3(dir.x * speed * 0.6 + jx,
+          dir.y * speed * 0.6 + 2, dir.z * speed * 0.6 + jz),
+        life: SKY.U.rand(0.35, 0.5), size: 0.5, sizeEnd: 1.9,
+        color: '#c2401a', gravity: -3, drag: 2.2, blend: 'normal', opacity: 0.8 });
+    }
+  }
+
+  /* one growing fire billow along a flame round's flight */
+  function flamePuff(pos, s) {
+    spawn({ pos, vel: new THREE.Vector3(SKY.U.rand(-0.8, 0.8), SKY.U.rand(0.8, 2), SKY.U.rand(-0.8, 0.8)),
+      life: SKY.U.rand(0.2, 0.3), size: s * 0.6, sizeEnd: s * 1.7,
+      color: Math.random() < 0.35 ? '#ffc23c' : '#ff5a16',
+      gravity: -2.5, drag: 1.4, blend: 'normal', opacity: 0.9 });
+  }
+
   /* one orbiting streak around a vortex center — tangential velocity plus a
      slight inward pull, so the cloud visibly SWIRLS instead of popping */
   const _tan = new THREE.Vector3(), _rad = new THREE.Vector3();
@@ -1220,7 +1249,7 @@ SKY.Effects = (function () {
     tracer, muzzleLight, buildWeaponMesh, buildNadeMesh, weaponThumb, weaponSideIcon,
     weaponWireIcon, nadeWireIcon,
     makeTracer, poseTracer, resetTracer,
-    flame, swirl,
+    flame, swirl, flameJet, flamePuff,
     /* decals */
     bulletHole(pos, normal) {
       placeDecal(pos, normal, 0.15 + Math.random() * 0.07, bulletHoleTex(), 14);

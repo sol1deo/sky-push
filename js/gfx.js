@@ -27,10 +27,9 @@ SKY.GFX = (function () {
     seeker:    { file: 'g', len: 0.55 },   // IT tag gun — chunky shotgun look
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
-    // 'i' = the last unused stock blaster (the revolver kitbash was rejected;
-    // 'a' before it read wrong too). flip: its muzzle points +Z natively
-    // (side-icon verified: barrel must render RIGHT like every other gun).
-    magnum:    { file: 'i', len: 0.46, flip: true },
+    // back to the kitbashed revolver (user liked it after all) — v2 welds
+    // every part into its neighbor so nothing floats
+    magnum:    { build: 'revolver', len: 0.36 },
     minigun:   { build: 'minigun', len: 0.64 },
     flamer:    { build: 'flamer', len: 0.52 },
     mega:      { file: 'f', len: 0.60 },
@@ -262,7 +261,7 @@ SKY.GFX = (function () {
      archetypes (revolver / minigun / flamethrower) stay 100% in the kit's
      style. Every part is cloned, scaled, then recentered by bbox onto its
      slot — raw kit GLBs all have different origins. ---- */
-  const PART_FILES = ['sil-s', 'sil-l', 'clip-l', 'c', 'k'];
+  const PART_FILES = ['sil-s', 'sil-l', 'clip-l', 'scope-a', 'c', 'k'];
   const rawParts = {};
   const _pbb = new THREE.Box3();
   const _pc = new THREE.Vector3();
@@ -283,6 +282,18 @@ SKY.GFX = (function () {
     return w;
   }
   const KITBASH = {
+    /* classic six-shooter v2 — every part OVERLAPS its neighbor (v1 read as
+       floating pieces): barrel butts into the drum, the strap lies on both,
+       hammer sinks into the drum's rear, grip tucks under it */
+    revolver() {
+      const g = new THREE.Group();
+      partPut(g, 'sil-s', 0.62, 0.62, 1.05, 0, 0.05, -0.155);        // barrel
+      partPut(g, 'scope-a', 0.42, 0.36, 0.52, 0, 0.088, -0.06);      // top strap
+      partPut(g, 'sil-l', 1.0, 1.0, 0.45, 0, 0.04, 0.02);            // cylinder drum
+      partPut(g, 'sil-s', 0.3, 0.3, 0.35, 0, 0.07, 0.105, -0.6);     // hammer
+      partPut(g, 'clip-l', 0.75, 0.7, 0.8, 0, -0.04, 0.075, 0.5);    // grip
+      return g;
+    },
     /* rotary cannon: chunky 'k' receiver + 5-barrel cluster + ammo box */
     minigun() {
       const g = new THREE.Group();

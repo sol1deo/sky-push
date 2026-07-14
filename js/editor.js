@@ -1344,6 +1344,7 @@ SKY.Editor = (function () {
         <option value="r:common"${d.item === 'r:common' ? ' selected' : ''}>RANDOM COMMON</option>
         <option value="r:rare"${d.item === 'r:rare' ? ' selected' : ''}>RANDOM RARE</option>
         <option value="r:epic"${d.item === 'r:epic' ? ' selected' : ''}>RANDOM EPIC</option>
+        <option value="r:legendary"${d.item === 'r:legendary' ? ' selected' : ''}>RANDOM LEGENDARY</option>
         <option value="mix"${d.item === 'mix' ? ' selected' : ''}>CUSTOM MIX %…</option>
         ${loot.map(it => `<option value="${it.id}"${d.item === it.id ? ' selected' : ''}>
           ${(it.name || it.id).toUpperCase()} · ${it.rarity}</option>`).join('')}
@@ -1352,7 +1353,8 @@ SKY.Editor = (function () {
         const mx = d.mix || {};
         h += numRow('Common %', mx.common || 0, 'mixc', 5)
           + numRow('Rare %', mx.rare || 0, 'mixr', 5)
-          + numRow('Epic %', mx.epic || 0, 'mixe', 5);
+          + numRow('Epic %', mx.epic || 0, 'mixe', 5)
+          + numRow('Legendary %', mx.legendary || 0, 'mixl', 5);
       }
       h += numRow('Respawn s', d.respawn !== undefined && d.respawn > 0 ? d.respawn : 20, 'respawn', 5);
       h += `<div class="ed-hint">Spawns here at round start and returns RESPAWN seconds
@@ -1365,6 +1367,11 @@ SKY.Editor = (function () {
         + numRow('Tex tiling', d.rep || 10, 'trep', 1);
       if (d.base) h += numRow('Base depth', d.base, 'tbase', 1);
       const texs = d.texs || ['sand', 'rock', 'grass', 'dirt'];
+      // whole-terrain FLAT COLOR: no textures, one paint — sets all 4 slots
+      const allHex = texs.every(t => t && t[0] === '#' && t === texs[0]) ? texs[0] : '#7c8a5a';
+      h += `<div class="ed-row"><span>Flat color <small>no texture</small></span><span>
+          <input class="ed-hex" data-hexfor="tallcol" maxlength="7" spellcheck="false" value="${allHex}">
+          <input type="color" data-k="tallcol" value="${allHex}"></span></div>`;
       // 4 texture slots as PREVIEW swatches — click a slot, then pick below
       h += `<div class="ed-row"><span>Textures <small>click a slot to change</small></span></div>
         <div class="ed-row ed-swatches">
@@ -1640,6 +1647,7 @@ SKY.Editor = (function () {
     else if (k === 'mixc') { d.mix = d.mix || {}; d.mix.common = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
     else if (k === 'mixr') { d.mix = d.mix || {}; d.mix.rare = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
     else if (k === 'mixe') { d.mix = d.mix || {}; d.mix.epic = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
+    else if (k === 'mixl') { d.mix = d.mix || {}; d.mix.legendary = SKY.U.clamp(num || 0, 0, 100); refreshOutliner(); }
     else if (k === 'respawn') d.respawn = SKY.U.clamp(num || 20, 3, 300);
     else if (k === 'pr1') { d.r = d.r || [0, 0, 0]; d.r[1] = num * Math.PI / 180; }
     else if (k === 'pr0') { d.r = d.r || [0, 0, 0]; d.r[0] = num * Math.PI / 180; }
@@ -1760,6 +1768,16 @@ SKY.Editor = (function () {
       if (colStroke !== e.target) { push(); colStroke = e.target; }
       d.texs = Object.assign(d.texs || ['sand', 'rock', 'grass', 'dirt'],
         { [texSlotEdit]: e.target.value });
+      markDirty();
+      rebuildTerrainMesh(o);
+      return;
+    }
+    else if (k === 'tallcol') {
+      // whole-terrain flat color: every splat slot becomes the same paint
+      if (o.kind !== 'terrain') return;
+      if (colStroke !== e.target) { push(); colStroke = e.target; }
+      const v = e.target.value;
+      d.texs = [v, v, v, v];
       markDirty();
       rebuildTerrainMesh(o);
       return;
