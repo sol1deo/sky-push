@@ -186,7 +186,7 @@ SKY.Effects = (function () {
         grp.add(glow);
       }
       if (finish && finish !== 'stock' && SKY.Profile) {
-        SKY.Profile.applyFinish(grp, finish, W.color);
+        SKY.Profile.applyFinish(grp, finish, W.color, kind);
       }
       return grp;
     }
@@ -564,10 +564,20 @@ SKY.Effects = (function () {
     animMats.push(mat);
     if (animMats.length > 60) animMats.shift();
   }
+  /* skin FX objects (embers / shards / sparkles riding a weapon) — same
+     ring-buffer deal; each carries its own userData.tick(t) */
+  const animObjs = [];
+  function registerAnimObj(obj) {
+    animObjs.push(obj);
+    if (animObjs.length > 40) animObjs.shift();
+  }
   function tickAnimMats() {
-    if (!animMats.length) return;
     const t = performance.now() * 0.001;
     for (const m of animMats) {
+      if (m.userData.animFx === 'skin') {           // textured skins drive shader uniforms
+        if (m.userData.skinTick) m.userData.skinTick(t, m);
+        continue;
+      }
       if (!m.emissive) continue;
       if (m.userData.animFx === 'pulse') {
         const k = 0.5 + 0.5 * Math.sin(t * 3.2);
@@ -576,9 +586,17 @@ SKY.Effects = (function () {
         m.emissive.setHSL((t * 0.13) % 1, 0.85, 0.3);
       }
     }
+    for (const o of animObjs) {
+      if (o.userData.tick && o.parent) o.userData.tick(t, o);
+    }
   }
 
   const thumbCache = {};
+  /* skin textures load async — a thumb rendered before its texture landed
+     would cache black, so Profile clears the cache on every texture load */
+  function invalidateThumbs() {
+    for (const k in thumbCache) delete thumbCache[k];
+  }
   let thumbRig = null;
   function thumbKey(kind, finish) {
     // thumbs re-render once the real GLB arrives (asset pack loads async)
@@ -1211,7 +1229,7 @@ SKY.Effects = (function () {
     cannonPop,
     getFovKick() { return fovKick; },
     ring(pos, color, size, life) { ring(pos, color, size, life); },
-    burst, blastBoom, registerAnimMat,
+    burst, blastBoom, registerAnimMat, registerAnimObj, invalidateThumbs,
 
     /* ---------------- gameplay-facing effect recipes ---------------- */
     /* muzzle profile scales with the weapon's kick weight: light guns get a

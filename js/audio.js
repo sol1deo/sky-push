@@ -11,15 +11,25 @@ SKY.SFX = (function () {
   let outFilter = null, musicBus = null;
   let windGain = null, windFilter = null;
   let slideGain = null;
+  let windSrcRef = null, slideSrcRef = null, slideFilterRef = null;
   let noiseBuf = null;
   let watchdog = null, stuckTicks = 0, wired = false;
   let windLevel = 0, slideOn = false;   // last requested values, survive a rebuild
 
   function sfxVol() { return SKY.Settings ? (SKY.Settings.data.sfxVol ?? 0.8) : 0.8; }
   function musVol() { return SKY.Settings ? (SKY.Settings.data.musicVol ?? 0.5) : 0.5; }
-  /* distance falloff for positional one-shots (other players' guns should
-     not fire inside YOUR ear) */
-  function att(dist) { return 1 / (1 + (dist === undefined ? 8 : dist) * 0.09); }
+  /* distance falloff for LOUD positional one-shots (gunshots, explosions) —
+     steeper than before: across-the-map fire is present but never in-ear */
+  function att(dist) { return 1 / (1 + (dist === undefined ? 8 : dist) * 0.14); }
+  /* movement & utility sounds (steps, hooks, jumps, dashes…) from OTHER
+     players are close-quarters only: full for your own (dist 0), fading to
+     SILENT by ~15m — ten people swinging around must not fill your ears */
+  function attClose(dist) {
+    const d = dist === undefined ? 8 : dist;
+    if (d <= 0.01) return 1;
+    const t = Math.max(0, 1 - d / 15);
+    return t * t;
+  }
 
   /* ---------------- sample bank (https only) ---------------- */
   const canFetch = /^https?:$/.test(location.protocol);
@@ -170,16 +180,23 @@ SKY.SFX = (function () {
     const start = (buf) => {
       if (!ctx || musicUrl) return;       // superseded meanwhile
       musicUrl = url;
+      // SFX LAB can replace the track outright and tune its level/pitch
+      const mo = LAB.events['music_' + musicWant];
+      const custom = LAB.buffers['music_' + musicWant];
+      if (mo && mo.mute) return;
       musicSrc = ctx.createBufferSource();
-      musicSrc.buffer = buf;
+      musicSrc.buffer = custom || buf;
       musicSrc.loop = true;
+      musicSrc.playbackRate.value = (mo && mo.rate) || 1;
       musicGainNode = ctx.createGain();
-      const level = musicWant === 'menu' ? 0.5 : 0.38;   // scaled by the music slider
+      const level = (musicWant === 'menu' ? 0.5 : 0.38) * ((mo && mo.vol) || 1);
       musicGainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
       musicGainNode.gain.linearRampToValueAtTime(level, ctx.currentTime + 1.6);
       musicSrc.connect(musicGainNode).connect(musicBus);
       musicSrc.start();
     };
+    // a LAB replacement track doesn't need the shipped file at all
+    if (LAB.buffers['music_' + musicWant]) { start(null); return; }
     if (musicBufs[url]) { start(musicBufs[url]); return; }
     fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null))
       .then((ab) => (ab && ctx ? ctx.decodeAudioData(ab) : null))
@@ -253,21 +270,23 @@ SKY.SFX = (function () {
 
     // --- looping wind bed, gain driven by player speed ---
     const windSrc = ctx.createBufferSource();
-    windSrc.buffer = noiseBuf; windSrc.loop = true;
+    windSrc.buffer = LAB.buffers.amb_wind || noiseBuf; windSrc.loop = true;
     windFilter = ctx.createBiquadFilter();
     windFilter.type = 'lowpass'; windFilter.frequency.value = 400;
     windGain = ctx.createGain(); windGain.gain.value = 0;
     windSrc.connect(windFilter).connect(windGain).connect(master);
     windSrc.start();
+    windSrcRef = windSrc;
 
     // --- looping slide scrape ---
     const slideSrc = ctx.createBufferSource();
-    slideSrc.buffer = noiseBuf; slideSrc.loop = true;
+    slideSrc.buffer = LAB.buffers.amb_slide || noiseBuf; slideSrc.loop = true;
     const slideFilter = ctx.createBiquadFilter();
     slideFilter.type = 'bandpass'; slideFilter.frequency.value = 900; slideFilter.Q.value = 0.8;
     slideGain = ctx.createGain(); slideGain.gain.value = 0;
     slideSrc.connect(slideFilter).connect(slideGain).connect(master);
     slideSrc.start();
+    slideSrcRef = slideSrc; slideFilterRef = slideFilter;
 
     // restore continuous levels after a mid-match rebuild
     windGain.gain.value = windLevel * SKY.TUNING.audio.windMax;
@@ -365,15 +384,15 @@ SKY.SFX = (function () {
                 tone(300, 240, 0.04, 'square', 0.12); },
     /* dash / ground-pound windup: a soft AIR puff (the old sample was a
        sword-swing recording), heard quietly and only nearby */
-    dash(dist) { const a = att(dist === undefined ? 0 : dist);
-                if (a < 0.15) return;
+    dash(dist) { const a = attClose(dist === undefined ? 0 : dist);
+                if (a < 0.08) return;
                 if (sample('dash', 0.5 * a)) return;
                 noise(0.16, 750, 0.14 * a, 'bandpass'); },
     pick()    { if (sample('pick', 0.4, SKY.U.rand(0.95, 1.05))) return;
                 tone(620, 930, 0.12, 'triangle', 0.22); tone(930, 1240, 0.14, 'triangle', 0.18, 0.09); },
     /* door swing: soft mechanical clunk */
-    door(dist) { const a = att(dist);
-                if (a < 0.06) return;
+    door(dist) { const a = attClose(dist);
+                if (a < 0.05) return;
                 if (sample('door', 0.5 * a)) return;
                 if (sample('reload', 0.5 * a, 0.7)) return;
                 tone(200, 130, 0.09, 'square', 0.12 * a); },
@@ -391,8 +410,8 @@ SKY.SFX = (function () {
     },
     /* water entry: layered noise splash, k = 0..1 plunge intensity */
     splash(k, dist) {
-      const a = att(dist === undefined ? 0 : dist);
-      if (a < 0.08) return;
+      const a = attClose(dist === undefined ? 0 : dist);
+      if (a < 0.05) return;
       if (sample('splash', (0.25 + k * 0.5) * a)) return;
       const v = (0.2 + k * 0.5) * a;
       noise(0.09, 2400, v * 0.8, 'highpass');
@@ -432,8 +451,8 @@ SKY.SFX = (function () {
       if (master) master.gain.value = SKY.TUNING.audio.master * sfxVol();
       if (musicBus) musicBus.gain.value = musVol();
     },
-    taunt(dist) { const a = att(dist === undefined ? 0 : dist);
-                if (a < 0.08) return;
+    taunt(dist) { const a = attClose(dist === undefined ? 0 : dist);
+                if (a < 0.05) return;
                 if (sample('taunt', 0.35 * a, SKY.U.rand(0.94, 1.08))) return;
                 tone(392, 392, 0.12, 'square', 0.12 * a); },
     /* match-end crowd */
@@ -462,9 +481,9 @@ SKY.SFX = (function () {
                 tone(700, 700, 0.035, 'square', 0.07); },
     /* footstep: v = 0..1 run intensity, dist for other players' feet */
     step(v, dist) {
-      const a = att(dist === undefined ? 0 : dist);
-      if (a < 0.07) return;
-      sample('step', (0.13 + v * 0.13) * a, SKY.U.rand(0.92, 1.08));
+      const a = attClose(dist === undefined ? 0 : dist);
+      if (a < 0.05) return;
+      sample('step', (0.3 + v * 0.3) * a, SKY.U.rand(0.92, 1.08));
     },
     cash()    { if (sample('cash', 0.26, SKY.U.rand(1.0, 1.15))) return;
                 tone(1320, 1760, 0.07, 'square', 0.14); },
@@ -480,18 +499,18 @@ SKY.SFX = (function () {
                 if (a < 0.06) return;
                 if (sample('hit', (0.3 + p * 0.22) * a, 1.15 - p * 0.25)) return;
                 tone(130 + p * 90, 40, 0.16, 'sine', (0.3 + p * 0.2) * a); },
-    jump(dist) { const a = att(dist === undefined ? 0 : dist);
-                if (a < 0.2) return;
+    jump(dist) { const a = attClose(dist === undefined ? 0 : dist);
+                if (a < 0.1) return;
                 if (sample('jump', 0.4 * a, SKY.U.rand(0.95, 1.05))) return;
                 noise(0.05, 650, 0.05 * a, 'bandpass'); },   // soft push-off puff
-    land(i, dist) { const a = att(dist === undefined ? 0 : dist);
-                if (a < 0.08) return;
+    land(i, dist) { const a = attClose(dist === undefined ? 0 : dist);
+                if (a < 0.05) return;
                 if (sample('land', SKY.U.clamp(i, 0, 1) * 0.32 * a, SKY.U.rand(0.95, 1.1))) return;
                 noise(0.09, 320, SKY.U.clamp(i, 0, 1) * 0.2 * a); },
     pad()     { if (sample('pad', 0.4, 1.35)) return;
                 tone(220, 640, 0.24, 'sine', 0.26); },
-    grapple(dist) { const a = att(dist === undefined ? 0 : dist);
-                if (a < 0.1) return;
+    grapple(dist) { const a = attClose(dist === undefined ? 0 : dist);
+                if (a < 0.05) return;
                 // the new sample IS the rope whoosh — play it as designed
                 if (sample('grapple', 0.5 * a, SKY.U.rand(0.96, 1.08))) return;
                 noise(0.14, 2200, 0.18 * a, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.14 * a); },
@@ -515,8 +534,8 @@ SKY.SFX = (function () {
                 tone(660, 660, 0.14, 'square', 0.2); tone(880, 880, 0.2, 'square', 0.18, 0.07); },
     win()     { if (sample('win', 0.38)) return;
                 [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.22, 'triangle', 0.22, i * 0.13)); },
-    slideStart(dist) { const a = att(dist === undefined ? 0 : dist);
-                if (a < 0.15) return;
+    slideStart(dist) { const a = attClose(dist === undefined ? 0 : dist);
+                if (a < 0.08) return;
                 if (sample('slide', 0.4 * a)) return;
                 noise(0.12, 700, 0.15 * a, 'bandpass'); },
 
@@ -532,13 +551,47 @@ SKY.SFX = (function () {
       if (!isFinite(x01)) return;
       windLevel = SKY.U.clamp01(x01);
       if (!windGain) return;
-      windGain.gain.value = windLevel * SKY.TUNING.audio.windMax;
+      const o = LAB.events.amb_wind;
+      if (o && o.mute) { windGain.gain.value = 0; return; }
+      windGain.gain.value = windLevel * SKY.TUNING.audio.windMax * ((o && o.vol) || 1);
       windFilter.frequency.value = 380 + windLevel * 950;
     },
     setSlide(on) {
       slideOn = !!on;
       if (!slideGain) return;
-      slideGain.gain.value = slideOn ? 0.12 : 0;
+      const o = LAB.events.amb_slide;
+      slideGain.gain.value = (slideOn && !(o && o.mute))
+        ? 0.12 * ((o && o.vol) || 1) : 0;
+    },
+    /* SFX LAB live hooks: re-apply the current music with fresh overrides /
+       swap the ambient loop sources for custom buffers */
+    labApplyMusic() {
+      musicUrl = null;
+      stopMusic(false);
+      applyMusic();
+    },
+    labRefreshAmbient() {
+      if (!ctx) return;
+      const swap = (ref, buffer, dest, rate) => {
+        try { ref.stop(); } catch (e) {}
+        const s = ctx.createBufferSource();
+        s.buffer = buffer;
+        s.loop = true;
+        s.playbackRate.value = rate || 1;
+        s.connect(dest);
+        s.start();
+        return s;
+      };
+      if (windFilter) {
+        const o = LAB.events.amb_wind;
+        windSrcRef = swap(windSrcRef, LAB.buffers.amb_wind || noiseBuf, windFilter,
+          o && o.rate);
+      }
+      if (slideGain && slideFilterRef) {
+        const o = LAB.events.amb_slide;
+        slideSrcRef = swap(slideSrcRef, LAB.buffers.amb_slide || noiseBuf, slideFilterRef,
+          o && o.rate);
+      }
     },
     resume: resumeCtx,
 
@@ -563,13 +616,13 @@ SKY.SFX = (function () {
     labClearBuffer(name) { delete LAB.buffers[name]; },
     /* raw preview: the configured sound, none of the event's in-game scaling */
     labPlayRaw(name) { return sample(name, 0.9, 1); },
-    /* output meter for the lab (taps the SFX bus) */
+    /* output meter for the lab (taps the shared out node: SFX + music) */
     labAnalyser() {
-      if (!ctx || !master) return null;
+      if (!ctx || !outFilter) return null;
       if (!this._labAn) {
         this._labAn = ctx.createAnalyser();
         this._labAn.fftSize = 512;
-        master.connect(this._labAn);
+        outFilter.connect(this._labAn);
       }
       return this._labAn;
     },

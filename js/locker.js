@@ -216,7 +216,8 @@ SKY.Locker = (function () {
         const owned = P.ownsFinish(selWeapon, f.id);
         const equipped = P.finishFor(selWeapon) === f.id;
         const img = SKY.Effects.weaponThumb(selWeapon, f.id === 'stock' ? undefined : f.id);
-        return `<div class="lk-card lk-fin ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}" data-fin="${f.id}">
+        return `<div class="lk-card lk-fin ${equipped ? 'equipped' : ''} ${owned ? 'owned' : 'locked'}${f.mythic ? ' lk-mythic' : ''}" data-fin="${f.id}">
+          ${f.mythic ? '<div class="lk-mytag">MYTHIC</div>' : ''}
           ${img ? `<img src="${img}" draggable="false">` : '<div class="lk-ph"></div>'}
           <div class="lk-name">${f.name}</div>
           <div class="lk-tag">${equipped ? 'EQUIPPED' : owned ? 'OWNED' : '⬡ ' + f.price}</div>

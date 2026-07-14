@@ -229,6 +229,46 @@
   .lk-card.locked img, .lk-card.locked .lk-ph { opacity:.55; }
   .lk-card.lk-poor { animation:lkpoor .3s; border-color:var(--danger); }
   @keyframes lkpoor { 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
+  /* MYTHIC skins get the living border + badge */
+  .lk-card.lk-mythic { border-color:#a05cff; box-shadow:0 0 14px rgba(160,92,255,.22) inset, 0 0 10px rgba(160,92,255,.18);
+    animation:lkmythic 2.6s ease-in-out infinite; }
+  @keyframes lkmythic { 50% { box-shadow:0 0 22px rgba(160,92,255,.4) inset, 0 0 16px rgba(160,92,255,.35); } }
+  .lk-mytag { position:absolute; top:5px; right:5px; font-size:8px; font-weight:800;
+    letter-spacing:.14em; padding:2px 5px; border-radius:4px; color:#fff;
+    background:linear-gradient(120deg,#7a2cff,#c04dff,#ff4dd2); pointer-events:none; }
+  /* ---------- STORE ---------- */
+  #panel-store { min-width:640px; max-width:760px; text-align:left; }
+  .st-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }
+  .st-head h3 { margin:0 0 4px; font-style:italic; letter-spacing:.08em; }
+  .st-sub { font-size:11px; color:var(--dim); max-width:380px; line-height:1.5; }
+  .st-balance { font-size:11px; color:var(--dim); background:var(--bg2); border:1px solid var(--line2);
+    border-radius:8px; padding:9px 13px; white-space:nowrap; }
+  .st-balance b { color:#ffd34d; margin-left:6px; font-size:13px; }
+  .st-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
+  .st-card { position:relative; border:1px solid var(--line2); border-radius:12px; overflow:hidden;
+    background:#0a1024; text-align:center; padding-bottom:10px; transition:transform .14s, border-color .14s, box-shadow .14s; }
+  .st-card:hover { transform:translateY(-3px); border-color:#ffd34d;
+    box-shadow:0 8px 26px rgba(255,211,77,.14); }
+  .st-card.st-hot { border-color:rgba(255,211,77,.55); }
+  .st-ribbon { position:absolute; top:8px; left:-1px; z-index:2; font-size:8px; font-weight:800;
+    letter-spacing:.12em; padding:3px 8px 3px 6px; color:#1a1405;
+    background:linear-gradient(100deg,#ffd34d,#ffb347); border-radius:0 6px 6px 0; }
+  .st-art { aspect-ratio:1; overflow:hidden; }
+  .st-art img { width:100%; height:100%; object-fit:cover; display:block;
+    transition:transform .3s; pointer-events:none; }
+  .st-card:hover .st-art img { transform:scale(1.06); }
+  .st-coins { font-size:16px; font-weight:800; font-style:italic; color:#ffd34d; margin-top:8px;
+    letter-spacing:.02em; text-shadow:0 0 12px rgba(255,211,77,.35); }
+  .st-bonus { font-size:9px; font-weight:700; letter-spacing:.14em; color:#7dff9e; margin-top:2px; }
+  .st-bonus.st-mute { color:var(--faint); }
+  .st-name { font-size:9px; font-weight:600; letter-spacing:.16em; color:var(--dim); margin:4px 0 8px; }
+  .st-buy { width:calc(100% - 20px); padding:9px 0; border-radius:8px; border:none; cursor:pointer;
+    font-family:inherit; font-size:12px; font-weight:800; font-style:italic; letter-spacing:.1em;
+    background:linear-gradient(100deg,#ffd34d,#ffb347); color:#1a1405; transition:filter .12s; }
+  .st-buy:hover { filter:brightness(1.12); }
+  .st-buy.st-listed { background:var(--bg2); color:#7dff9e; border:1px solid var(--line2); }
+  .st-note { font-size:10px; color:var(--faint); margin-top:14px; line-height:1.5; }
+  @media (max-width:900px) { .st-grid { grid-template-columns:repeat(2, 1fr); } #panel-store { min-width:0; } }
   /* locker sub-tabs + the weapon picker grid */
   .lk-tabs { display:flex; gap:6px; margin:10px 0 16px; }
   .lk-tab { flex:1; padding:11px 0; border-radius:8px; border:1px solid var(--line2);
@@ -1574,6 +1614,7 @@
     <div id="nav-logo">SKY<b>PUSH</b></div>
     <button class="nav-tab sel" id="tab-offline">Play</button>
     <button class="nav-tab" id="tab-locker">Locker</button>
+    <button class="nav-tab" id="tab-store">Store</button>
     <button class="nav-tab" id="tab-matches">Matches</button>
     <button class="nav-tab hidden" id="tab-profile">Profile</button>
     <button class="nav-tab" id="tab-editor">Editor</button>
@@ -1584,7 +1625,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 62</div>
+  <div id="build-foot" class="rail-foot">prototype · build 63</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1762,6 +1803,8 @@
 
       <!-- ---------- locker: characters + weapon paint jobs ---------- -->
       <div id="panel-locker" class="hidden"></div>
+      <!-- ---------- store: buy ⬡ coins ---------- -->
+      <div id="panel-store" class="hidden"></div>
 
       <!-- ---------- profile: my account, look, friends ---------- -->
       <div id="panel-profile" class="hidden"></div>
@@ -1786,6 +1829,8 @@
     <button class="ed-btn" id="ed-additem">+ Item</button>
     <button class="ed-btn" id="ed-lobbyspot"
       title="the pre-match lobby lineup stands where you're looking, facing you (click again to clear)">Lobby</button>
+    <button class="ed-btn" id="ed-crownspot"
+      title="Crown Rush: the crown spawns where you're looking (click again to reset to map center)">Crown</button>
     <button class="ed-btn sel" id="ed-anim">Anim</button>
     <button class="ed-btn" id="ed-coll" title="show the game's real collision boxes">Coll</button>
     <span class="ed-flex"></span>
@@ -1939,42 +1984,43 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=62"></script>
-<script src="js/profile.js?v=62"></script>
-<script src="js/account.js?v=62"></script>
-<script src="js/accountui.js?v=62"></script>
-<script src="js/utils.js?v=62"></script>
-<script src="js/gfx.js?v=62"></script>
-<script src="js/mapdata.js?v=62"></script>
-<script src="js/audio.js?v=62"></script>
-<script src="js/sfxlab.js?v=62"></script>
-<script src="js/voice.js?v=62"></script>
-<script src="js/settings.js?v=62"></script>
-<script src="js/input.js?v=62"></script>
-<script src="js/world.js?v=62"></script>
-<script src="js/effects.js?v=62"></script>
-<script src="js/map.js?v=62"></script>
-<script src="js/characters.js?v=62"></script>
-<script src="js/pawn.js?v=62"></script>
-<script src="js/weapons.js?v=62"></script>
-<script src="js/loot.js?v=62"></script>
-<script src="js/pickups.js?v=62"></script>
-<script src="js/sparks.js?v=62"></script>
-<script src="js/grenades.js?v=62"></script>
-<script src="js/grapple.js?v=62"></script>
-<script src="js/bots.js?v=62"></script>
-<script src="js/hud.js?v=62"></script>
-<script src="js/game.js?v=62"></script>
-<script src="js/attract.js?v=62"></script>
-<script src="js/net.js?v=62"></script>
-<script src="js/dof.js?v=62"></script>
+<script src="js/config.js?v=63"></script>
+<script src="js/profile.js?v=63"></script>
+<script src="js/account.js?v=63"></script>
+<script src="js/accountui.js?v=63"></script>
+<script src="js/utils.js?v=63"></script>
+<script src="js/gfx.js?v=63"></script>
+<script src="js/mapdata.js?v=63"></script>
+<script src="js/audio.js?v=63"></script>
+<script src="js/sfxlab.js?v=63"></script>
+<script src="js/voice.js?v=63"></script>
+<script src="js/settings.js?v=63"></script>
+<script src="js/input.js?v=63"></script>
+<script src="js/world.js?v=63"></script>
+<script src="js/effects.js?v=63"></script>
+<script src="js/map.js?v=63"></script>
+<script src="js/characters.js?v=63"></script>
+<script src="js/pawn.js?v=63"></script>
+<script src="js/weapons.js?v=63"></script>
+<script src="js/loot.js?v=63"></script>
+<script src="js/pickups.js?v=63"></script>
+<script src="js/sparks.js?v=63"></script>
+<script src="js/grenades.js?v=63"></script>
+<script src="js/grapple.js?v=63"></script>
+<script src="js/bots.js?v=63"></script>
+<script src="js/hud.js?v=63"></script>
+<script src="js/game.js?v=63"></script>
+<script src="js/attract.js?v=63"></script>
+<script src="js/net.js?v=63"></script>
+<script src="js/dof.js?v=63"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=62"></script>
-<script src="js/vidrender.js?v=62"></script>
-<script src="js/demos.js?v=62"></script>
-<script src="js/locker.js?v=62"></script>
-<script src="js/assets.js?v=62"></script>
-<script src="js/editor.js?v=62"></script>
-<script src="js/main.js?v=62"></script>
+<script src="js/replay.js?v=63"></script>
+<script src="js/vidrender.js?v=63"></script>
+<script src="js/demos.js?v=63"></script>
+<script src="js/locker.js?v=63"></script>
+<script src="js/store.js?v=63"></script>
+<script src="js/assets.js?v=63"></script>
+<script src="js/editor.js?v=63"></script>
+<script src="js/main.js?v=63"></script>
 </body>
 </html>

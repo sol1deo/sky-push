@@ -14,6 +14,45 @@ SKY.SfxLab = (function () {
   try { store = { v: 1, events: {}, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
   catch (e) {}
 
+  /* -------- IndexedDB for the audio blobs (localStorage chokes on music) -------- */
+  let idb = null;
+  const idbReady = new Promise((res) => {
+    const rq = indexedDB.open('skypush-sfxlab', 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore('snd');
+    rq.onsuccess = () => { idb = rq.result; res(idb); };
+    rq.onerror = () => res(null);
+  });
+  const idbPut = (name, blob) => idbReady.then(() => new Promise((res) => {
+    if (!idb) return res(false);
+    const tx = idb.transaction('snd', 'readwrite');
+    tx.objectStore('snd').put(blob, name);
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => res(false);
+  }));
+  const idbGet = (name) => idbReady.then(() => new Promise((res) => {
+    if (!idb) return res(null);
+    const rq = idb.transaction('snd').objectStore('snd').get(name);
+    rq.onsuccess = () => res(rq.result || null);
+    rq.onerror = () => res(null);
+  }));
+  const idbDel = (name) => idbReady.then(() => new Promise((res) => {
+    if (!idb) return res(false);
+    const tx = idb.transaction('snd', 'readwrite');
+    tx.objectStore('snd').delete(name);
+    tx.oncomplete = () => res(true);
+    tx.onerror = () => res(false);
+  }));
+  // migrate v1 packs that kept dataURLs inside localStorage
+  for (const n in store.events) {
+    const c = store.events[n];
+    if (c.data) {
+      const dataUrl = c.data;
+      delete c.data;
+      c.blob = true;
+      fetch(dataUrl).then((r) => r.blob()).then((b) => idbPut(n, b)).catch(() => {});
+    }
+  }
+
   /* -------- catalog: every tunable event, its group and a REAL in-game
      trigger so what you hear in the lab is exactly what the game plays ---- */
   const S = () => SKY.SFX;
@@ -70,7 +109,21 @@ SKY.SfxLab = (function () {
       ['gust', 'Wind gust', () => S().gust()],
       ['honk', 'Horn', () => S().honk()],
     ]],
+    ['MUSIC & AMBIENT', [
+      ['music_menu', 'Music — menu (drop a file to replace)', () => { S().music(null); setTimeout(() => S().music('menu'), 100); }],
+      ['music_game', 'Music — in-game (drop a file to replace)', () => { S().music(null); setTimeout(() => S().music('game'), 100); }],
+      ['amb_wind', 'Ambient — speed wind loop', () => {
+        S().setWind(0.9); setTimeout(() => S().setWind(0), 1800); }],
+      ['amb_slide', 'Ambient — slide scrape loop', () => {
+        S().setSlide(true); setTimeout(() => S().setSlide(false), 1400); }],
+    ]],
   ];
+  const LIVE_HOOK = {
+    music_menu: () => S().labApplyMusic(),
+    music_game: () => S().labApplyMusic(),
+    amb_wind: () => S().labRefreshAmbient(),
+    amb_slide: () => S().labRefreshAmbient(),
+  };
   const TRIGGERS = {};
   const LABELS = {};
   for (const [, items] of CATALOG) for (const [n, l, t] of items) { TRIGGERS[n] = t; LABELS[n] = l; }
@@ -87,14 +140,26 @@ SKY.SfxLab = (function () {
     for (const n in store.events) SKY.SFX.labState.events[n] = store.events[n];
   }
   const decoded = new Set();
+  const packData = {};        // shipped-pack audio (name -> dataURL)
   function decodePending() {
     if (!SKY.SFX.context()) return;
     for (const n in store.events) {
       const c = store.events[n];
-      if (!c.data || decoded.has(n)) continue;
+      if (!(c.blob || c.data) || decoded.has(n)) continue;
       decoded.add(n);
-      fetch(c.data).then((r) => r.arrayBuffer())
+      const src = c.blob
+        ? idbGet(n).then((b) => (b ? b.arrayBuffer() : Promise.reject(new Error('no blob'))))
+        : fetch(c.data).then((r) => r.arrayBuffer());
+      src.then((ab) => SKY.SFX.labSetBuffer(n, ab))
+        .then(() => { if (LIVE_HOOK[n]) LIVE_HOOK[n](); })
+        .catch(() => decoded.delete(n));
+    }
+    for (const n in packData) {                 // shipped mix (local wins)
+      if (store.events[n] || decoded.has(n)) continue;
+      decoded.add(n);
+      fetch(packData[n]).then((r) => r.arrayBuffer())
         .then((ab) => SKY.SFX.labSetBuffer(n, ab))
+        .then(() => { if (LIVE_HOOK[n]) LIVE_HOOK[n](); })
         .catch(() => decoded.delete(n));
     }
   }
@@ -117,8 +182,10 @@ SKY.SfxLab = (function () {
         if (!pack || !pack.events) return;
         for (const n in pack.events) {
           if (!store.events[n]) {
-            store.events[n] = pack.events[n];
-            SKY.SFX.labState.events[n] = pack.events[n];
+            const e = { ...pack.events[n] };
+            if (e.data) { packData[n] = e.data; delete e.data; delete e.blob; }
+            store.events[n] = e;
+            SKY.SFX.labState.events[n] = e;
           }
         }
         decodePending();
@@ -210,7 +277,7 @@ SKY.SfxLab = (function () {
   function isTouched(n) {
     const c = store.events[n];
     if (!c) return false;
-    return !!(c.data || c.mute || c.vol !== 1 || c.rate !== 1 ||
+    return !!(c.data || c.blob || c.mute || c.vol !== 1 || c.rate !== 1 ||
       c.offset != null || c.rev > 0 || (c.lp && c.lp < 19000));
   }
   function status(msg, isErr) {
@@ -255,7 +322,7 @@ SKY.SfxLab = (function () {
           <div class="wavehint">click the waveform to set the start point (yellow line) —
             everything left of it is skipped</div>
           <div class="sl"><label>VOLUME</label>
-            <input type="range" id="sfx-vol" min="0" max="3" step="0.05" value="${c.vol}">
+            <input type="range" id="sfx-vol" min="0" max="6" step="0.05" value="${c.vol}">
             <output>${Math.round(c.vol * 100)}%</output></div>
           <div class="sl"><label>PITCH</label>
             <input type="range" id="sfx-rate" min="0.25" max="3" step="0.05" value="${c.rate}">
@@ -386,6 +453,12 @@ SKY.SfxLab = (function () {
       el.onclick = () => { sel = el.dataset.ev; render(); };
     });
     const c = cfgOf(sel);
+    let hookT = 0;
+    const liveHook = () => {           // music/ambient apply live (debounced — sliders drag)
+      if (!LIVE_HOOK[sel]) return;
+      clearTimeout(hookT);
+      hookT = setTimeout(() => { try { LIVE_HOOK[sel](); } catch (e) {} }, 300);
+    };
     const bind = (id, key, fmt) => {
       const inp = panel.querySelector(id);
       if (!inp) return;
@@ -395,6 +468,7 @@ SKY.SfxLab = (function () {
         SKY.SFX.labState.events[sel] = c;
         save();
         if (key === 'offset') drawWave();
+        liveHook();
       };
     };
     bind('#sfx-vol', 'vol', (v) => Math.round(v * 100) + '%');
@@ -405,7 +479,7 @@ SKY.SfxLab = (function () {
     panel.querySelector('#sfx-mute').onchange = (e) => {
       c.mute = e.target.checked;
       SKY.SFX.labState.events[sel] = c;
-      save(); render();
+      save(); liveHook(); render();
     };
     panel.querySelector('#sfx-close').onclick = () => {
       panel.classList.add('hidden');
@@ -442,9 +516,12 @@ SKY.SfxLab = (function () {
         const buf = await SKY.SFX.labSetBuffer(sel, ab.slice(0));
         c.file = f.name;
         c.offset = SKY.SFX.labTrimOf(buf);   // auto-trim the silent lead-in
-        const fr = new FileReader();
-        fr.onload = () => { c.data = fr.result; SKY.SFX.labState.events[sel] = c; save(); render(); };
-        fr.readAsDataURL(new Blob([ab], { type: f.type || 'audio/ogg' }));
+        delete c.data;
+        c.blob = true;
+        await idbPut(sel, new Blob([ab], { type: f.type || 'audio/ogg' }));
+        SKY.SFX.labState.events[sel] = c;
+        decoded.add(sel);
+        save(); liveHook(); render();
       } catch (err) { alert('could not decode that file: ' + err.message); }
     };
     panel.querySelector('#sfx-reset').onclick = () => {
@@ -452,10 +529,28 @@ SKY.SfxLab = (function () {
       delete SKY.SFX.labState.events[sel];
       SKY.SFX.labClearBuffer(sel);
       decoded.delete(sel);
-      save(); render();
+      idbDel(sel);
+      save(); decodePending(); liveHook(); render();
     };
-    panel.querySelector('#sfx-export').onclick = () => {
-      const blob = new Blob([JSON.stringify(store)], { type: 'application/json' });
+    panel.querySelector('#sfx-export').onclick = async () => {
+      // embed the idb audio as base64 so the pack is a single portable json
+      const out = { v: 1, events: {} };
+      for (const n in store.events) {
+        const c2 = { ...store.events[n] };
+        if (c2.blob) {
+          const b = await idbGet(n);
+          if (b) {
+            c2.data = await new Promise((res) => {
+              const fr = new FileReader();
+              fr.onload = () => res(fr.result);
+              fr.readAsDataURL(b);
+            });
+          }
+          delete c2.blob;
+        }
+        out.events[n] = c2;
+      }
+      const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'skypush-sfx-pack.json';
@@ -467,6 +562,15 @@ SKY.SfxLab = (function () {
       if (!f) return;
       try {
         store = { v: 1, events: {}, ...JSON.parse(await f.text()) };
+        for (const n in store.events) {
+          const c2 = store.events[n];
+          if (c2.data) {                       // pack audio -> idb
+            const b = await fetch(c2.data).then((r) => r.blob());
+            await idbPut(n, b);
+            delete c2.data;
+            c2.blob = true;
+          }
+        }
         for (const n of Object.keys(SKY.SFX.labState.events)) delete SKY.SFX.labState.events[n];
         decoded.clear();
         installAll(); decodePending(); save(); render();
@@ -474,13 +578,15 @@ SKY.SfxLab = (function () {
     };
     panel.querySelector('#sfx-resetall').onclick = () => {
       if (!confirm('Reset EVERY sound override?')) return;
+      for (const n in store.events) if (store.events[n].blob) idbDel(n);
       store = { v: 1, events: {} };
       for (const n of Object.keys(SKY.SFX.labState.events)) {
         delete SKY.SFX.labState.events[n];
         SKY.SFX.labClearBuffer(n);
       }
       decoded.clear();
-      save(); render();
+      save(); decodePending(); render();
+      try { S().labApplyMusic(); S().labRefreshAmbient(); } catch (e2) {}
     };
   }
 

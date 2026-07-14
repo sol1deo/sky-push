@@ -22,20 +22,30 @@ SKY.Profile = (function () {
     { id: 'Ninja_Male',         name: 'SHADOW',   price: 800 },
   ];
 
-  /* weapon paint jobs: tint multiplies the gun's colormap, mult scales
-     brightness, glow adds accent-colored emissive on the whole body */
+  /* weapon skins v2 — real painted textures (assets/tex/skins/*.jpg) wrapped
+     around the gun with triplanar projection, plus per-skin animated glow and
+     MYTHIC tiers that carry living particle FX riding the weapon.
+       skin    — texture name; glowLo/glowAmt shape the emissive mask (bright
+                 texels glow: lava cracks, circuit traces, stars)
+       anim    — how the glow lives: lava (breathing), scan (scanline sweep),
+                 drift (texture slowly scrolls), void (dark pulse), shimmer
+       orbitFx — mythic particle rig: embers | stars | shards */
   const FINISHES = [
-    { id: 'stock',    name: 'STOCK',    price: 0,   tint: null },
-    { id: 'pearl',    name: 'PEARL',    price: 200, tint: '#ffffff', mult: 1.55 },
-    { id: 'crimson',  name: 'CRIMSON',  price: 300, tint: '#ff7a66', mult: 1.15 },
-    { id: 'toxic',    name: 'TOXIC',    price: 300, tint: '#8dff70', mult: 1.15 },
-    { id: 'gold',     name: 'GOLD',     price: 450, tint: '#ffd970', mult: 1.35 },
-    { id: 'midnight', name: 'MIDNIGHT', price: 450, tint: '#5a6488', mult: 0.95, glow: 0.22 },
-    { id: 'pulse',    name: 'PULSE',    price: 550, fx: 'pulse' },      // breathing glow
-    { id: 'neon',     name: 'NEON',     price: 650, tint: '#3a4266', mult: 0.85, glow: 0.55 },
-    { id: 'galaxy',   name: 'GALAXY',   price: 700, fx: 'galaxy' },     // starfield paint
-    { id: 'fade',     name: 'FADE',     price: 800, fx: 'fade' },       // cyan→pink→gold
-    { id: 'spectrum', name: 'SPECTRUM', price: 1000, fx: 'spectrum' },  // animated hue cycle
+    { id: 'stock',      name: 'STOCK',      price: 0 },
+    { id: 'fade',       name: 'FADE',       price: 400,  fx: 'fade' },      // cyan→pink→gold
+    { id: 'spectrum',   name: 'SPECTRUM',   price: 600,  fx: 'spectrum' },  // animated hue cycle
+    { id: 'gilded',     name: 'GILDED AGE', price: 800,  skin: 'gilded',
+      glowLo: 0.72, glowAmt: 0.3 },
+    { id: 'cybergrid',  name: 'CYBERGRID',  price: 900,  skin: 'cybergrid',
+      glowLo: 0.42, glowAmt: 0.85, anim: 'scan', scanColor: '#59f7ff' },
+    { id: 'frostbite',  name: 'FROSTBITE',  price: 1000, skin: 'frostbite',
+      glowLo: 0.88, glowAmt: 0.45, anim: 'shimmer' },
+    { id: 'dragonfire', name: 'DRAGONFIRE', price: 1800, skin: 'dragonfire', mythic: true,
+      glowLo: 0.34, glowAmt: 1.15, anim: 'lava', orbitFx: 'embers' },
+    { id: 'nebula',     name: 'NEBULA',     price: 2000, skin: 'nebula', mythic: true,
+      glowLo: 0.45, glowAmt: 0.95, anim: 'drift', orbitFx: 'stars' },
+    { id: 'voidwalker', name: 'VOIDWALKER', price: 2500, skin: 'voidwalker', mythic: true,
+      glowLo: 0.4, glowAmt: 1.05, anim: 'void', orbitFx: 'shards' },
   ];
 
   /* free cosmetic palettes (no purchase — just identity options) */
@@ -110,6 +120,208 @@ SKY.Profile = (function () {
       o.material.color.set('#ffffff');
       if (fx === 'galaxy') o.material.emissive = new THREE.Color('#2a1a55').multiplyScalar(0.5);
     });
+  }
+
+  /* ---------------- textured skins: triplanar projection ----------------
+   * The Kenney gun UVs map a 2px palette (useless for pictorial art), so the
+   * skin texture is projected in GUN space from three axes and blended by the
+   * surface normal — wraps any mesh, kitbash parts included. Bright texels
+   * also feed the emissive mask, so lava cracks / circuit traces / stars glow
+   * out of the paint itself. */
+  const skinTexes = {};
+  function skinTex(name) {
+    if (skinTexes[name]) return skinTexes[name];
+    const t = new THREE.TextureLoader().load('assets/tex/skins/' + name + '.jpg', () => {
+      // locker thumbs rendered before this landed cached BLACK — flush them
+      if (SKY.Effects && SKY.Effects.invalidateThumbs) SKY.Effects.invalidateThumbs();
+      const lk = document.getElementById('panel-locker');
+      if (lk && !lk.classList.contains('hidden') && SKY.Locker) SKY.Locker.renderPanel();
+    });
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.encoding = THREE.sRGBEncoding;
+    skinTexes[name] = t;
+    return t;
+  }
+  // start the fetches at boot so the locker/loadouts never see a bare gun
+  if (window.addEventListener) {
+    window.addEventListener('load', () => {
+      setTimeout(() => { for (const f of FINISHES) if (f.skin) skinTex(f.skin); }, 2500);
+    });
+  }
+  function kindHash(s) {
+    let h = 5381;
+    for (let i = 0; i < (s || '').length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h;
+  }
+
+  function skinMaterial(f, localMat, scale, off) {
+    const m = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uSkinMap = { value: skinTex(f.skin) };
+      sh.uniforms.uSkinLocal = { value: localMat };
+      sh.uniforms.uSkinScale = { value: scale };
+      sh.uniforms.uSkinOff = { value: off };
+      sh.uniforms.uGlowLo = { value: f.glowLo !== undefined ? f.glowLo : 0.7 };
+      sh.uniforms.uGlowAmt = { value: f.glowAmt || 0 };
+      sh.uniforms.uDrift = { value: f.anim === 'drift' ? 0.014 : 0 };
+      sh.uniforms.uScan = { value: f.anim === 'scan' ? 0.55 : 0 };
+      sh.uniforms.uScanCol = { value: new THREE.Color(f.scanColor || '#59f7ff') };
+      sh.uniforms.uTime = { value: 0 };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>',
+          '#include <common>\nuniform mat4 uSkinLocal;\nvarying vec3 vSkinP;\nvarying vec3 vSkinN;')
+        .replace('#include <begin_vertex>',
+          '#include <begin_vertex>\n' +
+          'vSkinP = (uSkinLocal * vec4(position, 1.0)).xyz;\n' +
+          'vSkinN = normalize(mat3(uSkinLocal) * normal);');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>',
+          '#include <common>\n' +
+          'uniform sampler2D uSkinMap; uniform float uSkinScale; uniform vec2 uSkinOff;\n' +
+          'uniform float uGlowLo; uniform float uGlowAmt; uniform float uDrift;\n' +
+          'uniform float uScan; uniform vec3 uScanCol; uniform float uTime;\n' +
+          'varying vec3 vSkinP; varying vec3 vSkinN;')
+        .replace('#include <map_fragment>',
+          'vec3 sw = abs(vSkinN); sw = pow(sw, vec3(3.0)); sw /= (sw.x + sw.y + sw.z + 1e-4);\n' +
+          'vec2 sOff = uSkinOff + uTime * uDrift * vec2(1.0, 0.62);\n' +
+          'vec4 skinCol = texture2D(uSkinMap, vSkinP.zy * uSkinScale + sOff) * sw.x\n' +
+          '  + texture2D(uSkinMap, vSkinP.xz * uSkinScale + sOff) * sw.y\n' +
+          '  + texture2D(uSkinMap, vSkinP.xy * uSkinScale + sOff) * sw.z;\n' +
+          'diffuseColor.rgb *= skinCol.rgb;')
+        .replace('#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\n' +
+          'float sLum = dot(skinCol.rgb, vec3(0.299, 0.587, 0.114));\n' +
+          'totalEmissiveRadiance += skinCol.rgb * smoothstep(uGlowLo, 1.0, sLum) * uGlowAmt;\n' +
+          'if (uScan > 0.0) {\n' +
+          '  float band = smoothstep(0.09, 0.0, abs(fract(vSkinP.z * uSkinScale * 0.6 - uTime * 0.45) - 0.5));\n' +
+          '  totalEmissiveRadiance += uScanCol * band * uScan;\n' +
+          '}');
+      m.userData.shader = sh;
+    };
+    if (f.anim) {
+      const base = f.glowAmt || 0.6;
+      m.userData.animFx = 'skin';
+      m.userData.skinTick = (t) => {
+        const sh = m.userData.shader;
+        if (!sh) return;
+        sh.uniforms.uTime.value = t;
+        if (f.anim === 'lava') sh.uniforms.uGlowAmt.value = base * (0.55 + 0.45 * Math.sin(t * 2.2));
+        else if (f.anim === 'shimmer') sh.uniforms.uGlowAmt.value = base * (0.75 + 0.25 * Math.sin(t * 1.7));
+        else if (f.anim === 'void') sh.uniforms.uGlowAmt.value = base * (0.6 + 0.4 * Math.sin(t * 1.4));
+        else if (f.anim === 'drift') sh.uniforms.uGlowAmt.value = base * (0.8 + 0.2 * Math.sin(t * 1.1));
+      };
+      if (SKY.Effects && SKY.Effects.registerAnimMat) SKY.Effects.registerAnimMat(m);
+    }
+    return m;
+  }
+
+  /* soft round dot for the particle rigs — bare gl_Points are hard squares */
+  let dotTex = null;
+  function softDot() {
+    if (dotTex) return dotTex;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 32;
+    const g = cv.getContext('2d');
+    const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.4, 'rgba(255,255,255,.6)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 32, 32);
+    dotTex = new THREE.CanvasTexture(cv);
+    return dotTex;
+  }
+
+  /* mythic particle rigs riding the gun: rising embers / twinkling stars /
+     orbiting void shards. Children of the weapon group, ticked by Effects. */
+  function attachOrbitFx(group, box, type) {
+    const c = box.getCenter(new THREE.Vector3());
+    const len = Math.max(0.18, box.max.z - box.min.z);
+    const rad = Math.max(0.06, Math.max(box.max.x - box.min.x, box.max.y - box.min.y)) * 0.75;
+    if (type === 'shards') {
+      const fx = new THREE.Group();
+      const geo = new THREE.TetrahedronGeometry(0.014);
+      const mat = new THREE.MeshLambertMaterial({
+        color: 0x1a1030, emissive: new THREE.Color('#8a4dff').multiplyScalar(0.8),
+      });
+      const shards = [];
+      for (let i = 0; i < 5; i++) {
+        const s = new THREE.Mesh(geo, mat);
+        shards.push({ m: s, ph: (i / 5) * Math.PI * 2, tilt: 0.35 + (i % 3) * 0.3 });
+        fx.add(s);
+      }
+      fx.userData.tick = (t) => {
+        for (const sd of shards) {
+          const a = t * 1.6 + sd.ph;
+          sd.m.position.set(
+            c.x + Math.cos(a) * (rad + 0.05),
+            c.y + Math.sin(a * 0.7 + sd.ph) * 0.045,
+            c.z + Math.sin(a) * (len * 0.42));
+          sd.m.rotation.set(a * 2.1, a * 1.3, 0);
+        }
+      };
+      group.add(fx);
+      if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
+      return;
+    }
+    const N = type === 'embers' ? 12 : 10;
+    const pos = new Float32Array(N * 3);
+    const seeds = [];
+    for (let i = 0; i < N; i++) {
+      seeds.push({
+        ph: Math.random() * Math.PI * 2, sp: 0.5 + Math.random() * 0.7,
+        x: (Math.random() - 0.5) * rad * 2, z: box.min.z + Math.random() * len,
+      });
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({
+      color: type === 'embers' ? 0xff7a20 : 0xaad4ff,
+      size: type === 'embers' ? 0.009 : 0.007,
+      map: softDot(), transparent: true, opacity: 0.8, depthWrite: false,
+      blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    pts.userData.tick = (t) => {
+      const a = geo.attributes.position.array;
+      for (let i = 0; i < N; i++) {
+        const s = seeds[i];
+        if (type === 'embers') {       // embers rise off the gun and loop
+          const cyc = ((t * s.sp * 0.35 + s.ph) % 1 + 1) % 1;
+          a[i * 3] = c.x + s.x + Math.sin(t * 2 + s.ph) * 0.01;
+          a[i * 3 + 1] = box.max.y + cyc * 0.09;
+          a[i * 3 + 2] = s.z;
+          if (i === 0) mat.opacity = 0.85;
+        } else {                       // stars drift in a slow halo + twinkle
+          const an = t * 0.5 * s.sp + s.ph;
+          a[i * 3] = c.x + Math.cos(an) * (rad + 0.04);
+          a[i * 3 + 1] = c.y + Math.sin(an * 1.3) * 0.05;
+          a[i * 3 + 2] = c.z + Math.sin(an) * (len * 0.45);
+          mat.opacity = 0.55 + 0.35 * Math.sin(t * 3.1);
+        }
+      }
+      geo.attributes.position.needsUpdate = true;
+    };
+    group.add(pts);
+    if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(pts);
+  }
+
+  function applySkinFinish(group, f, kind) {
+    group.updateMatrixWorld(true);
+    const inv = group.matrixWorld.clone().invert();
+    const box = new THREE.Box3().setFromObject(group);
+    const len = Math.max(0.18, box.max.z - box.min.z);
+    // ~1.6 pattern repeats along the gun, landing differently per weapon
+    const scale = 1.6 / len;
+    const h = kindHash(kind || 'gun');
+    const off = new THREE.Vector2((h % 97) / 97, ((h >> 3) % 89) / 89);
+    group.traverse((o) => {
+      if (!o.isMesh || !o.material || o.name === 'tierglow') return;
+      const local = inv.clone().multiply(o.matrixWorld);
+      o.material = skinMaterial(f, local, scale, off);
+    });
+    if (f.orbitFx) attachOrbitFx(group, box, f.orbitFx);
   }
 
   const api = {
@@ -205,9 +417,10 @@ SKY.Profile = (function () {
     setLobbyWeapon(k) { data.wpn = k; save(); },
 
     /* paint a weapon mesh group in a finish (viewmodel/avatar/thumbs) */
-    applyFinish(group, finishId, accentHex) {
+    applyFinish(group, finishId, accentHex, kind) {
       const f = finishDef(finishId);
       if (!f) return;
+      if (f.skin) { applySkinFinish(group, f, kind); return; }
       if (f.fx === 'fade' || f.fx === 'galaxy') { paintVertexFx(group, f.fx); return; }
       if (f.fx === 'pulse' || f.fx === 'spectrum') {
         group.traverse((o) => {

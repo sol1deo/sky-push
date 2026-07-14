@@ -622,6 +622,7 @@ SKY.Editor = (function () {
     if (!grid) grid = new THREE.GridHelper(160, 160, 0x557799, 0x2a3244);
     group.add(grid);
     updateLobbyMarker();
+    updateCrownMarker();
     applyMood();
     select(oldSel >= 0 && oldSel < objects.length ? oldSel : -1);
     refreshOutliner();
@@ -659,6 +660,55 @@ SKY.Editor = (function () {
     lobbyMarker.traverse((o) => { o.userData.edmarker = true; });
     group.add(lobbyMarker);
   }
+  /* -------- crown spot: where the Crown Rush crown spawns/returns --------
+     Same flow as the lobby spot: aim at the spot, hit the button. def.crown
+     always exists ([0,1,0] = map center default) so "custom" = moved off it. */
+  let crownMarker = null;
+  function crownIsCustom() {
+    const c = def && def.crown;
+    return !!(c && (c[0] !== 0 || c[1] !== 1 || c[2] !== 0));
+  }
+  function updateCrownMarker() {
+    if (crownMarker && crownMarker.parent) crownMarker.parent.remove(crownMarker);
+    crownMarker = null;
+    const btn = document.getElementById('ed-crownspot');
+    if (btn) btn.classList.toggle('sel', crownIsCustom());
+    if (!crownIsCustom() || !group) return;
+    const c = def.crown;
+    crownMarker = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffd34d, wireframe: true });
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 10, 1, true), mat);
+    band.position.set(c[0], c[1], c[2]);
+    crownMarker.add(band);
+    for (let i = 0; i < 5; i++) {                       // crown spikes
+      const a = (i / 5) * Math.PI * 2;
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.35, 4), mat);
+      spike.position.set(c[0] + Math.cos(a) * 0.42, c[1] + 0.28, c[2] + Math.sin(a) * 0.42);
+      crownMarker.add(spike);
+    }
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.2, 4), mat);
+    beam.position.set(c[0], c[1] - 1.6, c[2]);          // drop line to the ground
+    crownMarker.add(beam);
+    crownMarker.traverse((o) => { o.userData.edmarker = true; });
+    group.add(crownMarker);
+  }
+  function toggleCrownSpot() {
+    if (crownIsCustom()) {
+      def.crown = [0, 1, 0];
+      status('crown spot reset — the crown spawns at map center');
+    } else {
+      focusPoint(_v);
+      // ground-snap under the focus point, then hover a little above it
+      const hit = SKY.World.raycast(new THREE.Vector3(_v.x, _v.y + 6, _v.z),
+        new THREE.Vector3(0, -1, 0), 60);
+      const y = (hit ? hit.point.y : _v.y) + 0.6;
+      def.crown = [+_v.x.toFixed(2), +y.toFixed(2), +_v.z.toFixed(2)];
+      status('crown spot set — Crown Rush spawns/returns the crown here');
+    }
+    updateCrownMarker();
+    push(); markDirty();
+  }
+
   function toggleLobbySpot() {
     if (def.lobby) {
       def.lobby = null;
@@ -2262,6 +2312,7 @@ SKY.Editor = (function () {
     $('ed-addpad').onclick = addPad;
     $('ed-addspawn').onclick = addSpawn;
     $('ed-lobbyspot').onclick = toggleLobbySpot;
+    $('ed-crownspot').onclick = toggleCrownSpot;
     $('ed-additem').onclick = addItem;
     $('ed-anim').onclick = (e) => {
       previewOn = !previewOn;

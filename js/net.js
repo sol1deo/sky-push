@@ -1293,11 +1293,12 @@ SKY.Net = (function () {
   }
 
   function selectTab(id) {
-    for (const t of ['tab-offline', 'tab-locker', 'tab-matches', 'tab-profile']) {
+    for (const t of ['tab-offline', 'tab-locker', 'tab-store', 'tab-matches', 'tab-profile']) {
       $(t).classList.toggle('sel', t === id);
     }
     $('panel-offline').classList.toggle('hidden', id !== 'tab-offline');
     $('panel-locker').classList.toggle('hidden', id !== 'tab-locker');
+    $('panel-store').classList.toggle('hidden', id !== 'tab-store');
     $('panel-matches').classList.toggle('hidden', id !== 'tab-matches');
     $('panel-profile').classList.toggle('hidden', id !== 'tab-profile');
     // the card wrapper only exists for locker/matches/profile — hide it on PLAY
@@ -1336,6 +1337,11 @@ SKY.Net = (function () {
       if (api.online) return;
       selectTab('tab-locker');
       SKY.Locker.renderPanel();
+    };
+    $('tab-store').onclick = () => {
+      if (api.online) return;
+      selectTab('tab-store');
+      if (SKY.Store) SKY.Store.renderPanel();
     };
     $('tab-matches').onclick = () => {
       if (api.online) return;

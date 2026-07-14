@@ -482,7 +482,7 @@ SKY.TUNING = {
   },
 
   audio: {
-    master:  0.55,
+    master:  0.8,     // was 0.55 — "the game makes sounds so much quieter by default"
     windMax: 0.16,
   },
 
