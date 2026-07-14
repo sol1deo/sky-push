@@ -133,9 +133,11 @@ SKY.Locker = (function () {
   function tickPreview(dt) {
     const wrap = $('menu-char-wrap');
     if (!wrap) return;
-    // hidden in the LOBBY stage too — the real character lineup takes over
-    const lobbyUp = document.getElementById('mp-lobby') &&
-      !document.getElementById('mp-lobby').classList.contains('hidden');
+    // hidden in the LOBBY stages too — the real character lineup takes over
+    // (both the online lobby and the VS BOTS lobby)
+    const lobbyUp = (document.getElementById('mp-lobby') &&
+      !document.getElementById('mp-lobby').classList.contains('hidden')) ||
+      (SKY.HUD && SKY.HUD._botsLobby);
     const inMenu = SKY.Game && SKY.Game.state === 'menu' && !lobbyUp &&
       !(SKY.Editor && SKY.Editor.active) && !(SKY.Replay && SKY.Replay.active);
     wrap.classList.toggle('hidden', !inMenu);

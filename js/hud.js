@@ -129,14 +129,17 @@ SKY.HUD = (function () {
         dm: 'One timed round: KOs score points, assists pay less, the rotating bonus weapon pays extra. Pick your loadout with B.',
         lbs: 'Limited lives, first to the round target wins the match. Fall off = lose a life.',
         crown: 'Grab the crown and HOLD it — total hold time wins. Dying drops it where the crown home is.',
-        it: 'One SEEKER hunts with a point-blank tag cannon that sends you FLYING. Runners get only hook + air cannon — dodge, hide, survive the clock.',
+        it: 'One player is IT — their tag cannon sends you FLYING. Everyone else gets hook + air cannon only: dodge, hide, outlast the clock.',
       };
       const wireSel = (id, set) => {
         const el = $(id);
         el.addEventListener('change', () => set(el.value));
         return el;
       };
-      wireSel('bots-select', v => { api.botCount = parseInt(v, 10); });
+      wireSel('bots-select', v => {
+        api.botCount = parseInt(v, 10);
+        if (api._botsLobby) api.botsLobby(true);   // lineup follows the count
+      });
       wireSel('map-select', v => { api.mapSel = v; SKY.Game.previewMap(v); });
       const modeRows = (v) => {
         document.querySelectorAll('.r-dm').forEach(e => e.classList.toggle('hidden', v !== 'dm'));
@@ -255,19 +258,42 @@ SKY.HUD = (function () {
     },
 
     /* PLAY hub state: '' = hero landing, 'bots'/'online' = drawer,
-       'lobby' = fullscreen lobby stage (Net drives that one) */
+       'lobby' = fullscreen lobby stage (Net drives that one).
+       VS BOTS is a lobby too now: the setup panel over the 3D lineup of
+       you + your bots standing on the selected map. */
     playSub(v) {
       document.querySelectorAll('.play-sub').forEach(b =>
         b.classList.toggle('sel', b.dataset.v === v));
       const lobby = v === 'lobby';
+      const bots = v === 'bots';
       $('play-drawer').classList.toggle('hidden', lobby || !v);
-      $('play-bots').classList.toggle('hidden', v !== 'bots');
+      $('play-bots').classList.toggle('hidden', !bots);
       $('play-online').classList.toggle('hidden', v !== 'online');
-      $('play-hero').classList.toggle('hidden', lobby);
-      $('play-actions').classList.toggle('hidden', lobby);
+      $('play-hero').classList.toggle('hidden', lobby || bots);
+      $('play-actions').classList.toggle('hidden', lobby || bots);
       const mc = $('menu-char-wrap');
-      if (mc) mc.classList.toggle('hidden', lobby);   // real characters take over
+      if (mc) mc.classList.toggle('hidden', lobby || bots);   // real characters take over
+      api.botsLobby(bots);
       if (v === 'online') SKY.Net.enterOnline();
+    },
+
+    /* the VS BOTS lobby lineup: local player + a preview of the bots */
+    botsLobby(on) {
+      if (!SKY.Attract || !SKY.Attract.lobby) return;
+      if (!on) {
+        if (api._botsLobby && !SKY.Net.online) SKY.Attract.lobby(null);
+        api._botsLobby = false;
+        return;
+      }
+      api._botsLobby = true;
+      const me = {
+        name: (SKY.Settings.data.nickname || '').trim() || 'YOU',
+        color: '#ffd34d', cos: SKY.Profile ? SKY.Profile.equipped() : null,
+      };
+      // you stand CENTER stage, bots flanking
+      const bots = SKY.Game.botPreview(api.botCount);
+      const mid = Math.ceil(bots.length / 2);
+      SKY.Attract.lobby(bots.slice(0, mid).concat([me], bots.slice(mid)));
     },
 
     /* top-bar nickname chip mirrors the saved (or guest) name */
@@ -734,7 +760,7 @@ SKY.HUD = (function () {
         setText(el.crownStatus, seeker
           ? (hideLeft > 0 ? '👹 ' + seeker.name + ' in ' + Math.ceil(hideLeft)
              : '👹 ' + seeker.name)
-          : 'IT');
+          : 'TAG');
         setText(el.alive,
           G.pawns.filter(q => !q.isSeeker && !q.eliminated).length + ' runners');
       } else if (G.mode === 'crown') {
@@ -854,7 +880,7 @@ SKY.HUD = (function () {
         const cls = (p.isLocal ? 'me' : '') + (p.eliminated ? ' out' : '');
         const status = p.left ? 'LEFT'
           : p.eliminated ? 'OUT'
-          : (G.mode === 'it' && p.isSeeker) ? '👹 SEEKER'
+          : (G.mode === 'it' && p.isSeeker) ? '👹 IT'
           : (p.alive ? '' : 'respawning');
         const score = G.mode === 'spark' ? '✦' + (p.sparks || 0)
           : G.mode === 'dm' ? '★' + (p.sparks || 0)
@@ -888,7 +914,8 @@ SKY.HUD = (function () {
 
   /* one weapon slot: minimalist rarity-tinted wireframe (CS:GO style),
      text fallback otherwise */
-  const RARITY_GLOW = { starter: '#c6cdd9', common: '#c6cdd9', rare: '#40c8ff', epic: '#ff5db1' };
+  const RARITY_GLOW = { starter: '#c6cdd9', common: '#c6cdd9', rare: '#40c8ff', epic: '#ff5db1',
+    legendary: '#ffa733' };
   function setSlotVisual(slotEl, weaponId) {
     const img = slotEl.querySelector('.si');
     const sn = slotEl.querySelector('.sn');

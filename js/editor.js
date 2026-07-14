@@ -602,9 +602,61 @@ SKY.Editor = (function () {
     for (const pr of def.props) { const entry = { kind: 'prop', data: pr, mesh: null }; entry.mesh = buildPropMesh(pr, entry); group.add(entry.mesh); objects.push(entry); }
     if (!grid) grid = new THREE.GridHelper(160, 160, 0x557799, 0x2a3244);
     group.add(grid);
+    updateLobbyMarker();
     applyMood();
     select(oldSel >= 0 && oldSel < objects.length ? oldSel : -1);
     refreshOutliner();
+  }
+
+  /* -------- lobby spot: where the pre-match character lineup stands --------
+     Set from the CURRENT editor view (stand where the lobby camera should be,
+     look at where the line should stand, hit the button). Not a selectable
+     object — one marker, set/clear via the toolbar button. */
+  let lobbyMarker = null;
+  function updateLobbyMarker() {
+    if (lobbyMarker && lobbyMarker.parent) lobbyMarker.parent.remove(lobbyMarker);
+    lobbyMarker = null;
+    const btn = document.getElementById('ed-lobbyspot');
+    if (btn) btn.classList.toggle('sel', !!(def && def.lobby));
+    if (!def || !def.lobby || !group) return;
+    const L = def.lobby;
+    lobbyMarker = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0x57e389, wireframe: true });
+    // a row of three stand-in figures + an arrow showing the facing
+    const fx = -Math.sin(L.yaw || 0), fz = -Math.cos(L.yaw || 0);
+    const figGeo = THREE.CapsuleGeometry
+      ? new THREE.CapsuleGeometry(0.35, 1.1, 2, 6)
+      : new THREE.CylinderGeometry(0.35, 0.35, 1.8, 6);
+    for (let i = -1; i <= 1; i++) {
+      const fig = new THREE.Mesh(figGeo, mat);
+      fig.position.set(L.p[0] + fz * i * 1.8, L.p[1] + 0.95, L.p[2] - fx * i * 1.8);
+      lobbyMarker.add(fig);
+    }
+    const arr = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.9, 6), mat);
+    arr.position.set(L.p[0] + fx * 1.6, L.p[1] + 0.5, L.p[2] + fz * 1.6);
+    arr.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(fx, 0, fz));   // cone points along the facing
+    lobbyMarker.add(arr);
+    lobbyMarker.traverse((o) => { o.userData.edmarker = true; });
+    group.add(lobbyMarker);
+  }
+  function toggleLobbySpot() {
+    if (def.lobby) {
+      def.lobby = null;
+      status('lobby spot cleared — lineup returns to map center');
+    } else {
+      focusPoint(_v);
+      // ground-snap under the focus point so the lineup stands on something
+      const hit = SKY.World.raycast(new THREE.Vector3(_v.x, _v.y + 6, _v.z),
+        new THREE.Vector3(0, -1, 0), 60);
+      const y = hit ? hit.point.y : _v.y;
+      // the lineup faces BACK toward where you're standing (the lobby camera)
+      const yaw = Math.atan2(-(camPos.x - _v.x), -(camPos.z - _v.z));
+      def.lobby = { p: [_v.x, +y.toFixed(2), _v.z], yaw: +yaw.toFixed(3) };
+      status('lobby spot set — the pre-match lineup stands here, facing you');
+    }
+    updateLobbyMarker();
+    push(); markDirty();
   }
 
   function applyMood() {
@@ -2146,6 +2198,7 @@ SKY.Editor = (function () {
     $('ed-addterrain').onclick = addTerrain;
     $('ed-addpad').onclick = addPad;
     $('ed-addspawn').onclick = addSpawn;
+    $('ed-lobbyspot').onclick = toggleLobbySpot;
     $('ed-additem').onclick = addItem;
     $('ed-anim').onclick = (e) => {
       previewOn = !previewOn;

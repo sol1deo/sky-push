@@ -289,6 +289,8 @@ SKY.SFX = (function () {
     piston:    ['fire_sniper', 1.12, 0.90, 1],
     lobber:    ['glfire', 1.0, 0.85, 0],
     quad:      ['glfire', 1.1, 0.75, 1],
+    minigun:   ['fire_med', 1.22, 0.42, 2],   // 13 rps — each shot stays quiet
+    flamer:    ['fire_light', 1.35, 0.22, 2], // soft huffs under the flame visuals
   };
 
   return {

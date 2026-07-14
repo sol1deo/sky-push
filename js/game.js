@@ -107,6 +107,11 @@ SKY.Game = (function () {
       };
     },
 
+    /* the first N bots the next vs-bots match will field (lobby lineup) */
+    botPreview(n) {
+      return BOT_ROSTER.slice(0, Math.max(0, n)).map(b => ({ name: b[0], color: b[1] }));
+    },
+
     /* match rules chosen in the menu / lobby (rounds & points to win) */
     applyRules(rules, mode) {
       rules = rules || {};
@@ -294,7 +299,7 @@ SKY.Game = (function () {
           p.nades = { type: 'he', count: 0 }; // hook + cannon only
         });
         if (seeker) {
-          SKY.HUD.subMsg((seeker.isLocal ? 'YOU are the SEEKER — ' : seeker.name + ' is the SEEKER — ') +
+          SKY.HUD.subMsg((seeker.isLocal ? 'YOU are IT — ' : seeker.name + ' is IT — ') +
             'runners scatter!', 3.5);
         }
       } else {
@@ -692,7 +697,7 @@ SKY.Game = (function () {
       } else if (!api._itReleased) {
         api._itReleased = true;
         for (const p of api.pawns) p._frz = null;
-        SKY.HUD.centerMsg('THE SEEKER IS LOOSE', 1.6, 44);
+        SKY.HUD.centerMsg('RUN — IT IS LOOSE', 1.6, 44);
         SKY.SFX.overtime();
       }
       // all runners down -> the seeker takes the round.

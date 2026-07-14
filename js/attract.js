@@ -83,30 +83,39 @@ SKY.Attract = (function () {
     lobbyStop();
     if (!lobbyRoster || !lobbyRoster.length) return;
     const n = lobbyRoster.length;
+    // custom maps can pin the lineup anywhere (editor "lobby spot") — the
+    // default stays the map center facing +z
+    const spot = SKY.Map.lobbySpot ? SKY.Map.lobbySpot() : null;
+    const yaw = spot ? (spot.yaw || 0) : Math.PI;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw);     // actors' facing
+    const rx = fz, rz = -fx;                            // line direction
+    const ox = spot ? spot.p[0] : 0, oz = spot ? spot.p[2] : 0;
+    const rayTop = spot ? spot.p[1] + 8 : 30;
     let midY = 0;
     for (let i = 0; i < n; i++) {
       const r = lobbyRoster[i];
       const a = {
         name: r.name, color: r.color, cos: r.cos || null, isLocal: false, alive: true,
         weapon: 'pistol', pos: new THREE.Vector3(), vel: new THREE.Vector3(),
-        yaw: Math.PI, pitch: 0, height: SKY.TUNING.move.standHeight,
+        yaw, pitch: 0, height: SKY.TUNING.move.standHeight,
         grounded: true, sliding: false, ragdoll: null,
         tumbleVel: new THREE.Vector3(), fellScreamed: false,
         emoteT: SKY.U.rand(4, 15),
         speedH() { return 0; },
       };
-      // stage the line near the map's center, dropped onto real ground
+      // stage the line, wings arcing gently behind, dropped onto real ground
       const x = (i - (n - 1) / 2) * 1.8;
-      _from.set(x, 30, -1 - Math.abs(x) * 0.24);   // gentle arc, wings behind
+      const arc = 1 + Math.abs(x) * 0.24;
+      _from.set(ox + rx * x - fx * arc, rayTop, oz + rz * x - fz * arc);
       const hit = SKY.World.raycast(_from, _dir.set(0, -1, 0), 60);
-      a.pos.set(_from.x, hit ? 30 - hit.t : 0, _from.z);
+      a.pos.set(_from.x, hit ? rayTop - hit.t : (spot ? spot.p[1] : 0), _from.z);
       if (i === Math.floor((n - 1) / 2)) midY = a.pos.y;
       a.avatar = SKY.Characters.create(a, scene);
       lobbyActors.push(a);
     }
     // fixed camera in front of the line, a touch above eye height
-    lobbyCamPos.set(0, midY + 2.3, 6.6);
-    lobbyLook.set(0, midY + 1.1, -1);
+    lobbyCamPos.set(ox + fx * 6.6, midY + 2.3, oz + fz * 6.6);
+    lobbyLook.set(ox - fx * 1, midY + 1.1, oz - fz * 1);
     lobbyCamOk = true;
   }
 

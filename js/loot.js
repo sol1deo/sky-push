@@ -8,9 +8,10 @@ window.SKY = window.SKY || {};
 
 SKY.Loot = (function () {
   const RARITY = {
-    common: { label: 'COMMON', color: '#9fb2c8' },
-    rare:   { label: 'RARE',   color: '#40c8ff' },
-    epic:   { label: 'EPIC',   color: '#ff5db1' },
+    common:    { label: 'COMMON', color: '#9fb2c8' },
+    rare:      { label: 'RARE',   color: '#40c8ff' },
+    epic:      { label: 'EPIC',   color: '#ff5db1' },
+    legendary: { label: 'LEGENDARY', color: '#ffa733' },
   };
 
   const KIND_LABELS = { weapon: 'Weapon', power: 'Powerup', ability: 'Ability', nade: 'Grenades' };
@@ -40,17 +41,19 @@ SKY.Loot = (function () {
   const ITEMS = [
     // --- weapons (replace your LMB weapon; pistol is the starter) ---
     { id: 'blaster',  kind: 'weapon', rarity: 'common' },
-    { id: 'scatter',  kind: 'weapon', rarity: 'common' },
     { id: 'smg',      kind: 'weapon', rarity: 'common' },
     { id: 'burst',    kind: 'weapon', rarity: 'common' },
+    { id: 'piston',   kind: 'weapon', rarity: 'common' },
+    { id: 'scatter',  kind: 'weapon', rarity: 'rare'   },
     { id: 'longshot', kind: 'weapon', rarity: 'rare'   },
     { id: 'magnum',   kind: 'weapon', rarity: 'rare'   },
     { id: 'bouncer',  kind: 'weapon', rarity: 'rare'   },
-    { id: 'piston',   kind: 'weapon', rarity: 'rare'   },
     { id: 'mega',     kind: 'weapon', rarity: 'epic'   },
     { id: 'lobber',   kind: 'weapon', rarity: 'epic'   },
     { id: 'boomstick', kind: 'weapon', rarity: 'epic'  },
     { id: 'quad',     kind: 'weapon', rarity: 'epic'   },
+    { id: 'minigun',  kind: 'weapon', rarity: 'legendary' },
+    { id: 'flamer',   kind: 'weapon', rarity: 'legendary' },
 
     // --- grenade packs (set your G-slot) ---
     { id: 'nades_he', kind: 'nade', rarity: 'common', nade: 'he', count: 3 },
@@ -128,7 +131,7 @@ SKY.Loot = (function () {
     const table = SKY.TUNING.loot.weightsByDeath;
     const t = tier !== undefined ? tier : pawn.deaths;
     const w = table[Math.min(Math.max(t, 1), table.length) - 1];
-    const weightOf = { common: w[0], rare: w[1], epic: w[2] };
+    const weightOf = { common: w[0], rare: w[1], epic: w[2], legendary: w[3] || 0 };
     const pool = candidates(pawn);
     const picks = [];
     for (let n = 0; n < 3 && pool.length; n++) {

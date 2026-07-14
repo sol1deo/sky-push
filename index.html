@@ -690,6 +690,11 @@
     animation:deal .5s cubic-bezier(.34,1.56,.64,1) backwards, epicpulse 2s ease-in-out .6s infinite; }
   @keyframes epicpulse {
     50% { box-shadow:0 0 48px rgba(255,93,177,.34), inset 0 0 34px rgba(255,93,177,.1); } }
+  .loot-card.r-legendary { border-color:rgba(255,167,51,.75);
+    box-shadow:0 0 38px rgba(255,167,51,.24), inset 0 0 32px rgba(255,167,51,.08);
+    animation:deal .5s cubic-bezier(.34,1.56,.64,1) backwards, legpulse 1.6s ease-in-out .6s infinite; }
+  @keyframes legpulse {
+    50% { box-shadow:0 0 60px rgba(255,167,51,.45), inset 0 0 38px rgba(255,167,51,.14); } }
   .loot-card .keycap { position:absolute; top:10px; left:12px; width:20px; height:20px;
     line-height:18px; border:1px solid var(--line); border-radius:4px; color:var(--dim);
     font-size:10px; font-weight:600; }
@@ -1566,7 +1571,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 55</div>
+  <div id="build-foot" class="rail-foot">prototype · build 56</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1596,7 +1601,7 @@
             <option value="dm" selected>Deathmatch — most points wins</option>
             <option value="lbs">Last Standing — limited lives</option>
             <option value="crown">Crown Rush — hold the crown</option>
-            <option value="it">IT — one seeker tags everyone</option>
+            <option value="it">Tag — don&#39;t get caught being IT</option>
           </select>
           <label>Bots</label>
           <select id="bots-select">
@@ -1690,7 +1695,7 @@
             <option value="dm">Deathmatch — most points wins</option>
             <option value="lbs">Last Standing — limited lives</option>
             <option value="crown">Crown Rush — hold the crown</option>
-            <option value="it">IT — one seeker tags everyone</option>
+            <option value="it">Tag — don&#39;t get caught being IT</option>
           </select>
           <label class="lr-dm hidden">Time limit</label>
           <select id="ldm-select" class="lr-dm hidden">
@@ -1766,6 +1771,8 @@
     <button class="ed-btn" id="ed-addpad">+ Pad</button>
     <button class="ed-btn" id="ed-addspawn">+ Spawn</button>
     <button class="ed-btn" id="ed-additem">+ Item</button>
+    <button class="ed-btn" id="ed-lobbyspot"
+      title="the pre-match lobby lineup stands where you're looking, facing you (click again to clear)">Lobby</button>
     <button class="ed-btn sel" id="ed-anim">Anim</button>
     <button class="ed-btn" id="ed-coll" title="show the game's real collision boxes">Coll</button>
     <span class="ed-flex"></span>
@@ -1919,41 +1926,41 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=55"></script>
-<script src="js/profile.js?v=55"></script>
-<script src="js/account.js?v=55"></script>
-<script src="js/accountui.js?v=55"></script>
-<script src="js/utils.js?v=55"></script>
-<script src="js/gfx.js?v=55"></script>
-<script src="js/mapdata.js?v=55"></script>
-<script src="js/audio.js?v=55"></script>
-<script src="js/voice.js?v=55"></script>
-<script src="js/settings.js?v=55"></script>
-<script src="js/input.js?v=55"></script>
-<script src="js/world.js?v=55"></script>
-<script src="js/effects.js?v=55"></script>
-<script src="js/map.js?v=55"></script>
-<script src="js/characters.js?v=55"></script>
-<script src="js/pawn.js?v=55"></script>
-<script src="js/weapons.js?v=55"></script>
-<script src="js/loot.js?v=55"></script>
-<script src="js/pickups.js?v=55"></script>
-<script src="js/sparks.js?v=55"></script>
-<script src="js/grenades.js?v=55"></script>
-<script src="js/grapple.js?v=55"></script>
-<script src="js/bots.js?v=55"></script>
-<script src="js/hud.js?v=55"></script>
-<script src="js/game.js?v=55"></script>
-<script src="js/attract.js?v=55"></script>
-<script src="js/net.js?v=55"></script>
-<script src="js/dof.js?v=55"></script>
+<script src="js/config.js?v=56"></script>
+<script src="js/profile.js?v=56"></script>
+<script src="js/account.js?v=56"></script>
+<script src="js/accountui.js?v=56"></script>
+<script src="js/utils.js?v=56"></script>
+<script src="js/gfx.js?v=56"></script>
+<script src="js/mapdata.js?v=56"></script>
+<script src="js/audio.js?v=56"></script>
+<script src="js/voice.js?v=56"></script>
+<script src="js/settings.js?v=56"></script>
+<script src="js/input.js?v=56"></script>
+<script src="js/world.js?v=56"></script>
+<script src="js/effects.js?v=56"></script>
+<script src="js/map.js?v=56"></script>
+<script src="js/characters.js?v=56"></script>
+<script src="js/pawn.js?v=56"></script>
+<script src="js/weapons.js?v=56"></script>
+<script src="js/loot.js?v=56"></script>
+<script src="js/pickups.js?v=56"></script>
+<script src="js/sparks.js?v=56"></script>
+<script src="js/grenades.js?v=56"></script>
+<script src="js/grapple.js?v=56"></script>
+<script src="js/bots.js?v=56"></script>
+<script src="js/hud.js?v=56"></script>
+<script src="js/game.js?v=56"></script>
+<script src="js/attract.js?v=56"></script>
+<script src="js/net.js?v=56"></script>
+<script src="js/dof.js?v=56"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=55"></script>
-<script src="js/vidrender.js?v=55"></script>
-<script src="js/demos.js?v=55"></script>
-<script src="js/locker.js?v=55"></script>
-<script src="js/assets.js?v=55"></script>
-<script src="js/editor.js?v=55"></script>
-<script src="js/main.js?v=55"></script>
+<script src="js/replay.js?v=56"></script>
+<script src="js/vidrender.js?v=56"></script>
+<script src="js/demos.js?v=56"></script>
+<script src="js/locker.js?v=56"></script>
+<script src="js/assets.js?v=56"></script>
+<script src="js/editor.js?v=56"></script>
+<script src="js/main.js?v=56"></script>
 </body>
 </html>

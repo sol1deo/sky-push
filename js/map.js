@@ -2078,6 +2078,7 @@ SKY.Map = (function () {
   function buildCustomMap(def) {
     const D = SKY.MapData;
     lightMul = def.light !== undefined ? def.light : 1;
+    lobbySpotDef = (def.lobby && Array.isArray(def.lobby.p)) ? def.lobby : null;
     SKY.World.killY = def.killY;
     SKY.World.crownHome = new THREE.Vector3(def.crown[0], def.crown[1], def.crown[2]);
     const M = D.MOODS[def.mood];
@@ -2385,11 +2386,13 @@ SKY.Map = (function () {
   }
 
   let lightMul = 1;    // creator light dial — underwater darkness reads it
+  let lobbySpotDef = null;   // custom map's lobby-lineup spot {p:[x,y,z], yaw}
 
   /* ====================== lifecycle ====================== */
   function load(sc, id) {
     scene = sc;
     lightMul = 1;
+    lobbySpotDef = null;   // builtin maps use the default center lineup
     if (group) scene.remove(group);
     group = new THREE.Group();
     scene.add(group);
@@ -2564,6 +2567,7 @@ SKY.Map = (function () {
            setDoor, tryInteract, propCollisionLocal, skyFollow, terrainMaterial,
            buildTerrainSides,
            lightMul() { return lightMul; },
+           lobbySpot() { return lobbySpotDef; },
            execEvent(params) { if (eventCfg) eventCfg.exec(params); },
            get currentId() { return currentId; },
            get rootGroup() { return group; } };

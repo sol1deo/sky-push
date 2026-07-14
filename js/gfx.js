@@ -27,7 +27,11 @@ SKY.GFX = (function () {
     seeker:    { file: 'g', len: 0.55 },   // IT tag gun — chunky shotgun look
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
-    magnum:    { file: 'a', len: 0.42 },
+    // kitbashed from raw kit pieces (KITBASH below) — file 'a' retired:
+    // the user wanted the magnum to read as an actual REVOLVER
+    magnum:    { build: 'revolver', len: 0.36 },
+    minigun:   { build: 'minigun', len: 0.64 },
+    flamer:    { build: 'flamer', len: 0.52 },
     mega:      { file: 'f', len: 0.60 },
     lobber:    { file: 'm', len: 0.46 },
     hookgun:   { file: 'n', len: 0.38 },   // pronged front = hook launcher, native -Z
@@ -252,17 +256,95 @@ SKY.GFX = (function () {
     return grp;
   }
 
+  /* ---- kitbashed weapons: assembled from raw Blaster-Kit pieces so new
+     archetypes (revolver / minigun / flamethrower) stay 100% in the kit's
+     style. Every part is cloned, scaled, then recentered by bbox onto its
+     slot — raw kit GLBs all have different origins. ---- */
+  const PART_FILES = ['sil-s', 'sil-l', 'clip-l', 'scope-a', 'c', 'k'];
+  const rawParts = {};
+  const _pbb = new THREE.Box3();
+  const _pc = new THREE.Vector3();
+  function partPut(g, f, sx, sy, sz, x, y, z, rx, ry, rz) {
+    const w = new THREE.Group();
+    const m = rawParts[f].clone(true);
+    w.add(m);
+    m.scale.set(sx, sy, sz);
+    if (rx) m.rotation.x = rx;
+    if (ry) m.rotation.y = ry;
+    if (rz) m.rotation.z = rz;
+    w.updateMatrixWorld(true);
+    _pbb.setFromObject(w);
+    _pbb.getCenter(_pc);
+    m.position.sub(_pc);
+    w.position.set(x, y, z);
+    g.add(w);
+    return w;
+  }
+  const KITBASH = {
+    /* classic six-shooter: tube barrel + fat drum + top strap + tilted grip */
+    revolver() {
+      const g = new THREE.Group();
+      partPut(g, 'sil-s', 0.62, 0.62, 1.15, 0, 0.055, -0.17);        // barrel
+      partPut(g, 'scope-a', 0.45, 0.4, 0.55, 0, 0.10, -0.06);        // top strap
+      partPut(g, 'sil-l', 1.0, 1.0, 0.42, 0, 0.04, 0.02);            // cylinder drum
+      partPut(g, 'sil-s', 0.34, 0.34, 0.4, 0, 0.085, 0.115, -0.6);   // hammer
+      partPut(g, 'clip-l', 0.8, 0.72, 0.85, 0, -0.065, 0.09, 0.5);   // grip
+      return g;
+    },
+    /* rotary cannon: chunky 'k' receiver + 5-barrel cluster + ammo box */
+    minigun() {
+      const g = new THREE.Group();
+      partPut(g, 'k', 1, 1, 0.95, 0, 0, 0.10);                       // receiver
+      partPut(g, 'sil-l', 0.95, 0.95, 0.55, 0, 0.115, -0.20);        // hub
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + 0.3;
+        partPut(g, 'sil-s', 0.42, 0.42, 1.9,
+          Math.cos(a) * 0.05, 0.115 + Math.sin(a) * 0.05, -0.42);    // barrels
+      }
+      partPut(g, 'sil-s', 0.28, 0.28, 2.1, 0, 0.115, -0.43);         // center shaft
+      partPut(g, 'clip-l', 1.2, 1.05, 1.35, 0, -0.145, 0.16);        // ammo box
+      return g;
+    },
+    /* flamethrower: 'c' body + fat nozzle + propane tank riding on top */
+    flamer() {
+      const g = new THREE.Group();
+      partPut(g, 'c', 1, 1, 1, 0, 0, 0.05);                          // body
+      partPut(g, 'sil-l', 0.85, 0.85, 0.85, 0, 0.075, -0.30);        // nozzle
+      partPut(g, 'sil-s', 0.48, 0.48, 0.55, 0, 0.075, -0.425);       // tip
+      partPut(g, 'sil-l', 1.35, 1.35, 0.75, 0, 0.235, 0.13);         // tank
+      partPut(g, 'sil-s', 0.5, 0.5, 0.4, 0, 0.235, 0.255);           // tank valve
+      return g;
+    },
+  };
+  function composeKitbashed() {
+    for (const kind of Object.keys(WEAPON_FIT)) {
+      const fit = WEAPON_FIT[kind];
+      if (!fit.build || !KITBASH[fit.build]) continue;
+      if (PART_FILES.some(f => !rawParts[f])) continue;   // a part failed to load
+      try { weapons[kind] = normalizeWeapon(kind, KITBASH[fit.build]()); } catch (e) {}
+    }
+  }
+
   function loadWeapons(done) {
-    const kinds = Object.keys(WEAPON_FIT);
-    let pending = kinds.length;
+    const kinds = Object.keys(WEAPON_FIT).filter(k => !WEAPON_FIT[k].build);
+    let pending = kinds.length + PART_FILES.length;
     track(pending);
+    const settle = () => {
+      tick();
+      if (--pending === 0) { composeKitbashed(); if (done) done(); }
+    };
+    for (const f of PART_FILES) {
+      gl().load('assets/models/weapons/' + f + '.glb', (g) => {
+        rawParts[f] = g.scene || g.scenes[0];
+        settle();
+      }, undefined, settle);
+    }
     for (const kind of kinds) {
       const file = WEAPON_FIT[kind].file || kind;
       gl().load('assets/models/weapons/' + file + '.glb', (g) => {
         try { weapons[kind] = normalizeWeapon(kind, g.scene || g.scenes[0]); } catch (e) {}
-        tick();
-        if (--pending === 0 && done) done();
-      }, undefined, () => { tick(); if (--pending === 0 && done) done(); });
+        settle();
+      }, undefined, settle);
     }
   }
 

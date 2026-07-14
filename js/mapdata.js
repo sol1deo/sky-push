@@ -137,6 +137,9 @@ SKY.MapData = (function () {
       delete def.fog.density;
     }
     if (def.shafts !== true && def.shafts !== false) def.shafts = null;
+    // optional lobby-lineup spot placed in the editor: {p:[x,y,z], yaw}
+    if (def.lobby && !(Array.isArray(def.lobby.p) && def.lobby.p.length === 3)) def.lobby = null;
+    if (def.lobby && typeof def.lobby.yaw !== 'number') def.lobby.yaw = 0;
     if (typeof def.killY !== 'number') def.killY = -22;
     if (!def.crown) def.crown = [0, 1, 0];
     if (!def.name) def.name = 'CUSTOM MAP';

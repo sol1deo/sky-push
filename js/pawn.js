@@ -282,7 +282,9 @@ window.SKY = window.SKY || {};
       }
 
       // ---- accelerate ----
-      const maxRun = T.walkSpeed * this.mods.speedMult * (this.zoomed ? 0.55 : 1);
+      // heavy weapons (minigun) slow the carrier via their def's moveMult
+      const wMove = (SKY.TUNING.weapons[this.weapon] || {}).moveMult || 1;
+      const maxRun = T.walkSpeed * this.mods.speedMult * wMove * (this.zoomed ? 0.55 : 1);
       if (this.grounded) {
         this._friction(dt, this.sliding ? T.slideFriction : T.friction);
         if (this.sliding) {
@@ -318,8 +320,11 @@ window.SKY = window.SKY || {};
           }
         }
         if (wishLen > 1e-4 && !this.pounding) {
-          if (T.airForwardAccel > 0) this._accelerate(_wish, maxRun, T.airForwardAccel, dt); // party steering
-          this._accelerate(_wish, T.airMaxWishSpeed, T.airAccel, dt);  // strafe gains
+          // both air terms REDIRECT instead of braking (see _airAccelerate):
+          // a smooth CS-style semicircle strafe keeps its speed and gains,
+          // instead of bleeding out whenever the wish drifted behind 90°
+          if (T.airForwardAccel > 0) this._airAccelerate(_wish, maxRun, T.airForwardAccel, dt); // party steering
+          this._airAccelerate(_wish, T.airMaxWishSpeed, T.airAccel, dt);  // strafe gains
           if (cmd.mx === 0 && cmd.mz !== 0) this._airControl(_wish, dt); // W-steering
         }
         this.vel.y -= T.gravity * this.mods.gravMult * dt;
@@ -571,6 +576,29 @@ window.SKY = window.SKY || {};
       const acc = Math.min(accel * wishspeed * dt, add);
       this.vel.x += acc * wish.x;
       this.vel.z += acc * wish.z;
+    }
+
+    /* Quake air-accelerate that never TAKES speed: when adding along wish
+       would shrink the horizontal velocity (wish pointing backward during a
+       fast smooth turn — the exact moment the old code hard-braked), the
+       result is rescaled back to the previous speed, so the turn REDIRECTS
+       momentum instead of bleeding it. Good angles still gain exactly like
+       Quake; there is simply no punishment side. */
+    _airAccelerate(wish, wishspeed, accel, dt) {
+      const cur = this.vel.x * wish.x + this.vel.z * wish.z;
+      const add = wishspeed - cur;
+      if (add <= 0) return;
+      const acc = Math.min(accel * wishspeed * dt, add);
+      const s0 = Math.hypot(this.vel.x, this.vel.z);
+      const px = this.vel.x + acc * wish.x;
+      const pz = this.vel.z + acc * wish.z;
+      const s1 = Math.hypot(px, pz);
+      if (s1 < s0 && s1 > 1e-6) {
+        const k = s0 / s1;
+        this.vel.x = px * k; this.vel.z = pz * k;
+      } else {
+        this.vel.x = px; this.vel.z = pz;
+      }
     }
 
     /* Quake friction with stopspeed for crisp low-speed stops */

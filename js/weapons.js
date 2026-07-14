@@ -102,7 +102,7 @@ SKY.Weapons = (function () {
     // charge weapons fired without a charge (bots, autotest): decent mid-charge
     if (W.charge && opts.chargeMul === undefined) {
       opts.chargeMul = 1 + 0.55 * ((W.chargeMult || 2) - 1);
-      opts.speedMul = 1.4; opts.recoilMul = 2;
+      opts.speedMul = 1.2; opts.recoilMul = 2; opts.gravMul = 3;
     }
     const cost = opts.burstShot ? 1 : (W.ammoPerShot || 1);
     if (pawn.ammo < cost) {
@@ -161,27 +161,31 @@ SKY.Weapons = (function () {
       }
       netDirs.push([+_pdir.x.toFixed(3), +_pdir.y.toFixed(3), +_pdir.z.toFixed(3)]);
       const pspd = W.projSpeed * (opts.speedMul || 1);
+      const pgrav = (W.projGravity || 0) * (opts.gravMul || 1);
       bullets.push({
         pos: _muzzle.clone(),
         prev: _muzzle.clone(),
         vel: _pdir.clone().multiplyScalar(pspd).addScaledVector(pawn.vel, 0.25),
         force: push.force, tier: push.tier, color: push.color,
         up: W.upFactor, headMult: W.headshotMult, maxK: W.maxKnockback,
-        gravity: W.projGravity || 0,
+        gravity: pgrav,
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
         bounces: W.bounces || 0,
+        flame: !!W.flameJet,
         owner: pawn, auth,
         life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, _muzzle),
       });
       SKY.Replay.bullet(_muzzle, bullets[bullets.length - 1].vel,
-        W.projGravity || 0, W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15));
+        pgrav, W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15));
     }
     if (SKY.Net.online && auth) {
       SKY.Net.sendFire({
         id: pawn.netId, w: pawn.weapon,
         ori: [+_muzzle.x.toFixed(2), +_muzzle.y.toFixed(2), +_muzzle.z.toFixed(2)],
         dirs: netDirs, force: +push.force.toFixed(2), tier: push.tier,
+        // charged shots fly at custom speed/arc — remote visuals must match
+        spd: +pspd.toFixed(1), grv: +pgrav.toFixed(2),
       });
     }
 
@@ -190,6 +194,7 @@ SKY.Weapons = (function () {
     if (pawn.grounded && pawn.vel.y > 1) pawn.grounded = false;
     SKY.Effects.muzzle(_muzzle, W.color, pawn.isLocal, W.kick);
     SKY.Effects.muzzleLight(_muzzle);
+    if (W.flameJet) SKY.Effects.flame(_muzzle, 0.55);   // flamethrower breath
     SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
     if (pawn.isLocal) {
       SKY.Effects.shake(SKY.TUNING.camera.shakeFire * W.kick);
@@ -243,10 +248,14 @@ SKY.Weapons = (function () {
     const t01 = SKY.U.clamp01(pawn.chargeT / W.charge);
     pawn.chargeT = 0;
     if (t01 < 0.12) return false;    // tap = fizzle, no wasted ammo
+    // the charge is the WHOLE weapon: a short press LOBS a slow heavy slug
+    // that visibly arcs and shoves less; a full compress fires a fast,
+    // near-flat piston round that hits like a train
     return tryFirePrimary(pawn, {
-      chargeMul: 1 + t01 * ((W.chargeMult || 2) - 1),
-      speedMul: 1 + t01 * 0.9,
-      recoilMul: 1 + t01 * 4,        // full charge = a little rocket jump
+      chargeMul: 0.55 + t01 * ((W.chargeMult || 2) - 0.55),
+      speedMul: 0.42 + t01 * 1.28,   // ~21 m/s lob -> ~85 m/s laser
+      gravMul: 22 - t01 * 21,        // heavy arc -> ruler-straight
+      recoilMul: 0.4 + t01 * 4.6,    // full charge = a little rocket jump
     });
   }
 
@@ -435,8 +444,15 @@ SKY.Weapons = (function () {
         continue;
       }
 
-      // streak visual: bright head + tapered glow ribbon behind
-      SKY.Effects.poseTracer(b.vis, b.pos, _dir, Math.min(2.2, segLen * 6 + 0.5));
+      // streak visual: bright head + tapered glow ribbon behind — except
+      // flame rounds, which read as FIRE (puffs + tongues, no dart)
+      if (b.flame) {
+        b.vis.g.visible = false;
+        if (Math.random() < dt * 22) SKY.Effects.trailPuff(b.pos.clone(), '#ff7a2e');
+        if (Math.random() < dt * 8) SKY.Effects.flame(b.pos, 0.35);
+      } else {
+        SKY.Effects.poseTracer(b.vis, b.pos, _dir, Math.min(2.2, segLen * 6 + 0.5));
+      }
 
       if (b.life <= 0 || b.pos.y < SKY.World.killY - 6) removeBullet(i);
     }
@@ -567,17 +583,20 @@ SKY.Weapons = (function () {
   function spawnRemote(pawn, m) {
     const W = SKY.TUNING.weapons[m.w] || SKY.TUNING.weapons.pistol;
     const ori = new THREE.Vector3(m.ori[0], m.ori[1], m.ori[2]);
+    const pspd = m.spd || W.projSpeed;
+    const pgrav = m.grv !== undefined ? m.grv : (W.projGravity || 0);
     for (const d of m.dirs) {
       bullets.push({
         pos: ori.clone(), prev: ori.clone(),
-        vel: new THREE.Vector3(d[0], d[1], d[2]).multiplyScalar(W.projSpeed),
+        vel: new THREE.Vector3(d[0], d[1], d[2]).multiplyScalar(pspd),
         force: m.force, tier: m.tier, color: TIERS[m.tier].color,
         up: W.upFactor, headMult: W.headshotMult, maxK: W.maxKnockback,
-        gravity: W.projGravity || 0,
+        gravity: pgrav,
         blast: W.blastRadius || 0, blastUp: W.blastUp || 0,
         bounces: W.bounces || 0,
+        flame: !!W.flameJet,
         owner: pawn, auth: false,
-        life: W.range / W.projSpeed + (W.rangeGrace != null ? W.rangeGrace : 0.15),
+        life: W.range / pspd + (W.rangeGrace != null ? W.rangeGrace : 0.15),
         vis: makeBulletVisual(0xffe2a8, ori),
       });
     }

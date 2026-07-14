@@ -123,7 +123,7 @@ SKY.Demos = (function () {
         return;
       }
       const MODES = { dm: 'Deathmatch', lbs: 'Last Standing', crown: 'Crown Rush',
-                      it: 'IT', spark: 'Spark Rush', bomb: 'Bomb (retired)' };
+                      it: 'Tag', spark: 'Spark Rush', bomb: 'Bomb (retired)' };
       list.innerHTML = '';
       for (const rec of mem) {
         const row = document.createElement('div');

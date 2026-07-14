@@ -108,7 +108,7 @@ SKY.TUNING = {
       headshotMult: 2.0, upFactor: 0.3, maxKnockback: 26, selfRecoil: 0.25, kick: 0.55, kickPitch: 0.0075,
     },
     scatter: {
-      label: 'SCATTER PUSHER', short: 'SCATTER', icon: '💥', rarity: 'common', color: '#ffd34d',
+      label: 'SCATTER PUSHER', short: 'SCATTER', icon: '💥', rarity: 'rare', color: '#ffd34d',
       desc: 'Pellet wall. Recoil doubles as a jump.',
       cooldown: 0.95, auto: false, mag: 5, reloadTime: 1.9, range: 26,
       projSpeed: 36, projGravity: 5,
@@ -213,13 +213,34 @@ SKY.TUNING = {
       headshotMult: 1, upFactor: 0.42, maxKnockback: 44, selfRecoil: 0.5, kick: 1.8, kickPitch: 0.02,
     },
     piston: {
-      label: 'PISTON CANNON', short: 'PISTON', icon: '🔩', rarity: 'rare', color: '#ff8560',
+      label: 'PISTON CANNON', short: 'PISTON', icon: '🔩', rarity: 'common', color: '#ff8560',
       desc: 'Hold to compress. Release to launch someone — and yourself.',
       cooldown: 0.55, auto: false, mag: 5, reloadTime: 2.0, range: 90,
-      projSpeed: 46, projGravity: 1, charge: 1.1, chargeMult: 3.4,
+      // projGravity is the FULL-charge trajectory; releaseCharge lobs
+      // low-charge shots (slow + heavy arc) and lasers full ones
+      projSpeed: 50, projGravity: 0.4, charge: 1.1, chargeMult: 3.4,
       pellets: 1, spreadDeg: 0.6, zoomSpreadDeg: 0.3, zoomFov: 66,
       baseKnockback: 7, speedMult: 0.8, airborneBonus: 1.3, slideBonus: 1.3,
       headshotMult: 1.8, upFactor: 0.32, maxKnockback: 56, selfRecoil: 2.0, kick: 2.2, kickPitch: 0.030,
+    },
+    /* ------------- LEGENDARY tier: rare drops, big fantasy ------------- */
+    minigun: {
+      label: 'SHREDDER MINIGUN', short: 'MINIGUN', icon: '🌀', rarity: 'legendary', color: '#ffa733',
+      desc: 'A wall of lead. Heavy — you walk slower while holding it.',
+      cooldown: 0.075, auto: true, mag: 60, reloadTime: 3.0, range: 55,
+      projSpeed: 62, projGravity: 2, moveMult: 0.66,
+      pellets: 1, spreadDeg: 2.4, zoomSpreadDeg: 1.8, zoomFov: 72,
+      baseKnockback: 2.6, speedMult: 0.45, airborneBonus: 1.25, slideBonus: 1.25,
+      headshotMult: 1.5, upFactor: 0.3, maxKnockback: 17, selfRecoil: 0.3, kick: 0.7, kickPitch: 0.006,
+    },
+    flamer: {
+      label: 'DRAGON BREATH', short: 'FLAMER', icon: '🔥', rarity: 'legendary', color: '#ff6a26',
+      desc: 'A cone of fire. Useless far away, monstrous up close.',
+      cooldown: 0.055, auto: true, mag: 90, reloadTime: 2.6, range: 12, rangeGrace: 0,
+      projSpeed: 17, projGravity: -1.2, moveMult: 0.85, flameJet: true,
+      pellets: 1, spreadDeg: 5.5, zoomSpreadDeg: 5, zoomFov: 74,
+      baseKnockback: 2.1, speedMult: 0.35, airborneBonus: 1.25, slideBonus: 1.25,
+      headshotMult: 1.2, upFactor: 0.55, maxKnockback: 13, selfRecoil: 0.12, kick: 0.5, kickPitch: 0.003,
     },
   },
 
@@ -384,10 +405,11 @@ SKY.TUNING = {
    * ------------------------------------------------------------------ */
   loot: {
     // [common, rare, epic] weights by death count (1st, 2nd, 3rd+ death)
+    // columns: common / rare / epic / LEGENDARY (rows = deaths this round)
     weightsByDeath: [
-      [80, 18, 2],
-      [50, 38, 12],
-      [25, 45, 30],
+      [80, 18, 2, 0.3],
+      [50, 38, 12, 1],
+      [25, 45, 30, 3],
     ],
   },
 

@@ -43,7 +43,7 @@ SKY.Pickups = (function () {
      '' = any random · 'r:<rarity>' = random within a rarity ·
      'mix' = weighted rarity roll (sp.mix percentages) · else a specific id */
   function pickRarity(mix) {
-    const order = ['common', 'rare', 'epic'];
+    const order = ['common', 'rare', 'epic', 'legendary'];
     let total = 0;
     for (const r of order) total += Math.max(0, mix[r] || 0);
     if (total <= 0) return null;
@@ -90,7 +90,8 @@ SKY.Pickups = (function () {
      under additive glow, so pickups use their own punchier set. Commons get
      the same treatment in plain WHITE (the old grey glow read as "no glow"
      and the item looked like it was just floating). */
-  const BEACON = { starter: '#ffffff', common: '#ffffff', rare: '#1f7dff', epic: '#d92cff' };
+  const BEACON = { starter: '#ffffff', common: '#ffffff', rare: '#1f7dff', epic: '#d92cff',
+    legendary: '#ff9d1f' };
 
   /* powerups/abilities on the ground: the card's line-art glyph on a badge
      (dark disc + rarity ring) — reads as an ITEM, no floating text needed */
@@ -131,10 +132,41 @@ SKY.Pickups = (function () {
       map: tex, transparent: true, depthWrite: false }));
   }
 
+  /* floating name tag — brought BACK for powerups/abilities (the badge alone
+     read as "a black circle"); weapons + grenades stay label-free (their 3D
+     models are self-explanatory) */
+  const labelTexCache = {};
+  function labelSprite(text, color) {
+    const key = text + '|' + color;
+    let entry = labelTexCache[key];
+    if (!entry) {
+      const cv = document.createElement('canvas');
+      cv.width = 512; cv.height = 112;
+      const g = cv.getContext('2d');
+      let px = 52;
+      g.font = `900 ${px}px "Titan One", Inter, sans-serif`;
+      const w = g.measureText(text).width;
+      if (w > 470) { px = Math.floor(px * 470 / w); g.font = `900 ${px}px "Titan One", Inter, sans-serif`; }
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+      g.lineWidth = 11; g.strokeStyle = 'rgba(7,10,18,0.92)';
+      g.strokeText(text, 256, 58);
+      g.fillStyle = color;
+      g.fillText(text, 256, 58);
+      const tex = new THREE.CanvasTexture(cv);
+      tex.encoding = THREE.sRGBEncoding;
+      entry = labelTexCache[key] = { tex };
+    }
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: entry.tex, transparent: true, depthWrite: false }));
+    spr.scale.set(2.5, 0.55, 1);
+    return spr;
+  }
+
   function buildVisual(item) {
     const grp = new THREE.Group();
     const rcolor = BEACON[item.rarity] || '#ffffff';
-    const strong = item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.5;
+    const strong = item.rarity === 'legendary' ? 1.2
+      : item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.5;
     if (item.kind === 'weapon') {
       const m = SKY.Effects.buildWeaponMesh(item.id);
       m.scale.setScalar(2.1);
@@ -151,6 +183,10 @@ SKY.Pickups = (function () {
       ic.scale.set(1.05, 1.05, 1);
       ic.position.y = 1.1;
       grp.add(ic);
+      // powerups need the name — an icon alone doesn't say what it does
+      const lbl = labelSprite((SKY.Loot.describe(item).name || item.id).toUpperCase(), rcolor);
+      lbl.position.y = 1.9;
+      grp.add(lbl);
     }
     // NORMAL blending keeps the hue saturated (additive washed it to white)
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
