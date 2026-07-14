@@ -1,10 +1,10 @@
 /* =============================================================================
  * SKY PUSH — SFX LAB (hidden sound editor, open with  index.html?sfxlab )
- * Tune EVERY game sound: drop in a replacement file, set volume / pitch /
- * start-trim (with auto-trim) / reverb / lowpass, mute it, and test it
- * against the real in-game trigger. Overrides persist in localStorage and
- * apply in EVERY session (with or without the editor open); EXPORT writes a
- * json pack that can be committed into the repo.
+ * Full-screen editor for EVERY game sound: replace the file, set volume /
+ * pitch / start-trim (auto-trim on upload) / reverb / lowpass, mute, and test
+ * through the exact in-game trigger with a live output meter. Overrides live
+ * in localStorage and apply in EVERY session; EXPORT writes a json pack —
+ * committed as assets/audio/sfx-pack.json it becomes the shipped mix.
  * ============================================================================= */
 window.SKY = window.SKY || {};
 
@@ -131,44 +131,55 @@ SKY.SfxLab = (function () {
 
   const css = document.createElement('style');
   css.textContent = `
-  #sfxlab-chip { position:fixed; left:14px; bottom:56px; z-index:60; padding:8px 14px;
+  #sfxlab-chip { position:fixed; left:14px; bottom:56px; z-index:60; padding:9px 16px;
     background:#141822; border:1px solid #ffd34d; color:#ffd34d; border-radius:8px;
-    font:800 11px Inter,sans-serif; letter-spacing:.14em; cursor:pointer; }
-  #sfxlab { position:fixed; right:0; top:0; bottom:0; width:400px; z-index:59;
-    background:rgba(11,14,20,.97); border-left:1px solid rgba(255,255,255,.14);
-    color:#e8ecf5; font:12px/1.5 Inter,sans-serif; display:flex; flex-direction:column; }
+    font:800 12px Inter,sans-serif; letter-spacing:.14em; cursor:pointer; }
+  #sfxlab { position:fixed; inset:0; z-index:58; background:#0b0e14; color:#e8ecf5;
+    font:14px/1.55 Inter,sans-serif; display:grid; grid-template-rows:auto 1fr; }
   #sfxlab.hidden { display:none; }
-  #sfxlab header { padding:12px 14px 8px; border-bottom:1px solid rgba(255,255,255,.1); }
-  #sfxlab header h3 { margin:0 0 6px; font-size:13px; letter-spacing:.18em; color:#ffd34d; }
-  #sfxlab header .row { display:flex; gap:6px; flex-wrap:wrap; }
-  #sfxlab button { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.2);
-    color:#e8ecf5; border-radius:6px; padding:4px 9px; font:700 10px Inter,sans-serif;
+  #sfxlab header { display:flex; align-items:center; gap:14px; padding:14px 22px;
+    border-bottom:1px solid rgba(255,255,255,.12); background:#0e1119; }
+  #sfxlab header h3 { margin:0; font-size:16px; letter-spacing:.2em; color:#ffd34d; }
+  #sfxlab header .sp { flex:1; }
+  #sfxlab #sfx-meter { width:180px; height:22px; background:#0a0d14;
+    border:1px solid rgba(255,255,255,.15); border-radius:5px; }
+  #sfxlab button { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.22);
+    color:#e8ecf5; border-radius:7px; padding:8px 14px; font:700 12px Inter,sans-serif;
     letter-spacing:.08em; cursor:pointer; }
   #sfxlab button:hover { border-color:#ffd34d; color:#ffd34d; }
   #sfxlab button.warn { border-color:#ff5a4a; color:#ff8a7a; }
-  #sfxlab .list { overflow-y:auto; flex:1; }
-  #sfxlab .grp { padding:8px 14px 2px; font:800 9.5px Inter,sans-serif; letter-spacing:.22em;
-    color:#8a93a6; }
-  #sfxlab .ev { padding:5px 14px; cursor:pointer; display:flex; justify-content:space-between;
-    align-items:center; border-left:3px solid transparent; }
+  #sfxlab button.big { padding:11px 20px; font-size:13px; }
+  #sfxlab .body { display:grid; grid-template-columns:330px 1fr; min-height:0; }
+  #sfxlab .list { overflow-y:auto; border-right:1px solid rgba(255,255,255,.1);
+    padding-bottom:30px; }
+  #sfxlab .grp { padding:14px 20px 4px; font:800 11px Inter,sans-serif;
+    letter-spacing:.24em; color:#8a93a6; }
+  #sfxlab .ev { padding:8px 20px; cursor:pointer; display:flex;
+    justify-content:space-between; align-items:center; border-left:3px solid transparent;
+    font-size:13px; }
   #sfxlab .ev:hover { background:rgba(255,255,255,.05); }
-  #sfxlab .ev.sel { background:rgba(255,211,77,.09); border-left-color:#ffd34d; }
-  #sfxlab .ev .dot { font-size:9px; color:#57e389; }
-  #sfxlab .ed { border-top:1px solid rgba(255,255,255,.14); padding:10px 14px 14px;
-    max-height:56%; overflow-y:auto; }
-  #sfxlab .ed h4 { margin:0 0 2px; font-size:12px; color:#fff; }
-  #sfxlab .ed small { color:#8a93a6; }
-  #sfxlab canvas { width:100%; height:56px; background:#0a0d14; border:1px solid rgba(255,255,255,.12);
-    border-radius:6px; margin:8px 0 4px; cursor:crosshair; display:block; }
-  #sfxlab .sl { display:grid; grid-template-columns:86px 1fr 52px; gap:8px; align-items:center;
-    margin:5px 0; }
-  #sfxlab .sl label { font-size:10px; letter-spacing:.1em; color:#aeb6c4; }
-  #sfxlab .sl input[type=range] { width:100%; accent-color:#ffd34d; }
-  #sfxlab .sl output { font:700 10px Consolas,monospace; color:#ffd34d; text-align:right; }
-  #sfxlab .btns { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  #sfxlab .ev.sel { background:rgba(255,211,77,.1); border-left-color:#ffd34d; }
+  #sfxlab .ev .dot { font-size:10px; color:#57e389; }
+  #sfxlab .editor { overflow-y:auto; padding:26px 34px; }
+  #sfxlab .editor .inner { max-width:900px; }
+  #sfxlab .editor h2 { margin:0; font-size:22px; color:#fff; }
+  #sfxlab .src { color:#8a93a6; font-size:13px; margin:2px 0 4px; }
+  #sfxlab #sfx-status { min-height:20px; font-size:12px; color:#57e389; margin:4px 0; }
+  #sfxlab #sfx-status.err { color:#ff8a7a; }
+  #sfxlab canvas#sfx-wave { width:100%; height:170px; background:#0a0d14;
+    border:1px solid rgba(255,255,255,.14); border-radius:10px; margin:10px 0 6px;
+    cursor:crosshair; display:block; }
+  #sfxlab .wavehint { font-size:11px; color:#5d6577; margin-bottom:12px; }
+  #sfxlab .sl { display:grid; grid-template-columns:130px 1fr 74px; gap:16px;
+    align-items:center; margin:10px 0; }
+  #sfxlab .sl label { font-size:12px; letter-spacing:.14em; color:#aeb6c4; }
+  #sfxlab .sl input[type=range] { width:100%; accent-color:#ffd34d; height:22px; }
+  #sfxlab .sl output { font:700 13px Consolas,monospace; color:#ffd34d; text-align:right; }
+  #sfxlab .btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }
   #sfxlab-flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none;
     z-index:70; }
-  #sfxlab .hint { font-size:10px; color:#8a93a6; margin-top:8px; line-height:1.55; }`;
+  #sfxlab .hint { font-size:12.5px; color:#8a93a6; margin-top:18px; line-height:1.7;
+    border-top:1px solid rgba(255,255,255,.08); padding-top:12px; }`;
   document.head.appendChild(css);
 
   const chip = document.createElement('button');
@@ -183,9 +194,17 @@ SKY.SfxLab = (function () {
   panel.id = 'sfxlab';
   panel.className = 'hidden';
   document.body.appendChild(panel);
-  chip.onclick = () => { SKY.SFX.init(); panel.classList.toggle('hidden'); render(); };
+  chip.onclick = () => {
+    SKY.SFX.init();
+    panel.classList.toggle('hidden');
+    chip.style.display = panel.classList.contains('hidden') ? '' : 'none';
+    render();
+    // sample banks stream in right after the first init — refresh the info line
+    setTimeout(() => { if (!panel.classList.contains('hidden')) render(); }, 900);
+  };
 
   let sel = 'step';
+  let meterRaf = 0, meterPeak = 0;
 
   function customName(n) { return store.events[n] && store.events[n].file; }
   function isTouched(n) {
@@ -194,9 +213,15 @@ SKY.SfxLab = (function () {
     return !!(c.data || c.mute || c.vol !== 1 || c.rate !== 1 ||
       c.offset != null || c.rev > 0 || (c.lp && c.lp < 19000));
   }
+  function status(msg, isErr) {
+    const el = panel.querySelector('#sfx-status');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.toggle('err', !!isErr);
+  }
 
   function render() {
-    if (panel.classList.contains('hidden')) return;
+    if (panel.classList.contains('hidden')) { cancelAnimationFrame(meterRaf); return; }
     const rows = CATALOG.map(([grp, items]) =>
       `<div class="grp">${grp}</div>` + items.map(([n, label]) =>
         `<div class="ev${n === sel ? ' sel' : ''}" data-ev="${n}">
@@ -205,55 +230,91 @@ SKY.SfxLab = (function () {
         </div>`).join('')).join('');
     const c = cfgOf(sel);
     const takes = SKY.SFX.labBankInfo(sel).takes;
+    const hasCustom = !!SKY.SFX.labState.buffers[sel];
     panel.innerHTML = `
       <header>
         <h3>SFX LAB</h3>
-        <div class="row">
-          <button id="sfx-export">EXPORT PACK</button>
-          <button id="sfx-import">IMPORT</button>
-          <button id="sfx-resetall" class="warn">RESET ALL</button>
-          <input type="file" id="sfx-importfile" accept=".json" style="display:none">
-        </div>
+        <canvas id="sfx-meter" width="180" height="22" title="live output meter"></canvas>
+        <span class="sp"></span>
+        <button id="sfx-export">EXPORT PACK</button>
+        <button id="sfx-import">IMPORT</button>
+        <button id="sfx-resetall" class="warn">RESET ALL</button>
+        <button id="sfx-close">CLOSE</button>
+        <input type="file" id="sfx-importfile" accept=".json" style="display:none">
       </header>
-      <div class="list">${rows}</div>
-      <div class="ed">
-        <h4>${LABELS[sel] || sel}</h4>
-        <small>${customName(sel) ? 'custom: ' + customName(sel)
-          : takes ? 'built-in bank · ' + takes + ' take' + (takes > 1 ? 's' : '')
-          : 'no sample yet — synth fallback (drop a file below)'}</small>
-        <canvas id="sfx-wave" width="368" height="56"></canvas>
-        <div class="sl"><label>VOLUME</label>
-          <input type="range" id="sfx-vol" min="0" max="3" step="0.05" value="${c.vol}">
-          <output>${Math.round(c.vol * 100)}%</output></div>
-        <div class="sl"><label>PITCH</label>
-          <input type="range" id="sfx-rate" min="0.25" max="3" step="0.05" value="${c.rate}">
-          <output>${c.rate.toFixed(2)}×</output></div>
-        <div class="sl"><label>START TRIM</label>
-          <input type="range" id="sfx-off" min="0" max="1" step="0.005" value="${c.offset ?? 0}">
-          <output>${Math.round((c.offset ?? 0) * 1000)}ms</output></div>
-        <div class="sl"><label>REVERB</label>
-          <input type="range" id="sfx-rev" min="0" max="1" step="0.05" value="${c.rev}">
-          <output>${Math.round(c.rev * 100)}%</output></div>
-        <div class="sl"><label>LOWPASS</label>
-          <input type="range" id="sfx-lp" min="300" max="19000" step="100" value="${c.lp}">
-          <output>${c.lp >= 19000 ? 'off' : (c.lp / 1000).toFixed(1) + 'k'}</output></div>
-        <div class="sl"><label>MUTE</label>
-          <input type="checkbox" id="sfx-mute"${c.mute ? ' checked' : ''} style="justify-self:start"><span></span></div>
-        <div class="btns">
-          <button id="sfx-test">▶ TEST IN-GAME</button>
-          <button id="sfx-sync">SYNC ×4</button>
-          <button id="sfx-autotrim">AUTO-TRIM</button>
-          <button id="sfx-file">REPLACE SOUND…</button>
-          <button id="sfx-reset" class="warn">RESET</button>
-          <input type="file" id="sfx-filein" accept="audio/*" style="display:none">
-        </div>
-        <div class="hint">TEST plays through the exact in-game call (same volume math).
-        SYNC repeats it with a screen flash at the trigger instant — drag START TRIM
-        until sound and flash line up. Dropping in a file auto-trims its silent lead-in.
-        Everything here applies LIVE: start a bots match and play with it.</div>
+      <div class="body">
+        <div class="list">${rows}</div>
+        <div class="editor"><div class="inner">
+          <h2>${LABELS[sel] || sel}</h2>
+          <div class="src">${customName(sel) ? 'custom file: ' + customName(sel)
+            : takes ? 'built-in bank · ' + takes + ' take' + (takes > 1 ? 's' : '')
+            : SKY.SFX.context() ? 'no sample — synth fallback (drop a file below)'
+            : 'audio starts on first click — hit TEST once'}</div>
+          <div id="sfx-status"></div>
+          <canvas id="sfx-wave" width="900" height="170"></canvas>
+          <div class="wavehint">click the waveform to set the start point (yellow line) —
+            everything left of it is skipped</div>
+          <div class="sl"><label>VOLUME</label>
+            <input type="range" id="sfx-vol" min="0" max="3" step="0.05" value="${c.vol}">
+            <output>${Math.round(c.vol * 100)}%</output></div>
+          <div class="sl"><label>PITCH</label>
+            <input type="range" id="sfx-rate" min="0.25" max="3" step="0.05" value="${c.rate}">
+            <output>${c.rate.toFixed(2)}×</output></div>
+          <div class="sl"><label>START TRIM</label>
+            <input type="range" id="sfx-off" min="0" max="1" step="0.005" value="${c.offset ?? 0}">
+            <output>${Math.round((c.offset ?? 0) * 1000)}ms</output></div>
+          <div class="sl"><label>REVERB</label>
+            <input type="range" id="sfx-rev" min="0" max="1" step="0.05" value="${c.rev}">
+            <output>${Math.round(c.rev * 100)}%</output></div>
+          <div class="sl"><label>LOWPASS</label>
+            <input type="range" id="sfx-lp" min="300" max="19000" step="100" value="${c.lp}">
+            <output>${c.lp >= 19000 ? 'off' : (c.lp / 1000).toFixed(1) + 'k'}</output></div>
+          <div class="sl"><label>MUTE</label>
+            <input type="checkbox" id="sfx-mute"${c.mute ? ' checked' : ''} style="justify-self:start"><span></span></div>
+          <div class="btns">
+            <button id="sfx-test" class="big">▶ TEST IN-GAME</button>
+            <button id="sfx-sync" class="big">SYNC ×4</button>
+            <button id="sfx-autotrim">AUTO-TRIM</button>
+            <button id="sfx-file">REPLACE SOUND…</button>
+            <button id="sfx-reset" class="warn">RESET</button>
+            <input type="file" id="sfx-filein" accept="audio/*" style="display:none">
+          </div>
+          <div class="hint">TEST plays through the exact in-game call (same volume math) —
+          watch the meter up top: signal there = the game hears it too. SYNC repeats the
+          trigger with a screen flash at the trigger instant; drag START TRIM until sound
+          and flash line up. Dropping in a file auto-trims its silent lead-in. Everything
+          applies LIVE — close the lab, start a bots match, and play with your mix.
+          ${hasCustom ? '' : takes ? '' : 'This event has no sample file yet — the game uses a synthesized fallback until you drop one in.'}</div>
+        </div></div>
       </div>`;
     drawWave();
     wire();
+    runMeter();
+  }
+
+  function runMeter() {
+    cancelAnimationFrame(meterRaf);
+    const cv = panel.querySelector('#sfx-meter');
+    if (!cv) return;
+    const g = cv.getContext('2d');
+    const buf = new Float32Array(2048);
+    const step = () => {
+      if (panel.classList.contains('hidden')) return;
+      const an = SKY.SFX.labAnalyser && SKY.SFX.labAnalyser();
+      let p = 0;
+      if (an) {
+        an.getFloatTimeDomainData(buf);
+        for (let i = 0; i < buf.length; i++) p = Math.max(p, Math.abs(buf[i]));
+      }
+      meterPeak = Math.max(p, meterPeak * 0.93);
+      g.fillStyle = '#0a0d14';
+      g.fillRect(0, 0, cv.width, cv.height);
+      const w = Math.min(1, meterPeak) * (cv.width - 4);
+      g.fillStyle = meterPeak > 0.9 ? '#ff5a4a' : meterPeak > 0.02 ? '#57e389' : '#2a3242';
+      g.fillRect(2, 4, Math.max(2, w), cv.height - 8);
+      meterRaf = requestAnimationFrame(step);
+    };
+    step();
   }
 
   function drawWave() {
@@ -265,8 +326,11 @@ SKY.SfxLab = (function () {
     const buf = SKY.SFX.labBuffer(sel);
     if (!buf) {
       g.fillStyle = '#4a5264';
-      g.font = '10px Inter';
-      g.fillText('no sample loaded (synth fallback)', 10, 32);
+      g.font = '13px Inter';
+      g.fillText(SKY.SFX.context()
+        ? 'no sample loaded for this event (synth fallback) — REPLACE SOUND to add one'
+        : 'click TEST once to start the audio engine, samples load right after',
+        20, 90);
       return;
     }
     const d = buf.getChannelData(0);
@@ -282,7 +346,6 @@ SKY.SfxLab = (function () {
       g.lineTo(x + 0.5, mid - lo * mid * 0.94);
     }
     g.stroke();
-    // trim marker
     const c = cfgOf(sel);
     const off = c.offset ?? (buf.__trim || 0);
     const x = (off / buf.duration) * cv.width;
@@ -290,6 +353,9 @@ SKY.SfxLab = (function () {
     g.lineWidth = 2;
     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, cv.height); g.stroke();
     g.lineWidth = 1;
+    g.fillStyle = '#5d6577';
+    g.font = '11px Consolas';
+    g.fillText(buf.duration.toFixed(2) + 's', cv.width - 50, 14);
   }
 
   function doFlash() {
@@ -303,7 +369,16 @@ SKY.SfxLab = (function () {
   function trigger() {
     SKY.SFX.init();
     doFlash();
-    try { (TRIGGERS[sel] || (() => SKY.SFX.labPlayRaw(sel)))(); } catch (e) {}
+    try {
+      (TRIGGERS[sel] || (() => SKY.SFX.labPlayRaw(sel)))();
+      const takes = SKY.SFX.labBankInfo(sel).takes;
+      const hasCustom = !!SKY.SFX.labState.buffers[sel];
+      status(hasCustom ? 'played — custom file'
+        : takes ? 'played — bank sample'
+        : 'played — synth fallback (no sample file for this event yet)');
+    } catch (e) {
+      status('trigger error: ' + e.message, true);
+    }
   }
 
   function wire() {
@@ -332,16 +407,22 @@ SKY.SfxLab = (function () {
       SKY.SFX.labState.events[sel] = c;
       save(); render();
     };
+    panel.querySelector('#sfx-close').onclick = () => {
+      panel.classList.add('hidden');
+      chip.style.display = '';
+      cancelAnimationFrame(meterRaf);
+    };
     panel.querySelector('#sfx-test').onclick = trigger;
     panel.querySelector('#sfx-sync').onclick = () => {
       for (let i = 0; i < 4; i++) setTimeout(trigger, i * 700);
     };
     panel.querySelector('#sfx-autotrim').onclick = () => {
       const buf = SKY.SFX.labBuffer(sel);
-      if (!buf) return;
+      if (!buf) { status('nothing to trim — no sample loaded', true); return; }
       c.offset = SKY.SFX.labTrimOf(buf);
       SKY.SFX.labState.events[sel] = c;
       save(); render();
+      status('trimmed to ' + Math.round(c.offset * 1000) + 'ms');
     };
     panel.querySelector('#sfx-wave').onclick = (e) => {
       const buf = SKY.SFX.labBuffer(sel);
@@ -361,7 +442,6 @@ SKY.SfxLab = (function () {
         const buf = await SKY.SFX.labSetBuffer(sel, ab.slice(0));
         c.file = f.name;
         c.offset = SKY.SFX.labTrimOf(buf);   // auto-trim the silent lead-in
-        // store as dataURL so it survives reloads + exports
         const fr = new FileReader();
         fr.onload = () => { c.data = fr.result; SKY.SFX.labState.events[sel] = c; save(); render(); };
         fr.readAsDataURL(new Blob([ab], { type: f.type || 'audio/ogg' }));

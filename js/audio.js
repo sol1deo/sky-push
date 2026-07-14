@@ -563,5 +563,15 @@ SKY.SFX = (function () {
     labClearBuffer(name) { delete LAB.buffers[name]; },
     /* raw preview: the configured sound, none of the event's in-game scaling */
     labPlayRaw(name) { return sample(name, 0.9, 1); },
+    /* output meter for the lab (taps the SFX bus) */
+    labAnalyser() {
+      if (!ctx || !master) return null;
+      if (!this._labAn) {
+        this._labAn = ctx.createAnalyser();
+        this._labAn.fftSize = 512;
+        master.connect(this._labAn);
+      }
+      return this._labAn;
+    },
   };
 })();
