@@ -20,10 +20,11 @@ SKY.Game = (function () {
     ['Biscuit', '#ffe066'], ['Squish', '#6affd8'], ['Turnip', '#b8ff6a'],
   ];
   // deathmatch: pickable loadout weapons + the bonus-weapon rotation order —
-  // grid rows read by rarity: commons, then rares, then epics
+  // grid rows read by rarity: commons, rares, epics, legendaries
   const DM_WEAPONS = ['blaster', 'smg', 'burst', 'piston',
     'scatter', 'longshot', 'magnum', 'bouncer',
-    'mega', 'lobber', 'boomstick', 'quad'];
+    'mega', 'lobber', 'boomstick', 'quad',
+    'minigun', 'flamer'];
   const KO_LINES = [
     '<b>{k}</b> YEETED {v} off the sky',
     '<b>{k}</b> launched {v} into next week',
@@ -469,6 +470,8 @@ SKY.Game = (function () {
       if (api.paused) return;
 
       if (api.state === 'countdown') {
+        // DM: pick your loadout DURING the countdown — no dead seconds
+        if (api.mode === 'dm' && SKY.Input.actionPressed('loadout')) this.toggleLoadout();
         if (api.player) { api.player.cmd.yaw = SKY.Input.yaw; api.player.cmd.pitch = SKY.Input.pitch;
           api.player.yaw = SKY.Input.yaw; api.player.pitch = SKY.Input.pitch; }
         api.countdownT -= dt;

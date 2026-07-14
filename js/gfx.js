@@ -324,7 +324,12 @@ SKY.GFX = (function () {
       const fit = WEAPON_FIT[kind];
       if (!fit.build || !KITBASH[fit.build]) continue;
       if (PART_FILES.some(f => !rawParts[f])) continue;   // a part failed to load
-      try { weapons[kind] = normalizeWeapon(kind, KITBASH[fit.build]()); } catch (e) {}
+      try {
+        weapons[kind] = normalizeWeapon(kind, KITBASH[fit.build]());
+        // no tier-glow strip on kitbashed guns: their barrel line doesn't sit
+        // where the strip guesses, so it rendered as a detached floating pole
+        weapons[kind].userData.noTierGlow = true;
+      } catch (e) {}
     }
   }
 

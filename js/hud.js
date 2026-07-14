@@ -598,7 +598,7 @@ SKY.HUD = (function () {
       $('me-table').innerHTML =
         `<tr><th></th><th>K</th><th>D</th><th>A</th><th>K/D</th></tr>` +
         rows.map(p => `<tr class="${p.isLocal ? 'me' : ''}${p === winner ? ' win' : ''}">
-          <td style="color:${p.color}">${SKY.U.avatarHtml(p.av, p.color, p.name)} ${p.name}${p === winner ? ' 👑' : ''}
+          <td style="color:${p.color}">${SKY.U.avatarHtml(p.av, p.color, p.name)} ${p.name}${p === winner ? ' ★' : ''}
             ${canFr(p) ? `<button class="fr-btn" data-addfr="${p.name}">+</button>` : ''}</td>
           <td>${p.mk || 0}</td><td>${p.md || 0}</td><td>${p.ma || 0}</td><td>${kd(p)}</td>
         </tr>`).join('');
@@ -771,8 +771,8 @@ SKY.HUD = (function () {
         const seeker = G.pawns.find(q => q.isSeeker);
         const hideLeft = SKY.TUNING.it.hideTime - G.roundTime;
         setText(el.crownStatus, seeker
-          ? (hideLeft > 0 ? '👹 ' + seeker.name + ' in ' + Math.ceil(hideLeft)
-             : '👹 ' + seeker.name)
+          ? (hideLeft > 0 ? 'IT · ' + seeker.name + ' in ' + Math.ceil(hideLeft)
+             : 'IT · ' + seeker.name)
           : 'TAG');
         setText(el.alive,
           G.pawns.filter(q => !q.isSeeker && !q.eliminated).length + ' runners');
@@ -893,7 +893,7 @@ SKY.HUD = (function () {
         const cls = (p.isLocal ? 'me' : '') + (p.eliminated ? ' out' : '');
         const status = p.left ? 'LEFT'
           : p.eliminated ? 'OUT'
-          : (G.mode === 'it' && p.isSeeker) ? '👹 IT'
+          : (G.mode === 'it' && p.isSeeker) ? 'IT'
           : (p.alive ? '' : 'respawning');
         const score = G.mode === 'spark' ? '✦' + (p.sparks || 0)
           : G.mode === 'dm' ? '★' + (p.sparks || 0)

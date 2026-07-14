@@ -174,7 +174,7 @@ SKY.Effects = (function () {
     if (SKY.GFX && SKY.GFX.hasWeapon(kind)) {
       const grp = SKY.GFX.weapon(kind);
       const tip = grp.getObjectByName('tip');
-      if (tip && kind !== 'hookgun' && kind !== 'cannon') {
+      if (tip && !grp.userData.noTierGlow && kind !== 'hookgun' && kind !== 'cannon') {
         // glow strip under the barrel keeps the weapon-tier color readable
         const glow = new THREE.Mesh(
           new THREE.BoxGeometry(0.014, 0.014, Math.abs(tip.position.z) * 0.5),

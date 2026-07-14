@@ -226,9 +226,9 @@ SKY.TUNING = {
     /* ------------- LEGENDARY tier: rare drops, big fantasy ------------- */
     minigun: {
       label: 'SHREDDER MINIGUN', short: 'MINIGUN', icon: '🌀', rarity: 'legendary', color: '#ffa733',
-      desc: 'A wall of lead. Heavy — you walk slower while holding it.',
+      desc: 'A wall of lead. Hold the line.',
       cooldown: 0.075, auto: true, mag: 60, reloadTime: 3.0, range: 55,
-      projSpeed: 62, projGravity: 2, moveMult: 0.66,
+      projSpeed: 62, projGravity: 2,
       pellets: 1, spreadDeg: 2.4, zoomSpreadDeg: 1.8, zoomFov: 72,
       baseKnockback: 2.6, speedMult: 0.45, airborneBonus: 1.25, slideBonus: 1.25,
       headshotMult: 1.5, upFactor: 0.3, maxKnockback: 17, selfRecoil: 0.3, kick: 0.7, kickPitch: 0.006,
@@ -237,7 +237,7 @@ SKY.TUNING = {
       label: 'DRAGON BREATH', short: 'FLAMER', icon: '🔥', rarity: 'legendary', color: '#ff6a26',
       desc: 'A cone of fire. Useless far away, monstrous up close.',
       cooldown: 0.055, auto: true, mag: 90, reloadTime: 2.6, range: 12, rangeGrace: 0,
-      projSpeed: 17, projGravity: -1.2, moveMult: 0.85, flameJet: true,
+      projSpeed: 17, projGravity: -1.2, flameJet: true,
       pellets: 1, spreadDeg: 5.5, zoomSpreadDeg: 5, zoomFov: 74,
       baseKnockback: 2.1, speedMult: 0.35, airborneBonus: 1.25, slideBonus: 1.25,
       headshotMult: 1.2, upFactor: 0.55, maxKnockback: 13, selfRecoil: 0.12, kick: 0.5, kickPitch: 0.003,

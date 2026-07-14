@@ -846,8 +846,8 @@ SKY.Net = (function () {
         SKY.HUD.killFeed(m.line);
         SKY.SFX.ko(pawn.isLocal);
         if (pawn.isLocal) {
-          if (m.elim) SKY.HUD.showRespawn('☠ ELIMINATED — spectating the chaos');
-          else if (G.mode === 'lbs') SKY.HUD.showRespawn('💀 YEETED! Pick a reward…');
+          if (m.elim) SKY.HUD.showRespawn('ELIMINATED — spectating the chaos');
+          else if (G.mode === 'lbs') SKY.HUD.showRespawn('YEETED! Pick a reward…');
           else SKY.HUD.showRespawn('Respawning…');
         }
         break;

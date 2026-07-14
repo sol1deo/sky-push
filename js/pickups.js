@@ -93,44 +93,8 @@ SKY.Pickups = (function () {
   const BEACON = { starter: '#ffffff', common: '#ffffff', rare: '#1f7dff', epic: '#d92cff',
     legendary: '#ff9d1f' };
 
-  /* powerups/abilities on the ground: the card's line-art glyph on a badge
-     (dark disc + rarity ring) — reads as an ITEM, no floating text needed */
-  const glyphTexCache = {};
-  function glyphSprite(item, color) {
-    let tex = glyphTexCache[item.id];
-    if (!tex) {
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 128;
-      tex = new THREE.CanvasTexture(cv);
-      tex.encoding = THREE.sRGBEncoding;
-      glyphTexCache[item.id] = tex;
-      const g = cv.getContext('2d');
-      const badge = () => {
-        g.clearRect(0, 0, 128, 128);
-        g.fillStyle = 'rgba(9,13,23,0.88)';
-        g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.fill();
-        g.strokeStyle = color; g.lineWidth = 6;
-        g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.stroke();
-      };
-      badge();
-      tex.needsUpdate = true;
-      const d = SKY.Loot.describe(item);
-      if (d.glyph) {
-        const svgTxt = d.glyph
-          .replace('<svg ', '<svg width="128" height="128" ')
-          .replace(/currentColor/g, d.color || color);
-        const img = new Image();
-        img.onload = () => {
-          badge();
-          g.drawImage(img, 28, 28, 72, 72);
-          tex.needsUpdate = true;
-        };
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgTxt);
-      }
-    }
-    return new THREE.Sprite(new THREE.SpriteMaterial({
-      map: tex, transparent: true, depthWrite: false }));
-  }
+  /* powerups/abilities on the ground: the classic spinning RHOMBUS crystal
+     in the rarity color (the badge disc read as "a black circle") */
 
   /* floating name tag — brought BACK for powerups/abilities (the badge alone
      read as "a black circle"); weapons + grenades stay label-free (their 3D
@@ -179,13 +143,17 @@ SKY.Pickups = (function () {
       m.position.y = 1.05;
       grp.add(m);
     } else {
-      const ic = glyphSprite(item, rcolor);
-      ic.scale.set(1.05, 1.05, 1);
-      ic.position.y = 1.1;
-      grp.add(ic);
-      // powerups need the name — an icon alone doesn't say what it does
+      const lin = new THREE.Color(rcolor).convertSRGBToLinear();
+      const oct = new THREE.Mesh(new THREE.OctahedronGeometry(0.42),
+        new THREE.MeshLambertMaterial({
+          color: lin, emissive: lin.clone().multiplyScalar(0.45),
+        }));
+      oct.position.y = 1.1;
+      oct.scale.y = 1.4;   // elongated crystal
+      grp.add(oct);
+      // powerups keep the name — a crystal alone doesn't say what it does
       const lbl = labelSprite((SKY.Loot.describe(item).name || item.id).toUpperCase(), rcolor);
-      lbl.position.y = 1.9;
+      lbl.position.y = 1.95;
       grp.add(lbl);
     }
     // NORMAL blending keeps the hue saturated (additive washed it to white)
@@ -309,6 +277,7 @@ SKY.Pickups = (function () {
     tick(dt) {
       if (!SKY.Net.authority) return;
       if (SKY.Game.mode === 'it') return;   // tag has no weapon pickups
+      if (SKY.Game.mode === 'dm') return;   // deathmatch: loadout menu only
       if (spawners === null) buildSpawners();
       if (spawners.length) {
         // dedicated spawners: each point runs its own respawn clock
