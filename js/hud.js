@@ -145,6 +145,11 @@ SKY.HUD = (function () {
         document.querySelectorAll('.r-dm').forEach(e => e.classList.toggle('hidden', v !== 'dm'));
         document.querySelectorAll('.r-rl').forEach(e => e.classList.toggle('hidden', v === 'dm'));
         document.querySelectorAll('.r-crown').forEach(e => e.classList.toggle('hidden', v !== 'crown'));
+        // tag defaults to 1 life per runner (pick more for respawning hiders)
+        if (v === 'it') {
+          const ls = $('lives-select');
+          if (ls) { ls.value = '1'; api.livesSel = 1; api.syncSelects(); }
+        }
         const hint = $('mode-hint');
         if (hint) hint.textContent = MODE_HINTS[v] || '';
       };
@@ -212,6 +217,9 @@ SKY.HUD = (function () {
         }
         if (e.code === 'Escape') return;
         if (!SKY.Net.online) return;
+        // match-end screen owns Enter ("ENTER — back to menu") — opening
+        // the chat there swallowed the key and you were stuck on the podium
+        if (!$('match-ov').classList.contains('hidden')) return;
         // never steal Enter from real inputs (nickname modal, editor fields…)
         const a = document.activeElement;
         if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return;
@@ -380,6 +388,11 @@ SKY.HUD = (function () {
 
     /* -------- text chat (Enter) — online lobby + in-game -------- */
     chatTyping() { return chatOpen; },
+    /* wipe the log — a fresh lobby must not carry the last game's banter */
+    chatReset() {
+      const log = $('chat-log');
+      if (log) log.innerHTML = '';
+    },
     /* lobby mode: the input stays on screen at half opacity so the feature
        is discoverable (CS2 main-menu style) — clicking it starts typing */
     chatLobby(on) {

@@ -155,10 +155,29 @@ SKY.Editor = (function () {
       if (!o.isMesh) continue;                    // sprites (sun glow) etc.
       let skip = false;
       for (let p = o; p; p = p.parent) {
+        // TransformControlsPlane parents itself to the SCENE (not the gizmo),
+        // so match by type too — sampling a gizmo part gave ghost greys
         if (p === gizmo || p === brushRing || p.visible === false ||
+            /TransformControls/.test(p.type || '') ||
             p.name === 'edmarker' || p.name === 'edcoll') { skip = true; break; }
       }
       if (skip) continue;
+      // EXACT round-trip for painted blocks: read the color straight from the
+      // block's DEF — material sampling can't tell whether a legacy b.color
+      // was stored raw (it renders as linear = pipette got a washed grey)
+      let entry = null;
+      for (let p = h.object; p && !entry; p = p.parent) {
+        entry = objects.find(o2 => o2.mesh === p) || null;
+      }
+      if (entry && entry.kind === 'block') {
+        const b = entry.data;
+        if (b.ptexF && h.face && (!b.shape || b.shape === 'box')) {
+          const pf = b.ptexF[h.face.materialIndex];
+          if (pf && pf[0] === '#') return pf;
+        }
+        if (b.ptex && b.ptex[0] === '#') return b.ptex;
+        if (!b.ptex && !b.pal && !b.tex && b.color) return b.color;
+      }
       const hex = albedoAt(h);
       if (hex) return hex;
       break;                                      // terrain splat → framebuffer
@@ -1247,7 +1266,10 @@ SKY.Editor = (function () {
         <option value=""${!d.pal ? ' selected' : ''}>flat color</option>
         ${Object.keys(SKY.MapData.PALETTES).map(p => `<option value="${p}"${d.pal === p ? ' selected' : ''}>${p}</option>`).join('')}
       </select></div>`;
-      h += `<div class="ed-row"><span>Color</span><input type="color" data-k="color" value="${d.color || '#8a94a8'}"></div>`;
+      // NOTE: the legacy "Color" row is GONE — it silently no-oped on any
+      // block with a palette/texture (the "pipette gives wrong colors"
+      // report: the block never actually took the color). SOLID COLOR
+      // below is the one true way to flat-paint a block.
       // which face the next texture click paints (boxes only)
       const faceNames = ['ALL', '+X', '−X', 'TOP', 'BOT', '+Z', '−Z'];
       if (!d.shape || d.shape === 'box') {
@@ -1265,6 +1287,8 @@ SKY.Editor = (function () {
             `<span class="ed-swatch${curPt === t ? ' sel' : ''}" data-pt="${t}" title="${t}" style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
         </div>`;
       h += `<div class="ed-row"><span>Solid color</span><span>
+          <input class="ed-hex" data-hexfor="ptcol" maxlength="7" spellcheck="false"
+            value="${curPt && curPt[0] === '#' ? curPt : '#b8b4a6'}">
           <input type="color" data-k="ptcol" value="${curPt && curPt[0] === '#' ? curPt : '#b8b4a6'}">
           <button class="ed-mini${pipette ? ' sel' : ''}" data-k="ptpick">PIPETTE</button></span></div>`;
       h += numRow('Tiling', d.rep || 0, 'rep', 1);
@@ -1355,6 +1379,8 @@ SKY.Editor = (function () {
             style="background-image:url(${SKY.U.procThumb(t)})"></span>`).join('')}
         </div>`;
         h += `<div class="ed-row"><span>Solid color</span><span>
+          <input class="ed-hex" data-hexfor="ttcol" maxlength="7" spellcheck="false"
+            value="${texs[texSlotEdit] && texs[texSlotEdit][0] === '#' ? texs[texSlotEdit] : '#b8b4a6'}">
           <input type="color" data-k="ttcol" value="${texs[texSlotEdit] && texs[texSlotEdit][0] === '#' ? texs[texSlotEdit] : '#b8b4a6'}">
           <button class="ed-mini${pipette ? ' sel' : ''}" data-k="ttpick">PIPETTE</button></span></div>`;
       }
@@ -1492,8 +1518,27 @@ SKY.Editor = (function () {
   }
 
   function onInspectorInput(e) {
+    // hex text twins of the color pickers: paste '#rrggbb' (or rrggbb) and it
+    // drives the real color input — copying colors between blocks is one paste
+    if (e.target.classList && e.target.classList.contains('ed-hex')) {
+      let v = e.target.value.trim().toLowerCase();
+      if (v && v[0] !== '#') v = '#' + v;
+      if (!/^#[0-9a-f]{6}$/.test(v)) return;   // incomplete — keep typing
+      const twin = e.target.parentNode.querySelector(
+        `input[type=color][data-k="${e.target.dataset.hexfor}"]`);
+      if (twin && twin.value !== v) {
+        twin.value = v;
+        twin.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
     const k = e.target.dataset.k;
     if (!k) return;
+    // dragging a color picker keeps its hex twin in sync
+    if (e.target.type === 'color' && e.target.parentNode) {
+      const hexTwin = e.target.parentNode.querySelector(`.ed-hex[data-hexfor="${k}"]`);
+      if (hexTwin && document.activeElement !== hexTwin) hexTwin.value = e.target.value;
+    }
     const o = objects[sel];
     if (!o) {
       if (k === 'name') def.name = e.target.value.toUpperCase();

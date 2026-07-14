@@ -27,9 +27,10 @@ SKY.GFX = (function () {
     seeker:    { file: 'g', len: 0.55 },   // IT tag gun — chunky shotgun look
     smg:       { file: 'j', len: 0.38 },
     longshot:  { file: 'e', len: 0.72 },
-    // kitbashed from raw kit pieces (KITBASH below) — file 'a' retired:
-    // the user wanted the magnum to read as an actual REVOLVER
-    magnum:    { build: 'revolver', len: 0.36 },
+    // 'i' = the last unused stock blaster (the revolver kitbash was rejected;
+    // 'a' before it read wrong too). flip: its muzzle points +Z natively
+    // (side-icon verified: barrel must render RIGHT like every other gun).
+    magnum:    { file: 'i', len: 0.46, flip: true },
     minigun:   { build: 'minigun', len: 0.64 },
     flamer:    { build: 'flamer', len: 0.52 },
     mega:      { file: 'f', len: 0.60 },
@@ -47,7 +48,8 @@ SKY.GFX = (function () {
   const TEX_NAMES = ['concrete', 'metal', 'panel', 'hazard', 'grass', 'grass2', 'grass3',
     'dirt', 'sand', 'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid',
     'crane', 'plywood', 'leather', 'balloon', 'marble', 'carpet', 'circuit', 'camo',
-    'gravel', 'cliff', 'scree', 'mossrock'];
+    'gravel', 'cliff', 'scree', 'mossrock',
+    'glass', 'office', 'windows', 'facade'];
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];
@@ -260,7 +262,7 @@ SKY.GFX = (function () {
      archetypes (revolver / minigun / flamethrower) stay 100% in the kit's
      style. Every part is cloned, scaled, then recentered by bbox onto its
      slot — raw kit GLBs all have different origins. ---- */
-  const PART_FILES = ['sil-s', 'sil-l', 'clip-l', 'scope-a', 'c', 'k'];
+  const PART_FILES = ['sil-s', 'sil-l', 'clip-l', 'c', 'k'];
   const rawParts = {};
   const _pbb = new THREE.Box3();
   const _pc = new THREE.Vector3();
@@ -281,16 +283,6 @@ SKY.GFX = (function () {
     return w;
   }
   const KITBASH = {
-    /* classic six-shooter: tube barrel + fat drum + top strap + tilted grip */
-    revolver() {
-      const g = new THREE.Group();
-      partPut(g, 'sil-s', 0.62, 0.62, 1.15, 0, 0.055, -0.17);        // barrel
-      partPut(g, 'scope-a', 0.45, 0.4, 0.55, 0, 0.10, -0.06);        // top strap
-      partPut(g, 'sil-l', 1.0, 1.0, 0.42, 0, 0.04, 0.02);            // cylinder drum
-      partPut(g, 'sil-s', 0.34, 0.34, 0.4, 0, 0.085, 0.115, -0.6);   // hammer
-      partPut(g, 'clip-l', 0.8, 0.72, 0.85, 0, -0.065, 0.09, 0.5);   // grip
-      return g;
-    },
     /* rotary cannon: chunky 'k' receiver + 5-barrel cluster + ammo box */
     minigun() {
       const g = new THREE.Group();

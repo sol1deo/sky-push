@@ -365,6 +365,58 @@ SKY.U = {
           g.fill();
         }
       },
+      /* --- building set: glass / office / windows / facade --- */
+      glass(g, s) {
+        g.fillStyle = '#a9d4e8'; g.fillRect(0, 0, s, s);
+        for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+          g.fillStyle = ['#b6dcee', '#9fcce2', '#c2e4f2', '#a9d4e8'][(x + y * 3) % 4];
+          g.fillRect(x * 32 + 2, y * 32 + 2, 28, 28);
+        }
+        g.strokeStyle = '#d9e4ea'; g.lineWidth = 4;
+        for (let i = 0; i <= 4; i++) {
+          g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32, s); g.stroke();
+          g.beginPath(); g.moveTo(0, i * 32); g.lineTo(s, i * 32); g.stroke();
+        }
+        g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 5;
+        g.beginPath(); g.moveTo(6, 60); g.lineTo(60, 6); g.stroke();
+        g.beginPath(); g.moveTo(70, 124); g.lineTo(124, 70); g.stroke();
+      },
+      office(g, s) {
+        g.fillStyle = '#1d2b45'; g.fillRect(0, 0, s, s);
+        for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+          const lit = (x * 7 + y * 13) % 9 === 0;
+          g.fillStyle = lit ? '#e8c56a' : ['#24365a', '#1f2f4e', '#293d63'][(x + y) % 3];
+          g.fillRect(x * 32 + 3, y * 32 + 3, 26, 26);
+        }
+        g.strokeStyle = '#131b2c'; g.lineWidth = 6;
+        for (let i = 0; i <= 4; i++) {
+          g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32, s); g.stroke();
+          g.beginPath(); g.moveTo(0, i * 32); g.lineTo(s, i * 32); g.stroke();
+        }
+      },
+      windows(g, s) {
+        g.fillStyle = '#e6d7b8'; g.fillRect(0, 0, s, s);
+        speck(g, s, 40, ['rgba(255,255,255,0.12)', 'rgba(120,100,70,0.08)'], 3, 8);
+        for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) {
+          const wx = x * 64 + 16, wy = y * 64 + 14;
+          g.fillStyle = '#f4efe2'; g.fillRect(wx - 3, wy - 3, 38, 44);   // frame
+          g.fillStyle = '#31486e'; g.fillRect(wx, wy, 32, 38);           // glass
+          g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(wx + 3, wy + 3, 10, 32);
+          g.fillStyle = '#cbbfa2'; g.fillRect(wx - 5, wy + 41, 42, 5);   // sill
+        }
+      },
+      facade(g, s) {
+        g.fillStyle = '#c9cdd4'; g.fillRect(0, 0, s, s);
+        for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+          g.fillStyle = ['#d2d6dc', '#c4c8cf', '#cdd1d8'][(x + y * 2) % 3];
+          g.fillRect(((x + (y % 2)) % 4) * 32 + 1, y * 32 + 1, 30, 30);
+        }
+        g.strokeStyle = 'rgba(90,96,106,0.5)'; g.lineWidth = 2;
+        for (let i = 0; i <= 4; i++) { g.beginPath(); g.moveTo(0, i * 32); g.lineTo(s, i * 32); g.stroke(); }
+        g.fillStyle = '#3e7d8a';
+        g.fillRect(0, 44, s, 8); g.fillRect(0, 108, s, 8);   // teal window strips
+      },
+
       /* --- mountain set (real tileables in assets/tex; these are the
              file:// fallbacks + editor swatch sources) --- */
       gravel(g, s) {

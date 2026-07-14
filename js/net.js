@@ -243,6 +243,8 @@ SKY.Net = (function () {
   function destroyPeer() {
     sessionId++;
     if (SKY.Voice) SKY.Voice.stop();
+    // fresh session = fresh chat (the old lobby's messages haunted new ones)
+    if (SKY.HUD.chatReset) SKY.HUD.chatReset();
     if (sendTimer) { clearInterval(sendTimer); sendTimer = null; }
     if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
     if (peer) { const old = peer; peer = null; try { old.destroy(); } catch (e) {} }
@@ -1003,7 +1005,8 @@ SKY.Net = (function () {
     pendingLoot.clear();
     const rules = { rounds: api.settings.rounds, lives: api.settings.lives,
       crown: api.settings.crown, sparks: api.settings.sparks, dmMin: api.settings.dmMin,
-      time: api.settings.time || 0 };
+      time: api.settings.time || 0,
+      seed: (Math.random() * 1e9) | 0 };   // shared spawn/seeker randomness
     // custom (editor) maps ride along in the start message — clients don't
     // need the map deployed anywhere, the def IS the map
     const mapDef = SKY.MapData.get(api.settings.map) || null;
@@ -1376,7 +1379,9 @@ SKY.Net = (function () {
       });
     };
     lobbySel('lmap-select', v => ({ map: v }));
-    lobbySel('lmode-select', v => ({ mode: v }));
+    lobbySel('lmode-select', v => (v === 'it'
+      ? { mode: v, lives: 1 }    // tag defaults to 1 life per runner
+      : { mode: v }));
     lobbySel('ldm-select', v => ({ dmMin: +v }));
     lobbySel('lrounds-select', v => ({ rounds: +v }));
     lobbySel('llives-select', v => ({ lives: +v }));

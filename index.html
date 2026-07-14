@@ -468,12 +468,16 @@
   #chat.lobby:not(.open) #chat-entry:hover { opacity:.8; }
   #chat.open #chat-entry { opacity:1; }
 
-  /* voice chat: transmitting pill + who's-talking rings */
-  #voice-pill { position:absolute; left:50%; bottom:24.5%; transform:translateX(-50%) skewX(-4deg);
-    background:rgba(20,60,30,.9); border:1.5px solid #57e389; color:#b8ffce;
-    border-radius:999px; padding:5px 16px 4px; font-size:10.5px; font-weight:900;
-    letter-spacing:.24em; pointer-events:none; z-index:22;
-    box-shadow:0 0 14px rgba(87,227,137,.45); }
+  /* voice chat: a small pulsing mic dot (the old TRANSMITTING banner was
+     loud and distracting) + who's-talking rings */
+  #voice-pill { position:absolute; left:50%; bottom:24.5%; transform:translateX(-50%);
+    width:30px; height:30px; border-radius:50%; display:flex; align-items:center;
+    justify-content:center; background:rgba(16,44,24,.72); border:1.5px solid #57e389;
+    color:#8df5ae; pointer-events:none; z-index:22; opacity:.85;
+    animation:vpulse 1.5s ease-in-out infinite; }
+  #voice-pill svg { width:15px; height:15px; }
+  @keyframes vpulse {
+    50% { box-shadow:0 0 12px rgba(87,227,137,.55); } }
   .pav.spk { box-shadow:0 0 0 2.5px #57e389, 0 0 12px #57e389 !important; }
   .lob-player .lob-mic { display:none; margin-left:8px; font-size:9px; font-weight:900;
     letter-spacing:.2em; color:#57e389; background:rgba(87,227,137,.14);
@@ -570,9 +574,11 @@
 
   #cds { position:absolute; right:26px; bottom:24px; display:flex; gap:18px; align-items:flex-end; }
   .cd-chip { min-width:56px; text-align:left; }
-  .cd-chip .k { font-size:9px; font-weight:700; color:var(--faint); letter-spacing:.15em; }
-  .cd-chip .n { font-size:10px; font-weight:600; letter-spacing:.12em; color:var(--dim);
-    margin:1px 0 5px; white-space:nowrap; text-transform:uppercase; }
+  .cd-chip .k { font-size:9px; font-weight:800; color:var(--brand); letter-spacing:.15em;
+    text-shadow:0 1px 2px rgba(0,0,0,.6); }
+  .cd-chip .n { font-size:10px; font-weight:700; letter-spacing:.12em; color:#e4e9f2;
+    margin:1px 0 5px; white-space:nowrap; text-transform:uppercase;
+    text-shadow:0 1px 2px rgba(0,0,0,.6); }
   .cd-chip .bar { height:3px; border-radius:2px; background:rgba(255,255,255,.14);
     overflow:hidden; transform:skewX(-20deg); }
   .cd-chip .fill { height:100%; width:100%; background:var(--brand); }
@@ -1090,6 +1096,10 @@
   .ed-row input[type=file] { width:136px; font-size:9px; color:var(--faint); }
   .ed-mini { font-size:9px; padding:3px 8px; border-radius:4px; border:1px solid var(--line2);
     background:transparent; color:var(--dim); cursor:pointer; font-family:inherit; }
+  .ed-hex { width:62px; padding:3px 6px; border-radius:4px; border:1px solid var(--line2);
+    background:rgba(255,255,255,.05); color:var(--txt); font:600 10px Consolas,monospace;
+    outline:none; vertical-align:middle; }
+  .ed-hex:focus { border-color:rgba(255,255,255,.4); }
   .ed-hint { margin-top:12px; font-size:10px; color:var(--faint); line-height:1.6; }
   #ed-status { position:absolute; left:14px; bottom:44px; font-size:11px; color:var(--txt);
     text-shadow:0 1px 3px rgba(0,0,0,.6); pointer-events:none; }
@@ -1342,7 +1352,9 @@
   </div>
   <div id="killfeed"></div>
   <div id="pickup-toast" class="hidden"></div>
-  <div id="voice-pill" class="hidden">VOICE — TRANSMITTING</div>
+  <div id="voice-pill" class="hidden"><svg viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="9" y="2.5"
+    width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg></div>
   <div id="loadout-ov" class="hidden">
     <div class="loadout-panel">
       <h3>CHOOSE YOUR WEAPON</h3>
@@ -1571,7 +1583,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 56</div>
+  <div id="build-foot" class="rail-foot">prototype · build 57</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -1926,41 +1938,41 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=56"></script>
-<script src="js/profile.js?v=56"></script>
-<script src="js/account.js?v=56"></script>
-<script src="js/accountui.js?v=56"></script>
-<script src="js/utils.js?v=56"></script>
-<script src="js/gfx.js?v=56"></script>
-<script src="js/mapdata.js?v=56"></script>
-<script src="js/audio.js?v=56"></script>
-<script src="js/voice.js?v=56"></script>
-<script src="js/settings.js?v=56"></script>
-<script src="js/input.js?v=56"></script>
-<script src="js/world.js?v=56"></script>
-<script src="js/effects.js?v=56"></script>
-<script src="js/map.js?v=56"></script>
-<script src="js/characters.js?v=56"></script>
-<script src="js/pawn.js?v=56"></script>
-<script src="js/weapons.js?v=56"></script>
-<script src="js/loot.js?v=56"></script>
-<script src="js/pickups.js?v=56"></script>
-<script src="js/sparks.js?v=56"></script>
-<script src="js/grenades.js?v=56"></script>
-<script src="js/grapple.js?v=56"></script>
-<script src="js/bots.js?v=56"></script>
-<script src="js/hud.js?v=56"></script>
-<script src="js/game.js?v=56"></script>
-<script src="js/attract.js?v=56"></script>
-<script src="js/net.js?v=56"></script>
-<script src="js/dof.js?v=56"></script>
+<script src="js/config.js?v=57"></script>
+<script src="js/profile.js?v=57"></script>
+<script src="js/account.js?v=57"></script>
+<script src="js/accountui.js?v=57"></script>
+<script src="js/utils.js?v=57"></script>
+<script src="js/gfx.js?v=57"></script>
+<script src="js/mapdata.js?v=57"></script>
+<script src="js/audio.js?v=57"></script>
+<script src="js/voice.js?v=57"></script>
+<script src="js/settings.js?v=57"></script>
+<script src="js/input.js?v=57"></script>
+<script src="js/world.js?v=57"></script>
+<script src="js/effects.js?v=57"></script>
+<script src="js/map.js?v=57"></script>
+<script src="js/characters.js?v=57"></script>
+<script src="js/pawn.js?v=57"></script>
+<script src="js/weapons.js?v=57"></script>
+<script src="js/loot.js?v=57"></script>
+<script src="js/pickups.js?v=57"></script>
+<script src="js/sparks.js?v=57"></script>
+<script src="js/grenades.js?v=57"></script>
+<script src="js/grapple.js?v=57"></script>
+<script src="js/bots.js?v=57"></script>
+<script src="js/hud.js?v=57"></script>
+<script src="js/game.js?v=57"></script>
+<script src="js/attract.js?v=57"></script>
+<script src="js/net.js?v=57"></script>
+<script src="js/dof.js?v=57"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=56"></script>
-<script src="js/vidrender.js?v=56"></script>
-<script src="js/demos.js?v=56"></script>
-<script src="js/locker.js?v=56"></script>
-<script src="js/assets.js?v=56"></script>
-<script src="js/editor.js?v=56"></script>
-<script src="js/main.js?v=56"></script>
+<script src="js/replay.js?v=57"></script>
+<script src="js/vidrender.js?v=57"></script>
+<script src="js/demos.js?v=57"></script>
+<script src="js/locker.js?v=57"></script>
+<script src="js/assets.js?v=57"></script>
+<script src="js/editor.js?v=57"></script>
+<script src="js/main.js?v=57"></script>
 </body>
 </html>

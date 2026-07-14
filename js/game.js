@@ -19,9 +19,11 @@ SKY.Game = (function () {
     ['Gustav', '#c39bff'], ['Peanut', '#ff9a3d'], ['Noodle', '#ff6a6a'],
     ['Biscuit', '#ffe066'], ['Squish', '#6affd8'], ['Turnip', '#b8ff6a'],
   ];
-  // deathmatch: pickable loadout weapons + the bonus-weapon rotation order
-  const DM_WEAPONS = ['blaster', 'scatter', 'smg', 'burst', 'longshot', 'magnum',
-    'bouncer', 'piston', 'mega', 'lobber', 'boomstick', 'quad'];
+  // deathmatch: pickable loadout weapons + the bonus-weapon rotation order —
+  // grid rows read by rarity: commons, then rares, then epics
+  const DM_WEAPONS = ['blaster', 'smg', 'burst', 'piston',
+    'scatter', 'longshot', 'magnum', 'bouncer',
+    'mega', 'lobber', 'boomstick', 'quad'];
   const KO_LINES = [
     '<b>{k}</b> YEETED {v} off the sky',
     '<b>{k}</b> launched {v} into next week',
@@ -115,6 +117,10 @@ SKY.Game = (function () {
     /* match rules chosen in the menu / lobby (rounds & points to win) */
     applyRules(rules, mode) {
       rules = rules || {};
+      // shared randomness: the host mints a seed that rides the rules so
+      // every client shuffles spawns / picks the first seeker identically
+      api.matchSeed = (typeof rules.seed === 'number')
+        ? rules.seed : (Math.random() * 1e9) | 0;
       if (rules.rounds) SKY.TUNING.game.roundsToWin = rules.rounds;
       if (mode === 'spark' || mode === 'dm') SKY.TUNING.game.roundsToWin = 1; // one long round
       if (rules.lives) SKY.TUNING.game.lives = rules.lives;
@@ -225,6 +231,15 @@ SKY.Game = (function () {
       api.roundNum++;
       SKY.Replay.mark('R' + api.roundNum);       // round tick on the replay timeline
       const spawns = SKY.World.spawnPoints;
+      // seeded shuffle: spawn slots are random every round but IDENTICAL on
+      // every client (host isn't glued to spawn #1 anymore)
+      let seed = ((api.matchSeed || 0) ^ Math.imul(api.roundNum, 2654435761)) >>> 0;
+      const srand = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+      const slot = spawns.map((_, k) => k);
+      for (let k = slot.length - 1; k > 0; k--) {
+        const j = (srand() * (k + 1)) | 0;
+        const tt = slot[k]; slot[k] = slot[j]; slot[j] = tt;
+      }
       api.pawns.forEach((p, i) => {
         if (p.left) { p.eliminated = true; p.alive = false; return; }   // leavers stay gone
         p.lives = SKY.TUNING.game.lives;
@@ -244,7 +259,7 @@ SKY.Game = (function () {
                    grappleRangeMult: 1, grappleCdMult: 1, magMult: 1, gravMult: 1, powerMult: 1 };
         p.abilities = { doubleJump: false, dash: false, pound: false };
         p.owned.clear();
-        const s = spawns[i % spawns.length];
+        const s = spawns[slot[i % slot.length]];
         p.teleport(s.pos, s.yaw);
         p.visualTick(0.016);
       });
@@ -281,7 +296,10 @@ SKY.Game = (function () {
       api._itReleased = false;
       if (api.mode === 'it') {
         const present = api.pawns.filter(p => !p.left);
-        const seeker = present.length ? present[(api.roundNum - 1) % present.length] : null;
+        // seed-offset rotation: still cycles through everyone, but round 1's
+        // IT is random instead of always the host
+        const seeker = present.length
+          ? present[(api.roundNum - 1 + (api.matchSeed || 0)) % present.length] : null;
         api.pawns.forEach((p) => {
           p.isSeeker = p === seeker;
           if (p.left) return;
@@ -289,7 +307,7 @@ SKY.Game = (function () {
           if (p.isSeeker) {
             if (!p.isRemote) p.giveWeapon('seeker');
           } else {
-            p.lives = 1;                      // runners: one life, no rewards
+            // runners keep the lobby's lives dial (defaults to 1 for tag)
             // runners carry NOTHING — bare hands, hook + air cannon only
             p.weapon = null;
             p.slots = { 1: null, 2: null };
@@ -846,14 +864,23 @@ SKY.Game = (function () {
         killer.tryTaunt();
       }
 
-      // IT: tagged runners are OUT; the seeker just respawns if they fall
+      // IT: runners burn a life per tag (default 1 = instantly OUT, but the
+      // lobby's lives dial lets hiders respawn); the seeker just respawns
       if (api.mode === 'it') {
         if (pawn.isSeeker) {
           pawn.deadT = G.respawnDelay;
         } else {
-          pawn.eliminated = true;
-          SKY.HUD.killFeed('<b>' + pawn.name + '</b> is OUT');
-          if (pawn.isLocal) SKY.HUD.showRespawn('Tagged out — LMB: next player · SPACE: orbit');
+          pawn.lives = Math.max(0, (pawn.lives || 1) - 1);
+          if (pawn.lives > 0) {
+            pawn.deadT = G.respawnDelay;
+            SKY.HUD.killFeed('<b style="color:' + pawn.color + '">' + pawn.name + '</b> tagged — ' +
+              pawn.lives + (pawn.lives === 1 ? ' life' : ' lives') + ' left');
+            if (pawn.isLocal) SKY.HUD.showRespawn('Tagged! Respawning…');
+          } else {
+            pawn.eliminated = true;
+            SKY.HUD.killFeed('<b>' + pawn.name + '</b> is OUT');
+            if (pawn.isLocal) SKY.HUD.showRespawn('Tagged out — LMB: next player · SPACE: orbit');
+          }
         }
         if (pawn.recentHits) pawn.recentHits.length = 0;
         if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer, assist);
