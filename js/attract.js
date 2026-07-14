@@ -96,7 +96,9 @@ SKY.Attract = (function () {
       const r = lobbyRoster[i];
       const a = {
         name: r.name, color: r.color, cos: r.cos || null, isLocal: false, alive: true,
-        weapon: 'pistol', pos: new THREE.Vector3(), vel: new THREE.Vector3(),
+        // players show off their locker-picked weapon in the lineup
+        weapon: (r.cos && r.cos.wpn) || 'pistol',
+        pos: new THREE.Vector3(), vel: new THREE.Vector3(),
         yaw, pitch: 0, height: SKY.TUNING.move.standHeight,
         grounded: true, sliding: false, ragdoll: null,
         tumbleVel: new THREE.Vector3(), fellScreamed: false,

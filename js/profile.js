@@ -50,6 +50,7 @@ SKY.Profile = (function () {
     ownedChars: [],         // ids bought (price-0 chars are implicitly owned)
     ownedFinishes: [],      // finish ids bought ('stock' implicit)
     finishes: {},           // weapon kind -> finish id (missing = stock)
+    wpn: 'pistol',          // the weapon your character holds in lobbies
   };
 
   let data = load();
@@ -198,8 +199,10 @@ SKY.Profile = (function () {
     /* everything cosmetic in one bundle — same shape the net roster carries
        (pawn.cos), so offline pawns/replays render identically to online */
     equipped() {
-      return { char: data.char, fin: data.finishes, skin: data.skin, outfit: data.outfit };
+      return { char: data.char, fin: data.finishes, skin: data.skin, outfit: data.outfit,
+        wpn: data.wpn || 'pistol' };
     },
+    setLobbyWeapon(k) { data.wpn = k; save(); },
 
     /* paint a weapon mesh group in a finish (viewmodel/avatar/thumbs) */
     applyFinish(group, finishId, accentHex) {

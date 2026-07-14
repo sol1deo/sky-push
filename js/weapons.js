@@ -142,6 +142,18 @@ SKY.Weapons = (function () {
       _muzzle.copy(tip);
       _aim.copy(_eye).addScaledVector(_dir, aimDist);
       _dir.copy(_aim).sub(_muzzle).normalize();
+    } else if (pawn.isLocal && SKY.Effects.muzzleAnchor) {
+      // fallback anchored at the gun's screen corner, NOT the eye — center
+      // spawns read as "bullets coming out of my head" whenever this branch
+      // held (point-blank aim, viewmodel tip clipped into a wall, …)
+      const mf = SKY.Effects.muzzleAnchor(_tip);
+      if (mf && SKY.World.los(_eye, mf)) {
+        _muzzle.copy(mf);
+        if (aimDist > 0.9) {
+          _aim.copy(_eye).addScaledVector(_dir, aimDist);
+          _dir.copy(_aim).sub(_muzzle).normalize();
+        }
+      }
     }
 
     _up.set(0, 1, 0);
@@ -533,7 +545,11 @@ SKY.Weapons = (function () {
     if (SKY.Game.roundTime < 0.75) return false;
     pawn.acCd = C.cooldown * pawn.mods.cdMult;
     pendingCannon.push({ pawn, t: C.fireDelay || 0 });
-    if (pawn.isLocal) SKY.Effects.cannonPop();   // left arm whips the cannon up
+    if (pawn.isLocal) {
+      SKY.Effects.cannonPop();   // left arm whips the cannon up
+      // the whoosh starts NOW — waiting for the raise anim read as lag
+      SKY.SFX.airCannon(0);
+    }
     return true;
   }
 
@@ -580,7 +596,7 @@ SKY.Weapons = (function () {
     if (pawn.vel.y > 1) pawn.grounded = false;
     pawn._cannonT = 0.7;     // third-person hands show the cannon briefly
     SKY.Effects.cannonBlast(_eye.clone().addScaledVector(_dir, 1.2), _dir.clone());
-    SKY.SFX.airCannon(listenDist(_eye));
+    if (!pawn.isLocal) SKY.SFX.airCannon(listenDist(_eye));   // local heard it at press
     if (pawn.isLocal) {
       SKY.Effects.shake(1.25);
       SKY.HUD.hitmark(1);

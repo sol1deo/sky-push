@@ -230,7 +230,8 @@ SKY.Net = (function () {
   function myCos() {
     if (!SKY.Profile) return null;
     const d = SKY.Profile.data;
-    return { char: d.char, fin: d.finishes, skin: d.skin, outfit: d.outfit };
+    return { char: d.char, fin: d.finishes, skin: d.skin, outfit: d.outfit,
+      wpn: d.wpn || 'pistol' };
   }
 
   function nickname() {

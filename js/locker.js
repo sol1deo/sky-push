@@ -13,7 +13,8 @@ SKY.Locker = (function () {
   const charThumbs = {};    // charId -> dataURL
 
   const WEAPON_ROW = ['pistol', 'blaster', 'scatter', 'smg', 'burst', 'bouncer',
-    'piston', 'longshot', 'magnum', 'mega', 'lobber', 'boomstick', 'quad', 'hookgun'];
+    'piston', 'longshot', 'magnum', 'mega', 'lobber', 'boomstick', 'quad',
+    'minigun', 'flamer', 'hookgun'];
 
   /* ---------------- character thumbnails (posed, cached) ---------------- */
   let thumbRig = null;
@@ -222,9 +223,15 @@ SKY.Locker = (function () {
         </div>`;
       }).join('');
       const WSel = SKY.TUNING.weapons[selWeapon] || { label: 'GRAPPLE HOOK' };
+      const held = (P.data.wpn || 'pistol') === selWeapon;
       body = `
         <div class="lk-wgrid">${wpnCards}</div>
-        <h4 class="lk-h">${(WSel.label || selWeapon).toUpperCase()} — PAINT JOBS</h4>
+        <h4 class="lk-h" style="display:flex;align-items:center;justify-content:space-between">
+          <span>${(WSel.label || selWeapon).toUpperCase()} — PAINT JOBS</span>
+          ${selWeapon === 'hookgun' ? '' :
+            `<button class="lk-wbtn${held ? ' sel' : ''}" id="lk-hold">
+              ${held ? 'HELD IN LOBBY' : 'HOLD IN LOBBY'}</button>`}
+        </h4>
         <div class="lk-grid">${finCards}</div>`;
     }
 
@@ -244,6 +251,13 @@ SKY.Locker = (function () {
       if (e.target.id === 'lk-dev') {
         SKY.Profile.addCoins(1000);
         SKY.SFX.init(); SKY.SFX.cash();
+        return;
+      }
+      if (e.target.id === 'lk-hold') {
+        // this weapon is what your character shows off in lobby lineups
+        SKY.Profile.setLobbyWeapon(selWeapon);
+        renderPanel();
+        if (SKY.HUD && SKY.HUD._botsLobby) SKY.HUD.botsLobby(true);   // live refresh
         return;
       }
       const skinDot = e.target.closest('[data-skin]');

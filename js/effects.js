@@ -1193,8 +1193,16 @@ SKY.Effects = (function () {
     viewmodelTip() {
       if (!vm.group) return null;
       const tip = vm.group.getObjectByName('tip');
+      if (!tip) return null;
       tip.getWorldPosition(vm.tipWorld);
       return vm.tipWorld;
+    },
+    /* the gun's SCREEN-corner anchor — the visual muzzle whenever the real
+       tip can't be used (point-blank aim, tip poking into a wall…). Falling
+       back to the EYE put tracers dead-center = "bullets out of my head". */
+    muzzleAnchor(out) {
+      if (!camera) return null;
+      return camera.localToWorld(out.set(0.26, -0.22, -0.45));
     },
     /* the camera-mounted first-person groups (replay greenscreen layers) */
     vmGroups() { return [vm.group, vm.hook].filter(Boolean); },

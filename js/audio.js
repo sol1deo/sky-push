@@ -313,9 +313,9 @@ SKY.SFX = (function () {
     headshot(dist){ const a = att(dist);
                 if (sample('headshot', 0.3 * a, 1.45)) return;
                 tone(1180, 880, 0.12, 'square', 0.22 * a); },
-    reload()  { if (sample('reload', 0.3, 1.3)) return;
+    reload()  { if (sample('reload', 0.62, 1.3)) return;
                 noise(0.05, 1800, 0.16, 'highpass'); noise(0.05, 1200, 0.14, 'highpass', 0.16); },
-    reloadDone(){ if (sample('reload_done', 0.32, 1.15)) return;
+    reloadDone(){ if (sample('reload_done', 0.55, 1.15)) return;
                 noise(0.05, 2200, 0.18, 'highpass'); tone(520, 380, 0.05, 'square', 0.1); },
     dry()     { if (sample('dry', 0.3, 1.2)) return;
                 tone(300, 240, 0.04, 'square', 0.12); },
@@ -439,7 +439,8 @@ SKY.SFX = (function () {
                 tone(220, 640, 0.24, 'sine', 0.26); },
     grapple(dist) { const a = att(dist === undefined ? 0 : dist);
                 if (a < 0.1) return;
-                if (sample('grapple', 0.3 * a, 1.5)) return;
+                // the new sample IS the rope whoosh — play it as designed
+                if (sample('grapple', 0.5 * a, SKY.U.rand(0.96, 1.08))) return;
                 noise(0.14, 2200, 0.18 * a, 'highpass'); tone(500, 900, 0.12, 'triangle', 0.14 * a); },
     grapMiss(){ tone(300, 180, 0.07, 'square', 0.12); },
     /* heavy-knock jam: a dead mechanical double-clunk — the hook/cannon
