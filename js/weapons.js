@@ -378,6 +378,7 @@ SKY.Weapons = (function () {
           b.pos.copy(point).addScaledVector(n, 0.03);
           b.prev.copy(b.pos);
           SKY.Effects.impactSpark(point.clone(), n.clone());
+          SKY.Effects.bulletHole(point.clone(), n.clone());
           SKY.Effects.ring(point.clone(), b.color, 0.7, 0.18);
           SKY.SFX.bounce(listenDist(point));
           continue;
@@ -428,6 +429,7 @@ SKY.Weapons = (function () {
           SKY.Effects.hitBurst(point.clone(), 0, b.color);
         } else {
           SKY.Effects.impactSpark(point, res.world.normal);
+          SKY.Effects.bulletHole(point, res.world.normal);
         }
         removeBullet(i);
         continue;

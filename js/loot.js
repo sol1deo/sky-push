@@ -153,12 +153,9 @@ SKY.Loot = (function () {
       pawn.owned.add(item.id);
       item.apply(pawn);
     }
-    if (pawn.isLocal) {
-      // your own pickups get a front-and-center toast — the killfeed is for
-      // KOs, and nobody spotted their new powerup up there
-      SKY.HUD.pickupToast(item);
-      SKY.SFX.pick();
-    }
+    // no toast here: card picks already SHOWED you the item (the toast for
+    // walk-over map pickups lives in Pickups.take) — just the grab sound
+    if (pawn.isLocal) SKY.SFX.pick();
   }
 
   /* bots: roll and auto-pick (weapons preferred slightly, else random) */

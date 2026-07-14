@@ -49,7 +49,7 @@ SKY.Replay = (function () {
 
   const FX = ['burst', 'ring', 'hitBurst', 'headshotBurst', 'impactSpark',
               'koBurst', 'muzzle', 'muzzleLight', 'cannonBlast', 'padRing',
-              'respawnBeam', 'trailPuff', 'floatText'];
+              'respawnBeam', 'trailPuff', 'floatText', 'bulletHole', 'flame', 'swirl'];
 
   function serArg(a) {
     if (a && a.isVector3) return { v: [a.x, a.y, a.z] };

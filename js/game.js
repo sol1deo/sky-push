@@ -143,6 +143,7 @@ SKY.Game = (function () {
       for (const p of api.pawns) p.dispose();
       api.pawns = []; api.bots = [];
       SKY.Weapons.clear(); SKY.Grenades.clear();
+      if (SKY.Effects.clearDecals) SKY.Effects.clearDecals();   // no marks from the last map
       api.mode = mode || 'lbs';
       this.applyRules(rules, api.mode);
       SKY.Map.load(scene, mapId || 'sky');

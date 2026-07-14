@@ -92,27 +92,36 @@ SKY.Pickups = (function () {
      and the item looked like it was just floating). */
   const BEACON = { starter: '#ffffff', common: '#ffffff', rare: '#1f7dff', epic: '#d92cff' };
 
-  /* the same line-art glyph the reward cards use, rasterized onto a sprite —
-     powerups/abilities/nade packs are finally tellable apart on the ground */
+  /* powerups/abilities on the ground: the card's line-art glyph on a badge
+     (dark disc + rarity ring) — reads as an ITEM, no floating text needed */
   const glyphTexCache = {};
   function glyphSprite(item, color) {
     let tex = glyphTexCache[item.id];
     if (!tex) {
       const cv = document.createElement('canvas');
-      cv.width = cv.height = 96;
+      cv.width = cv.height = 128;
       tex = new THREE.CanvasTexture(cv);
       tex.encoding = THREE.sRGBEncoding;
       glyphTexCache[item.id] = tex;
+      const g = cv.getContext('2d');
+      const badge = () => {
+        g.clearRect(0, 0, 128, 128);
+        g.fillStyle = 'rgba(9,13,23,0.88)';
+        g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = color; g.lineWidth = 6;
+        g.beginPath(); g.arc(64, 64, 56, 0, Math.PI * 2); g.stroke();
+      };
+      badge();
+      tex.needsUpdate = true;
       const d = SKY.Loot.describe(item);
       if (d.glyph) {
         const svgTxt = d.glyph
-          .replace('<svg ', '<svg width="96" height="96" ')
-          .replace(/currentColor/g, color);
+          .replace('<svg ', '<svg width="128" height="128" ')
+          .replace(/currentColor/g, d.color || color);
         const img = new Image();
         img.onload = () => {
-          const g = cv.getContext('2d');
-          g.clearRect(0, 0, 96, 96);
-          g.drawImage(img, 10, 10, 76, 76);
+          badge();
+          g.drawImage(img, 28, 28, 72, 72);
           tex.needsUpdate = true;
         };
         img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgTxt);
@@ -122,56 +131,27 @@ SKY.Pickups = (function () {
       map: tex, transparent: true, depthWrite: false }));
   }
 
-  /* floating name tag so you know WHAT you're grabbing before you touch it */
-  const labelTexCache = {};
-  function labelSprite(text, color) {
-    const key = text + '|' + color;
-    let entry = labelTexCache[key];
-    if (!entry) {
-      const cv = document.createElement('canvas');
-      cv.width = 512; cv.height = 112;
-      const g = cv.getContext('2d');
-      let px = 52;
-      g.font = `900 ${px}px "Titan One", Inter, sans-serif`;
-      const w = g.measureText(text).width;
-      if (w > 470) { px = Math.floor(px * 470 / w); g.font = `900 ${px}px "Titan One", Inter, sans-serif`; }
-      g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-      g.lineWidth = 11; g.strokeStyle = 'rgba(7,10,18,0.92)';
-      g.strokeText(text, 256, 58);
-      g.fillStyle = color;
-      g.fillText(text, 256, 58);
-      const tex = new THREE.CanvasTexture(cv);
-      tex.encoding = THREE.sRGBEncoding;
-      entry = labelTexCache[key] = { tex, w: Math.min(w, 470) };
-    }
-    const spr = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: entry.tex, transparent: true, depthWrite: false }));
-    spr.scale.set(2.5, 0.55, 1);
-    return spr;
-  }
-
   function buildVisual(item) {
     const grp = new THREE.Group();
     const rcolor = BEACON[item.rarity] || '#ffffff';
     const strong = item.rarity === 'epic' ? 1 : item.rarity === 'rare' ? 0.65 : 0.5;
-    let labelText;
     if (item.kind === 'weapon') {
       const m = SKY.Effects.buildWeaponMesh(item.id);
       m.scale.setScalar(2.1);
       m.position.y = 1.05;
       grp.add(m);
-      const W = SKY.TUNING.weapons[item.id] || {};
-      labelText = (W.short || W.label || item.id).toUpperCase();
+    } else if (item.kind === 'nade') {
+      // the actual grenade model, big enough to read from across the arena
+      const m = SKY.Effects.buildNadeMesh(item.nade);
+      m.scale.setScalar(3.4);
+      m.position.y = 1.05;
+      grp.add(m);
     } else {
       const ic = glyphSprite(item, rcolor);
-      ic.scale.set(0.95, 0.95, 1);
-      ic.position.y = 1.05;
+      ic.scale.set(1.05, 1.05, 1);
+      ic.position.y = 1.1;
       grp.add(ic);
-      labelText = (SKY.Loot.describe(item).name || item.id).toUpperCase();
     }
-    const lbl = labelSprite(labelText, rcolor);
-    lbl.position.y = 1.85;
-    grp.add(lbl);
     // NORMAL blending keeps the hue saturated (additive washed it to white)
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: SKY.U.blobTexture(), color: new THREE.Color(rcolor).convertSRGBToLinear(),
@@ -256,12 +236,10 @@ SKY.Pickups = (function () {
       const sp = spawners.find(s => s.live === pk.id);
       if (sp) { sp.live = null; sp.t = sp.respawn; }
     }
-    if (pawn.isRemote) {
-      // host arbitrates but the item is applied on the owner's client too
-      SKY.Loot.apply(pawn, pk.item);
-    } else {
-      SKY.Loot.apply(pawn, pk.item);
-    }
+    // host arbitrates but the item is applied on the owner's client too
+    SKY.Loot.apply(pawn, pk.item);
+    // walk-over grabs get the toast (card picks don't — the card WAS the info)
+    if (pawn.isLocal) SKY.HUD.pickupToast(pk.item);
     if (SKY.Net.online && SKY.Net.role === 'host') {
       SKY.Net.sendPickupTake(pk.id, pawn.netId);
     }
@@ -276,7 +254,10 @@ SKY.Pickups = (function () {
     removeVisual(pk);
     grabFx(pk);
     const pawn = SKY.Game.pawns.find(p => p.netId === pawnNetId);
-    if (pawn) SKY.Loot.apply(pawn, pk.item);
+    if (pawn) {
+      SKY.Loot.apply(pawn, pk.item);
+      if (pawn.isLocal) SKY.HUD.pickupToast(pk.item);
+    }
   }
 
   return {

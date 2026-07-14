@@ -220,6 +220,14 @@ SKY.HUD = (function () {
         api.chatOpen();
       }, true);
       $('chat-input').addEventListener('keydown', (e) => e.stopPropagation());
+      // lobby: the always-visible input opens the chat on click/focus and
+      // quietly closes (nothing sent) when you click away
+      $('chat-input').addEventListener('focus', () => {
+        if (!chatOpen) api.chatOpen();
+      });
+      $('chat-input').addEventListener('blur', () => {
+        if (chatOpen) api.chatClose(false);
+      });
     },
 
     /* map dropdowns: built-ins + an optgroup of custom maps (editor drafts /
@@ -320,31 +328,40 @@ SKY.HUD = (function () {
       d.className = 'feed-item';
       d.innerHTML = html;
       el.feed.appendChild(d);
-      while (el.feed.children.length > 6) el.feed.removeChild(el.feed.firstChild);
-      setTimeout(() => { if (d.parentNode) d.classList.add('fading'); }, 5600);
-      setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 6100);
+      while (el.feed.children.length > 5) el.feed.removeChild(el.feed.firstChild);
+      setTimeout(() => { if (d.parentNode) d.classList.add('fading'); }, 4300);
+      setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 4800);
     },
 
     /* -------- pickup toast: what you just grabbed, front and center --------
-       (pickups used to announce themselves in the killfeed, where nobody
-       looks — now it's a sticker right above the weapon bar) */
+       Icon-first (the old name+description block was a wall of text): a big
+       glowing glyph + the name. Weapons skip it entirely — the gun in your
+       hands and the slot icon already say everything. */
     pickupToast(item) {
       const t = $('pickup-toast');
-      if (!t) return;
+      if (!t || item.kind === 'weapon') return;
       const d = SKY.Loot.describe(item);
       const r = SKY.Loot.RARITY[item.rarity] || { label: '', color: '#c6cdd9' };
       t.innerHTML =
         `<span class="pt-ico" style="color:${d.color || r.color}">${d.glyph || ''}</span>
-         <span class="pt-tx"><b style="color:${r.color}">${d.name}</b><small>${d.desc || ''}</small></span>`;
+         <span class="pt-tx"><b style="color:${r.color}">${d.name}</b></span>`;
       t.classList.remove('hidden', 'punch');
       void t.offsetWidth;
       t.classList.add('punch');
       clearTimeout(t._hideT);
-      t._hideT = setTimeout(() => t.classList.add('hidden'), 2800);
+      t._hideT = setTimeout(() => t.classList.add('hidden'), 2400);
     },
 
     /* -------- text chat (Enter) — online lobby + in-game -------- */
     chatTyping() { return chatOpen; },
+    /* lobby mode: the input stays on screen at half opacity so the feature
+       is discoverable (CS2 main-menu style) — clicking it starts typing */
+    chatLobby(on) {
+      $('chat').classList.toggle('lobby', !!on);
+      if (!on && chatOpen) api.chatClose(false);
+      // .hidden is display:none!important — the lobby entry must shed it
+      $('chat-entry').classList.toggle('hidden', !on && !chatOpen);
+    },
     chatAdd(name, color, text) {
       const log = $('chat-log');
       if (!log) return;
@@ -369,10 +386,12 @@ SKY.HUD = (function () {
       if (!chatOpen) return;
       const inp = $('chat-input');
       const text = inp.value;
+      inp.value = '';
       chatOpen = false;
       SKY.Input.setTyping(false);
       $('chat').classList.remove('open');
-      $('chat-entry').classList.add('hidden');
+      // in the lobby the entry stays visible (dimmed) after closing
+      if (!$('chat').classList.contains('lobby')) $('chat-entry').classList.add('hidden');
       inp.blur();
       if (sendIt && text.trim()) {
         SKY.Net.sendChat(text);

@@ -32,6 +32,10 @@ SKY.Effects = (function () {
       p.fade = o.opacity !== undefined ? o.opacity : 1;
       p.ring = !!o.ring;
       p.spr.material.map = o.ring ? SKY.U.ringTexture() : SKY.U.blobTexture();
+      // additive glow washes out to WHITE over bright surfaces — fire and
+      // smoke ask for normal blending so they keep their color anywhere
+      p.spr.material.blending =
+        o.blend === 'normal' ? THREE.NormalBlending : THREE.AdditiveBlending;
       return p;
     }
     return null;
@@ -342,6 +346,185 @@ SKY.Effects = (function () {
     return grp;
   }
 
+  /* ---------------- grenade models: one SILHOUETTE per type ----------------
+   * he = classic pineapple frag · molly = incendiary canister with hazard
+   * bands · vortex = sci-fi gyro orb. Shared by the thrown projectile, map
+   * pickups and the HUD outline icon, so the shape flying at you matches
+   * the shape in the UI. */
+  function buildNadeMesh(type) {
+    const M = wmats();
+    const N = (SKY.TUNING.grenades || {})[type] || {};
+    const accent = new THREE.MeshLambertMaterial({
+      color: N.color || '#ffffff',
+      emissive: new THREE.Color(N.color || '#ffffff').multiplyScalar(0.55),
+    });
+    const g = new THREE.Group();
+    const add = (geo, mat, x, y, z) => {
+      const q = new THREE.Mesh(geo, mat);
+      q.position.set(x || 0, y || 0, z || 0);
+      g.add(q); return q;
+    };
+    if (type === 'molly') {
+      const body = new THREE.MeshLambertMaterial({ color: 0x8a3020 });
+      add(new THREE.CylinderGeometry(0.075, 0.075, 0.21, 12), body);
+      add(new THREE.CylinderGeometry(0.079, 0.079, 0.032, 12), M.dark, 0, 0.1);   // cap
+      add(new THREE.CylinderGeometry(0.079, 0.079, 0.032, 12), M.dark, 0, -0.1);  // base
+      add(new THREE.CylinderGeometry(0.026, 0.032, 0.05, 8), M.metal, 0, 0.14);   // valve
+      add(new THREE.TorusGeometry(0.077, 0.013, 6, 16), accent, 0, 0.028).rotation.x = Math.PI / 2;
+      add(new THREE.TorusGeometry(0.077, 0.013, 6, 16), accent, 0, -0.04).rotation.x = Math.PI / 2;
+    } else if (type === 'vortex') {
+      const core = new THREE.MeshLambertMaterial({
+        color: 0x2a1650, emissive: new THREE.Color('#8a68ff').multiplyScalar(0.75),
+      });
+      add(new THREE.SphereGeometry(0.075, 12, 12), core);
+      add(new THREE.TorusGeometry(0.115, 0.015, 6, 20), M.metal).rotation.x = Math.PI / 2.6;
+      const r2 = add(new THREE.TorusGeometry(0.115, 0.015, 6, 20), M.dark);
+      r2.rotation.set(Math.PI / 2.6, 0, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.02, 0.03, 0.045, 8), accent, 0, 0.12);     // pole caps
+      add(new THREE.CylinderGeometry(0.03, 0.02, 0.045, 8), accent, 0, -0.12);
+    } else {   // 'he' — the classic pineapple
+      const body = new THREE.MeshLambertMaterial({ color: 0x44543c });
+      add(new THREE.SphereGeometry(0.105, 12, 12), body, 0, -0.01);
+      for (let i = -1; i <= 1; i++) {   // frag grooves
+        const r = Math.sqrt(Math.max(1e-4, 0.105 * 0.105 - (i * 0.045) ** 2)) + 0.005;
+        add(new THREE.TorusGeometry(r, 0.008, 5, 18), M.dark, 0, -0.01 + i * 0.045)
+          .rotation.x = Math.PI / 2;
+      }
+      add(new THREE.TorusGeometry(0.107, 0.008, 5, 18), M.dark, 0, -0.01);        // vertical groove
+      add(new THREE.CylinderGeometry(0.034, 0.04, 0.05, 8), M.metal, 0, 0.115);   // fuze head
+      add(new THREE.BoxGeometry(0.02, 0.1, 0.03), M.metal, 0.05, 0.08).rotation.z = -0.55;
+      add(new THREE.TorusGeometry(0.026, 0.006, 5, 12), accent, -0.05, 0.125);    // pull ring
+    }
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+
+  /* ---------------- fire + vortex recipes (molly pool, effects) ----------------
+   * flame(): one flame tongue — bright core inside an orange body, both
+   * accelerating UP and tapering to a point, with occasional embers and a
+   * faint smoke cap. Reads as fire instead of the old rising orange blob. */
+  function flame(pos, s) {
+    s = s || 1;
+    const swx = SKY.U.rand(-0.6, 0.6), swz = SKY.U.rand(-0.6, 0.6);
+    // NORMAL-blended body so the fire stays orange over bright ground
+    spawn({ pos, vel: new THREE.Vector3(swx, SKY.U.rand(2, 3.4) * s, swz),
+      life: SKY.U.rand(0.4, 0.65), size: SKY.U.rand(0.8, 1.15) * s, sizeEnd: 0.12,
+      color: '#ff5a16', gravity: -6, drag: 1.5, blend: 'normal', opacity: 0.95 });
+    spawn({ pos, vel: new THREE.Vector3(swx * 0.7, SKY.U.rand(1.8, 3) * s, swz * 0.7),
+      life: SKY.U.rand(0.3, 0.48), size: SKY.U.rand(0.5, 0.7) * s, sizeEnd: 0.08,
+      color: '#ffc23c', gravity: -5.5, drag: 1.3, blend: 'normal', opacity: 0.95 });
+    if (Math.random() < 0.3) {   // ember riding the heat column
+      spawn({ pos, vel: new THREE.Vector3(SKY.U.rand(-1.6, 1.6), SKY.U.rand(3, 5.5) * s, SKY.U.rand(-1.6, 1.6)),
+        life: SKY.U.rand(0.6, 1.1), size: 0.1, sizeEnd: 0.03, color: '#ffc46a', gravity: -3, drag: 0.6 });
+    }
+    if (Math.random() < 0.2) {   // smoke cap above the tongues
+      spawn({ pos: new THREE.Vector3(pos.x, pos.y + 1.1 * s, pos.z),
+        vel: new THREE.Vector3(swx * 0.4, SKY.U.rand(0.8, 1.4), swz * 0.4),
+        life: SKY.U.rand(0.6, 1), size: 0.5 * s, sizeEnd: 1.3 * s,
+        color: '#33363e', opacity: 0.35, gravity: -0.5, drag: 0.5, blend: 'normal' });
+    }
+  }
+
+  /* one orbiting streak around a vortex center — tangential velocity plus a
+     slight inward pull, so the cloud visibly SWIRLS instead of popping */
+  const _tan = new THREE.Vector3(), _rad = new THREE.Vector3();
+  function swirl(pos, center, speed) {
+    _rad.copy(pos).sub(center); _rad.y = 0;
+    if (_rad.lengthSq() < 1e-4) _rad.set(1, 0, 0);
+    _rad.normalize();
+    _tan.set(-_rad.z, 0, _rad.x).multiplyScalar(speed);
+    spawn({ pos, vel: new THREE.Vector3(
+        _tan.x - _rad.x * speed * 0.35, SKY.U.rand(-0.4, 0.7), _tan.z - _rad.z * speed * 0.35),
+      life: SKY.U.rand(0.45, 0.7), size: SKY.U.rand(0.4, 0.7), sizeEnd: 0.12,
+      color: Math.random() < 0.3 ? '#dccdff' : '#7a5cff', gravity: 0, drag: 0.4,
+      opacity: 0.95, blend: 'normal' });
+  }
+
+  /* ---------------- surface decals: bullet holes + blast scorch ----------------
+   * Small textured quads glued to whatever got shot. Fixed ring buffer —
+   * the oldest mark recycles first, everything fades out near end of life. */
+  const DECAL_N = 48;
+  const decals = [];
+  let decalIdx = 0, holeTexCv = null, scorchTexCv = null;
+  function bulletHoleTex() {
+    if (holeTexCv) return holeTexCv;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const g = cv.getContext('2d');
+    // ragged dark core with a bright chipped rim
+    const grad = g.createRadialGradient(32, 32, 2, 32, 32, 15);
+    grad.addColorStop(0, 'rgba(8,8,10,0.95)');
+    grad.addColorStop(0.7, 'rgba(14,13,15,0.85)');
+    grad.addColorStop(1, 'rgba(20,18,20,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(32, 32, 15, 0, Math.PI * 2); g.fill();
+    for (let i = 0; i < 9; i++) {   // chips + cracks around the rim
+      const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 9;
+      g.fillStyle = i % 3 ? 'rgba(10,10,12,0.5)' : 'rgba(235,235,240,0.18)';
+      g.beginPath();
+      g.arc(32 + Math.cos(a) * r, 32 + Math.sin(a) * r, 1.4 + Math.random() * 2.4, 0, Math.PI * 2);
+      g.fill();
+    }
+    holeTexCv = new THREE.CanvasTexture(cv);
+    return holeTexCv;
+  }
+  function scorchTex() {
+    if (scorchTexCv) return scorchTexCv;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const g = cv.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+    grad.addColorStop(0, 'rgba(10,9,8,0.7)');
+    grad.addColorStop(0.5, 'rgba(16,14,12,0.4)');
+    grad.addColorStop(1, 'rgba(20,18,16,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(64, 64, 62, 0, Math.PI * 2); g.fill();
+    // soft charred blotches (crisp spokes read as a cartoon splat)
+    for (let i = 0; i < 30; i++) {
+      const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 48;
+      const br = 3 + Math.random() * 9;
+      const x = 64 + Math.cos(a) * r, y = 64 + Math.sin(a) * r;
+      const bg = g.createRadialGradient(x, y, 0, x, y, br);
+      bg.addColorStop(0, 'rgba(8,7,6,' + (0.28 * (1 - r / 70)).toFixed(2) + ')');
+      bg.addColorStop(1, 'rgba(8,7,6,0)');
+      g.fillStyle = bg;
+      g.beginPath(); g.arc(x, y, br, 0, Math.PI * 2); g.fill();
+    }
+    scorchTexCv = new THREE.CanvasTexture(cv);
+    return scorchTexCv;
+  }
+  const _dz = new THREE.Vector3(0, 0, 1);
+  function ensureDecals() {
+    if (decals.length) return;
+    const geo = new THREE.PlaneGeometry(1, 1);
+    for (let i = 0; i < DECAL_N; i++) {
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        map: null, transparent: true, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
+      }));
+      mesh.visible = false;
+      mesh.renderOrder = 1;
+      scene.add(mesh);
+      decals.push({ mesh, life: 0, max: 1 });
+    }
+  }
+  function placeDecal(pos, normal, size, tex, life) {
+    if (!scene) return;
+    ensureDecals();
+    const d = decals[decalIdx++ % DECAL_N];
+    d.life = d.max = life;
+    if (d.mesh.material.map !== tex) {
+      d.mesh.material.map = tex;
+      d.mesh.material.needsUpdate = true;   // null->map recompiles the shader
+    }
+    d.mesh.material.opacity = 1;
+    d.mesh.position.copy(pos).addScaledVector(normal, 0.015 + Math.random() * 0.008);
+    d.mesh.quaternion.setFromUnitVectors(_dz, normal);
+    d.mesh.rotateZ(Math.random() * Math.PI * 2);   // random roll = no wallpaper
+    d.mesh.scale.set(size, size, 1);
+    d.mesh.visible = true;
+  }
+
   /* --------------------- weapon thumbnails (UI) ---------------------
    * Renders the actual 3D weapon model to a small transparent canvas —
    * used by the death-reward cards so a weapon reads at a glance. */
@@ -464,7 +647,33 @@ SKY.Effects = (function () {
     g.globalAlpha = 0.18;                   // whisper of body fill
     g.drawImage(tin, 0, 0);
     g.globalAlpha = 1;
-    return out.toDataURL();
+    // crop to the drawn contour — a chunky shape rendered small in the
+    // middle of the 280x150 canvas (the grenade) would otherwise show up
+    // SQUISHED in its UI box, padded by acres of transparent pixels
+    return cropToContent(out).toDataURL();
+  }
+  function cropToContent(cv) {
+    const W = cv.width, H = cv.height;
+    const data = cv.getContext('2d').getImageData(0, 0, W, H).data;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (data[(y * W + x) * 4 + 3] > 10) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (x1 < 0) return cv;
+    const pad = 5;
+    x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad);
+    x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+    const out = document.createElement('canvas');
+    out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+    out.getContext('2d').drawImage(cv, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+    return out;
   }
   function weaponWireIcon(kind, colorHex) {
     const key = thumbKey(kind) + '|' + colorHex;
@@ -479,27 +688,13 @@ SKY.Effects = (function () {
     } catch (e) { return null; }
   }
 
-  /* grenade outline icon for the HUD chip — real GLB when the pack is
-     loaded, procedural silhouette otherwise; tinted by grenade type color */
+  /* grenade outline icon for the HUD chip — rendered from THIS type's
+     unique model, so HE / fire / vortex are tellable apart at a glance */
   function nadeWireIcon(type, colorHex) {
-    const key = 'nade:' + type + '|' + colorHex +
-      (SKY.GFX && SKY.GFX.hasWeapon && SKY.GFX.hasWeapon('grenade1') ? '+glb' : '');
+    const key = 'nade:' + type + '|' + colorHex;
     if (wireCache[key]) return wireCache[key];
     try {
-      const g = new THREE.Group();
-      const glb = SKY.GFX && SKY.GFX.weapon && SKY.GFX.weapon('grenade1');
-      if (glb) g.add(glb);
-      else {
-        const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
-        const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 12), m);
-        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 8), m);
-        neck.position.y = 0.14;
-        const lever = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.03), m);
-        lever.position.set(0.055, 0.12, 0);
-        lever.rotation.z = -0.5;
-        g.add(body, neck, lever);
-      }
-      const src = wireRender(g, -Math.PI / 2 + 0.35, 2.6);   // slight 3/4 turn, framed out
+      const src = wireRender(buildNadeMesh(type), -Math.PI / 2 + 0.35, 2.2);
       if (!src) return null;
       const url = composeWire(src, colorHex);
       wireCache[key] = url;
@@ -725,6 +920,11 @@ SKY.Effects = (function () {
     ring(pos.clone(), '#ffd9a0', r * 2.8, 0.42);
     ring(pos.clone(), '#ffffff', r * 1.7, 0.24);
     muzzleLight(pos);
+    // scorch mark charred onto whatever's under the blast
+    if (SKY.World && SKY.World.raycast) {
+      const gh = SKY.World.raycast(pos, _v.set(0, -1, 0), r * 1.2);
+      if (gh) placeDecal(gh.point, gh.normal, r * 1.1, scorchTex(), 18);
+    }
   }
 
   function muzzleLight(pos) {
@@ -824,6 +1024,13 @@ SKY.Effects = (function () {
         const s = SKY.U.lerp(p.size0, p.size1, t);
         p.spr.scale.set(s, s, 1);
         p.spr.material.opacity = p.fade * (1 - t * t);
+      }
+      // decals age out (fade across the last quarter of their life)
+      for (const d of decals) {
+        if (d.life <= 0) continue;
+        d.life -= dt;
+        if (d.life <= 0) { d.mesh.visible = false; continue; }
+        d.mesh.material.opacity = Math.min(1, (d.life / d.max) * 4);
       }
       // floating text
       for (let i = texts.length - 1; i >= 0; i--) {
@@ -1010,8 +1217,20 @@ SKY.Effects = (function () {
         spawn({ pos, vel: v, life: SKY.U.rand(0.15, 0.3), size: 0.22, color: '#ffd9a0', gravity: 10, drag: 2 });
       }
     },
-    tracer, muzzleLight, buildWeaponMesh, weaponThumb, weaponSideIcon, weaponWireIcon, nadeWireIcon,
+    tracer, muzzleLight, buildWeaponMesh, buildNadeMesh, weaponThumb, weaponSideIcon,
+    weaponWireIcon, nadeWireIcon,
     makeTracer, poseTracer, resetTracer,
+    flame, swirl,
+    /* decals */
+    bulletHole(pos, normal) {
+      placeDecal(pos, normal, 0.15 + Math.random() * 0.07, bulletHoleTex(), 14);
+    },
+    scorch(pos, normal, size, life) {
+      placeDecal(pos, normal, size || 2, scorchTex(), life || 18);
+    },
+    clearDecals() {
+      for (const d of decals) { d.life = 0; d.mesh.visible = false; }
+    },
     cannonBlast(pos, dir) {
       // a proper pressure wave: dense forward cone + white core flash +
       // double expanding rings that travel with the blast direction

@@ -97,6 +97,25 @@ SKY.U = {
           g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() * 2 - 1) * 2, y - 3 - Math.random() * 4); g.stroke();
         }
       },
+      grass2(g, s) {   // dry meadow — olive/khaki take on the grass tufts
+        g.fillStyle = '#8f9448'; g.fillRect(0, 0, s, s);
+        speck(g, s, 240, ['rgba(170,172,96,0.45)', 'rgba(110,112,52,0.45)', 'rgba(196,196,120,0.3)'], 1, 3);
+        g.strokeStyle = 'rgba(88,88,38,0.5)'; g.lineWidth = 1;
+        for (let i = 0; i < 130; i++) {
+          const x = Math.random() * s, y = Math.random() * s;
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() * 2 - 1) * 2, y - 3 - Math.random() * 4); g.stroke();
+        }
+      },
+      grass3(g, s) {   // lush deep green with sparse tiny wildflowers
+        g.fillStyle = '#3f7a38'; g.fillRect(0, 0, s, s);
+        speck(g, s, 260, ['rgba(74,138,64,0.5)', 'rgba(44,88,36,0.5)', 'rgba(104,168,86,0.3)'], 1, 3);
+        g.strokeStyle = 'rgba(30,66,26,0.5)'; g.lineWidth = 1;
+        for (let i = 0; i < 150; i++) {
+          const x = Math.random() * s, y = Math.random() * s;
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() * 2 - 1) * 2, y - 3 - Math.random() * 4); g.stroke();
+        }
+        speck(g, s, 8, ['#f2f0dc', '#ffd95c'], 1.2, 2);
+      },
       dirt(g, s) {
         g.fillStyle = '#7a5a3e'; g.fillRect(0, 0, s, s);
         speck(g, s, 36, ['rgba(0,0,0,0.09)', 'rgba(255,255,255,0.05)'], 4, 12);

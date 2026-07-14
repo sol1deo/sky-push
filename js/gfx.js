@@ -40,8 +40,8 @@ SKY.GFX = (function () {
     grenade1:  { file: 'grenade1', len: 0.16 },
     grenade2:  { file: 'grenade2', len: 0.16 },
   };
-  const TEX_NAMES = ['concrete', 'metal', 'panel', 'hazard', 'grass', 'dirt', 'sand',
-    'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid',
+  const TEX_NAMES = ['concrete', 'metal', 'panel', 'hazard', 'grass', 'grass2', 'grass3',
+    'dirt', 'sand', 'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid',
     'crane', 'plywood', 'leather', 'balloon', 'marble', 'carpet', 'circuit', 'camo',
     'gravel', 'cliff', 'scree', 'mossrock'];
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',

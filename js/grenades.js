@@ -19,23 +19,10 @@ SKY.Grenades = (function () {
   const _imp = new THREE.Vector3();
   const _v = new THREE.Vector3();
 
-  function makeNadeMesh(color) {
-    const g = new THREE.Group();
-    // real grenade model (Kenney) when the asset pack has loaded
-    const glb = SKY.GFX && SKY.GFX.weapon('grenade1');
-    if (glb) {
-      g.add(glb);
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.018, 6, 14),
-        new THREE.MeshBasicMaterial({ color }));   // type-colored band
-      ring.rotation.x = Math.PI / 2;
-      g.add(ring);
-    } else {
-      const body = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8),
-        new THREE.MeshLambertMaterial({ color: 0x2c3140 }));
-      const band = new THREE.Mesh(new THREE.SphereGeometry(0.135, 8, 4, 0, Math.PI * 2, 1.1, 0.5),
-        new THREE.MeshBasicMaterial({ color }));
-      g.add(body, band);
-    }
+  function makeNadeMesh(type) {
+    // per-type silhouette (pineapple / canister / gyro orb) — shared with
+    // the HUD icon and map pickups so the projectile reads instantly
+    const g = SKY.Effects.buildNadeMesh(type);
     scene.add(g);
     return g;
   }
@@ -71,7 +58,7 @@ SKY.Grenades = (function () {
     nades.push({
       type, pos: ori, vel, owner: pawn, auth, trailT: 0,
       fuse: N.fuse + (type === 'molly' ? 3 : 0),   // molly mostly ignites on impact
-      mesh: makeNadeMesh(N.color), resting: false,
+      mesh: makeNadeMesh(type), resting: false,
     });
     if (pawn.isLocal) SKY.SFX.grapMiss();   // soft toss click
     return true;
@@ -182,11 +169,17 @@ SKY.Grenades = (function () {
       const N = SKY.TUNING.grenades.molly;
       pl.t -= dt;
       pl.tickT -= dt;
-      if (Math.random() < dt * 30) {
-        const a = Math.random() * Math.PI * 2, r = Math.random() * N.radius;
-        SKY.Effects.burst(_v.set(pl.pos.x + Math.cos(a) * r, pl.pos.y + 0.1, pl.pos.z + Math.sin(a) * r),
-          { count: 1, speed: 1.5, color: '#ff7a3a', gravity: -6, life: 0.5, size: 0.55 });
+      // actual FIRE: several flame tongues per frame across the pool (denser
+      // near the center), plus a flickering ground glow + real light
+      for (let f = 0; f < 4; f++) {
+        if (Math.random() > dt * 55) continue;
+        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * N.radius * 0.9;
+        SKY.Effects.flame(_v.set(pl.pos.x + Math.cos(a) * r, pl.pos.y + 0.08, pl.pos.z + Math.sin(a) * r),
+          SKY.U.rand(0.85, 1.3));
       }
+      const flick = 0.75 + Math.random() * 0.5;
+      if (pl.glow) pl.glow.material.opacity = 0.24 * flick * Math.min(1, pl.t);
+      if (pl.light) pl.light.intensity = 2.1 * flick * Math.min(1, pl.t + 0.3);
       if (pl.tickT <= 0) {
         pl.tickT = 0.3;
         for (const p of SKY.Game.pawns) {
@@ -205,10 +198,10 @@ SKY.Grenades = (function () {
           if (p !== pl.owner && pl.owner && pl.owner.isLocal) SKY.HUD.hitmark(1);
           // flame column under whoever just got juggled
           _imp.set(p.pos.x, p.pos.y + 0.3, p.pos.z);
-          SKY.Effects.burst(_imp, { count: 9, speed: 5, color: '#ff8a3a', gravity: -4, life: 0.5, size: 0.75 });
+          for (let f = 0; f < 3; f++) SKY.Effects.flame(_imp, 1.4);
         }
       }
-      if (pl.t <= 0) pools.splice(i, 1);
+      if (pl.t <= 0) removePool(i);
     }
 
     // ----- vortices -----
@@ -216,11 +209,14 @@ SKY.Grenades = (function () {
       const vx = vortices[i];
       const N = SKY.TUNING.grenades.vortex;
       vx.t -= dt;
-      if (Math.random() < dt * 40) {
-        const a = Math.random() * Math.PI * 2;
-        SKY.Effects.burst(_v.set(vx.pos.x + Math.cos(a) * N.radius * 0.8, vx.pos.y + SKY.U.rand(-1, 2), vx.pos.z + Math.sin(a) * N.radius * 0.8),
-          { count: 1, speed: 0.5, color: '#a48aff', gravity: 0, life: 0.4, size: 0.4 });
+      // orbiting streaks — the cloud visibly ROTATES toward the center
+      for (let s = 0; s < 3; s++) {
+        if (Math.random() > dt * 55) continue;
+        const a = Math.random() * Math.PI * 2, rr = N.radius * SKY.U.rand(0.35, 0.95);
+        SKY.Effects.swirl(_v.set(vx.pos.x + Math.cos(a) * rr, vx.pos.y + SKY.U.rand(-1.2, 1.6),
+          vx.pos.z + Math.sin(a) * rr), vx.pos, SKY.U.rand(5, 9));
       }
+      if (Math.random() < dt * 2.5) SKY.Effects.ring(vx.pos.clone(), '#a48aff', N.radius * 0.9, 0.55);
       // every client pulls its OWN pawns (remote pawns are pulled by their
       // own sim, since all clients spawn the same vortex) — this is what
       // makes the vortex actually grab other players online
@@ -247,10 +243,38 @@ SKY.Grenades = (function () {
 
   function igniteMolly(n, i) {
     const N = SKY.TUNING.grenades.molly;
-    pools.push({ pos: n.pos.clone(), t: N.duration, tickT: 0, owner: n.owner, auth: n.auth });
+    // find the actual surface (the resting nade floats ~0.14 above it)
+    const gh = SKY.World.raycast(_v.set(n.pos.x, n.pos.y + 0.2, n.pos.z), _imp.set(0, -1, 0), 3);
+    const groundY = gh ? gh.point.y : n.pos.y - 0.14;
+    // flickering ground glow disc + a real orange light over the pool
+    const glow = new THREE.Mesh(
+      new THREE.CircleGeometry(N.radius, 24),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color('#ff6a26').convertSRGBToLinear(),
+        transparent: true, opacity: 0.24, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      }));
+    glow.rotation.x = -Math.PI / 2;
+    glow.position.set(n.pos.x, groundY + 0.05, n.pos.z);
+    const light = new THREE.PointLight(0xff7a30, 2.1, N.radius * 4.5, 2);
+    light.position.set(n.pos.x, groundY + 1.2, n.pos.z);
+    scene.add(glow, light);
+    pools.push({ pos: n.pos.clone(), t: N.duration, tickT: 0, owner: n.owner, auth: n.auth,
+      glow, light });
     SKY.Effects.ring(n.pos.clone(), '#ff7a3a', N.radius * 1.6, 0.5);
+    // the pool chars the ground under it (outlives the fire a little)
+    if (gh && SKY.Effects.scorch) {
+      SKY.Effects.scorch(gh.point, gh.normal, N.radius * 1.15, N.duration + 7);
+    }
     SKY.SFX.rumble();
     removeNade(i);
+  }
+
+  function removePool(i) {
+    const pl = pools[i];
+    if (pl.glow) scene.remove(pl.glow);
+    if (pl.light) scene.remove(pl.light);
+    pools.splice(i, 1);
   }
 
   function removeNade(i) {
@@ -260,7 +284,8 @@ SKY.Grenades = (function () {
 
   function clear() {
     for (let i = nades.length - 1; i >= 0; i--) removeNade(i);
-    pools.length = 0; vortices.length = 0;
+    for (let i = pools.length - 1; i >= 0; i--) removePool(i);
+    vortices.length = 0;
   }
 
   return {

@@ -1188,6 +1188,7 @@ SKY.Net = (function () {
     $('mp-home').classList.remove('hidden');
     $('mp-lobby').classList.add('hidden');
     SKY.HUD.playSub('online');
+    if (SKY.HUD.chatLobby) SKY.HUD.chatLobby(false);
     if (SKY.Attract && SKY.Attract.lobby) SKY.Attract.lobby(null);
   }
   function showLobby() {
@@ -1196,9 +1197,11 @@ SKY.Net = (function () {
     SKY.HUD.playSub('lobby');            // fullscreen stage over the 3D lineup
     $('mp-home').classList.remove('hidden');   // ready for when we come back
     $('mp-lobby').classList.remove('hidden');
+    if (SKY.HUD.chatLobby) SKY.HUD.chatLobby(true);   // discoverable chat input
     renderLobby();
   }
   function hideLobby() {
+    if (SKY.HUD.chatLobby) SKY.HUD.chatLobby(false);
     if (SKY.Attract && SKY.Attract.lobby) SKY.Attract.lobby(null);
   }
 
