@@ -400,33 +400,51 @@ SKY.Profile = (function () {
       if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
       return;
     }
-    if (type === 'halo') {             // BLOOD MOON: precessing crimson ring
+    if (type === 'halo') {
+      // BLOOD MOON: a FLOWING ring of blood embers — two comet streams chase
+      // each other around a slowly precessing orbit, bright at the head and
+      // fading down the tail (the solid torus ring read cheap + off-color)
       const fx = new THREE.Group();
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(rad + 0.075, 0.0035, 6, 44),
-        new THREE.MeshBasicMaterial({ color: 0xff2e4a, transparent: true,
-          opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
-      ring.position.copy(c);
-      const N2 = 8;
+      const N2 = 46;
       const pos2 = new Float32Array(N2 * 3);
-      const drops = new THREE.Points(
-        new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos2, 3)),
-        new THREE.PointsMaterial({ color: 0xff4a5e, size: 0.008, map: softDot(),
-          transparent: true, opacity: 0.85, depthWrite: false,
-          blending: THREE.AdditiveBlending, sizeAttenuation: true }));
-      drops.frustumCulled = false;
-      fx.add(ring, drops);
+      const col2 = new Float32Array(N2 * 3);
+      const geo2 = new THREE.BufferGeometry();
+      geo2.setAttribute('position', new THREE.BufferAttribute(pos2, 3));
+      geo2.setAttribute('color', new THREE.BufferAttribute(col2, 3));
+      const pts2 = new THREE.Points(geo2, new THREE.PointsMaterial({
+        size: 0.0095, map: softDot(), vertexColors: true, transparent: true,
+        opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending,
+        sizeAttenuation: true }));
+      pts2.frustumCulled = false;
+      fx.add(pts2);
+      const R2 = rad + 0.07;
+      // additive particles WASH WHITE over bright skies — the tail must run
+      // nearly black (invisible in additive) so only the comet heads burn
+      const bright = new THREE.Color('#ff4652');
+      const midC = new THREE.Color('#a3121f');
+      const dim = new THREE.Color('#1c0306');
+      const _cc = new THREE.Color();
       fx.userData.tick = (t) => {
-        ring.rotation.set(Math.sin(t * 0.7) * 0.5, t * 0.9, Math.cos(t * 0.55) * 0.5);
-        ring.material.opacity = 0.4 + 0.25 * Math.sin(t * 1.3);
-        const a2 = drops.geometry.attributes.position.array;
+        const tiltX = Math.sin(t * 0.5) * 0.4, tiltZ = Math.cos(t * 0.42) * 0.4;
         for (let i = 0; i < N2; i++) {
-          const an = t * 1.1 + (i / N2) * Math.PI * 2;
-          a2[i * 3] = c.x + Math.cos(an) * (rad + 0.075);
-          a2[i * 3 + 1] = c.y + Math.sin(an * 2.3) * 0.03;
-          a2[i * 3 + 2] = c.z + Math.sin(an) * (len * 0.4);
+          const u = i / N2;
+          const an = u * Math.PI * 2 + t * 1.15;   // the whole orbit turns...
+          const x = Math.cos(an) * R2;
+          const z = Math.sin(an) * (len * 0.42);
+          pos2[i * 3] = c.x + x;
+          pos2[i * 3 + 1] = c.y + x * tiltZ * 0.45 + z * tiltX * 0.4 +
+            Math.sin(an * 3 + t) * 0.006;          // ...on a precessing plane
+          pos2[i * 3 + 2] = c.z + z;
+          // ...while two ember HEADS drift through the particles, each
+          // dragging an exponential tail — reads as flowing streams
+          const ph = ((u - t * 0.16) % 1 + 1) % 1;
+          const k = Math.min(1, Math.exp(-ph * 12) + Math.exp(-((ph + 0.5) % 1) * 12) * 0.8);
+          _cc.copy(dim).lerp(midC, Math.min(1, k * 1.3));
+          if (k > 0.65) _cc.lerp(bright, (k - 0.65) / 0.35);
+          col2[i * 3] = _cc.r; col2[i * 3 + 1] = _cc.g; col2[i * 3 + 2] = _cc.b;
         }
-        drops.geometry.attributes.position.needsUpdate = true;
+        geo2.attributes.position.needsUpdate = true;
+        geo2.attributes.color.needsUpdate = true;
       };
       group.add(fx);
       if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
