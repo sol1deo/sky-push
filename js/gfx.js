@@ -164,6 +164,34 @@ SKY.GFX = (function () {
     'box-large', 'box-open', 'bucket', 'barrel-open', 'resource-planks',
     'resource-wood', 'resource-stone', 'metal-panel', 'floor-old', 'fence-fortified',
     'tool-axe', 'tool-pickaxe'];
+  // Kenney Holiday Kit — winter/christmas: snowy trees, cabins (walk-in, doors
+  // swing via the door-rotate convention), sleds, presents, snowman, trainset,
+  // menorah/kinara/festivus for everyone else (folder: holiday/, ×4)
+  const HOLIDAY_NAMES = ['bench', 'bench-short', 'cabin-corner', 'cabin-corner-bottom',
+    'cabin-corner-logs', 'cabin-door-rotate', 'cabin-doorway', 'cabin-doorway-center',
+    'cabin-doorway-left', 'cabin-doorway-right', 'cabin-fence',
+    'cabin-overhang-door-rotate', 'cabin-overhang-doorway', 'cabin-roof',
+    'cabin-roof-chimney', 'cabin-roof-corner', 'cabin-roof-dormer', 'cabin-roof-point',
+    'cabin-roof-snow', 'cabin-roof-snow-chimney', 'cabin-roof-snow-corner',
+    'cabin-roof-snow-dormer', 'cabin-roof-snow-point', 'cabin-roof-top', 'cabin-wall',
+    'cabin-wall-low', 'cabin-wall-roof', 'cabin-wall-roof-center', 'cabin-wall-wreath',
+    'cabin-window-a', 'cabin-window-b', 'cabin-window-c', 'cabin-window-large',
+    'candy-cane-green', 'candy-cane-red', 'festivus-pole', 'floor-stone', 'floor-wood',
+    'floor-wood-snow', 'gingerbread-man', 'gingerbread-woman', 'hanukkah-dreidel',
+    'hanukkah-menorah', 'hanukkah-menorah-candles', 'kwanzaa-kikombe', 'kwanzaa-kinara',
+    'kwanzaa-kinara-alternative', 'lantern', 'lantern-hanging', 'lights-colored',
+    'lights-green', 'lights-red', 'nutcracker', 'present-a-cube', 'present-a-rectangle',
+    'present-a-round', 'present-b-cube', 'present-b-rectangle', 'present-b-round',
+    'reindeer', 'rocks-large', 'rocks-medium', 'rocks-small', 'sled', 'sled-long',
+    'snow-bunker', 'snowflake-a', 'snowflake-b', 'snowflake-c', 'snow-flat',
+    'snow-flat-large', 'snowman', 'snowman-hat', 'snow-pile', 'sock-green',
+    'sock-green-cane', 'sock-red', 'sock-red-cane', 'train-locomotive',
+    'trainset-rail-bend', 'trainset-rail-corner', 'trainset-rail-detailed-bend',
+    'trainset-rail-detailed-corner', 'trainset-rail-detailed-straight',
+    'trainset-rail-straight', 'train-tender', 'train-wagon', 'train-wagon-flat',
+    'train-wagon-flat-short', 'train-wagon-logs', 'train-wagon-short', 'tree',
+    'tree-decorated', 'tree-decorated-snow', 'tree-snow-a', 'tree-snow-b', 'tree-snow-c',
+    'wreath', 'wreath-decorated'];
   // new packs load generically; prefixes keep the flat prop registry
   // collision-free ('ship-large' exists in pirate AND watercraft). lambert:
   // swap PBR materials for Lambert — untextured Standard colors wash out
@@ -174,6 +202,10 @@ SKY.GFX = (function () {
     { dir: 'boats', prefix: 'sea-', names: BOAT_NAMES, folder: 'boats & ships', scale: 1, lambert: true },
     { dir: 'roads', prefix: 'rd-', names: ROAD_NAMES, folder: 'roads & park', scale: 4, lambert: true },
     { dir: 'camp', prefix: 'camp-', names: CAMP_NAMES, folder: 'camping', scale: 4, lambert: true },
+    { dir: 'holiday', prefix: 'hol-', names: HOLIDAY_NAMES, folder: 'winter & holiday', scale: 4, lambert: true },
+    // Santa (poly.pizza, J-Toastie, CC-BY 3.0) — rigged GLB rendered as a
+    // statue; bind-pose geometry is ~1.2m, so ×1.7 puts him at ~2m tall
+    { dir: 'holiday', prefix: 'hol-', names: ['santa'], folder: 'winter & holiday', scale: 1.7, lambert: true },
   ];
 
   /* toy-style character cast (Quaternius UACP) — each GLB carries its own
@@ -406,6 +438,24 @@ SKY.GFX = (function () {
     const settle = () => { tick(); if (--pending === 0) groupDone(); };
     const store = (name, scale, lambert) => (g) => {
       let root = g.scene || g.scenes[0];
+      // rigged one-offs (santa) become STATUES: prop() hands out plain
+      // .clone()s, and a cloned SkinnedMesh loses its skeleton = invisible.
+      // Swap to static meshes in bind pose + drop the bone tree.
+      const skinned = [];
+      root.traverse((o) => { if (o.isSkinnedMesh) skinned.push(o); });
+      for (const sm of skinned) {
+        const st = new THREE.Mesh(sm.geometry, sm.material);
+        st.position.copy(sm.position);
+        st.quaternion.copy(sm.quaternion);
+        st.scale.copy(sm.scale);
+        sm.parent.add(st);
+        sm.parent.remove(sm);
+      }
+      if (skinned.length) {
+        const bones = [];
+        root.traverse((o) => { if (o.isBone) bones.push(o); });
+        for (const b of bones) { if (b.parent && !b.parent.isBone) b.parent.remove(b); }
+      }
       const k = scale !== undefined ? scale : PACK_SCALE[name];
       if (k && k !== 1) {
         const inner = new THREE.Group();

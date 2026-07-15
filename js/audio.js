@@ -38,6 +38,7 @@ SKY.SFX = (function () {
   // across the map ("why do I hear sword fights, we have no swords")
   const MANIFEST = {
     fire_light: 4, fire_med: 4, fire_heavy: 2, fire_sniper: 3, glfire: 3,
+    flame: 1,
     boom: 3, boom_low: 1, thunder_smp: 1,
     hit: 2, headshot: 2, land: 2, step: 5, pad: 1, grapple: 1,
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
@@ -110,15 +111,31 @@ SKY.SFX = (function () {
     return labReverbNode;
   }
 
+  /* has this lab cfg actually been CHANGED from the defaults? (selecting an
+     event in the lab creates a default cfg — that alone must not override) */
+  function labTouched(c) {
+    return !!(c && (c.mute || (c.vol !== undefined && c.vol !== 1) ||
+      (c.rate !== undefined && c.rate !== 1) || c.offset != null ||
+      (c.rev || 0) > 0 || (c.lp && c.lp < 19000)));
+  }
+
   /* play a bank sample; `variant` picks a FIXED take (weapons must sound the
      same every shot), otherwise a random one (footsteps like variety).
+     `wkey` = an optional PER-WEAPON lab key ('wfire_mega'): when that event
+     was tweaked (or given its own file) it replaces the shared bank cfg, so
+     every gun on one bank can still be tuned separately in the SFX LAB.
      Returns false when the bank isn't ready so callers can fall back to the
      synth version */
-  function sample(name, vol, rate, delay, variant) {
+  function sample(name, vol, rate, delay, variant, wkey) {
     if (!ctx || !master) return false;
-    const o = LAB.events[name];
+    let o = LAB.events[name];
+    let custom = LAB.buffers[name] || null;
+    if (wkey) {
+      const wo = LAB.events[wkey];
+      const wb = LAB.buffers[wkey] || null;
+      if (wb || labTouched(wo)) { o = wo; custom = wb || custom; }
+    }
     if (o && o.mute) return true;              // deliberately silenced
-    const custom = LAB.buffers[name] || null;
     const b = bank[name];
     if (!custom && !b) return false;
     const buf = custom || (variant === undefined
@@ -368,10 +385,20 @@ SKY.SFX = (function () {
       const a = att(dist);
       if (a < 0.05) return;
       const row = FIRE_SND[kind] || FIRE_SND.blaster;
-      if (sample(row[0], row[2] * a, row[1], 0, row[3])) return;
+      // 'wfire_<kind>' = the SFX LAB's per-weapon override slot
+      if (sample(row[0], row[2] * a, row[1], 0, row[3], 'wfire_' + kind)) return;
       const v = SKY.U.clamp(k, 0.45, 1.4) * a;
       noise(0.04, 3200, 0.22 * v, 'highpass');
       tone(420, 180, 0.07, 'triangle', 0.18 * v);
+    },
+    /* flamethrower jet: its own event (throttled to ~6/s by the caller) —
+       overlapping 0.55s roars read as one continuous flame */
+    flame(dist) {
+      const a = att(dist);
+      if (a < 0.05) return;
+      if (sample('flame', 0.55 * a, SKY.U.rand(0.96, 1.05))) return;
+      noise(0.3, 750, 0.2 * a, 'bandpass');
+      noise(0.28, 240, 0.22 * a, 'lowpass', 0.02);
     },
     headshot(dist){ const a = att(dist);
                 if (sample('headshot', 0.3 * a, 1.45)) return;
@@ -598,12 +625,33 @@ SKY.SFX = (function () {
     /* ================= SFX LAB (js/sfxlab.js drives this) ================= */
     labState: LAB,                    // { events: {name: cfg}, buffers }
     labBankNames() { return Object.keys(MANIFEST); },
+    /* per-weapon fire slots ('wfire_mega') resolve to the exact bank take
+       that weapon is pinned to, so the lab shows/plays the right sound */
+    labFireKinds() { return Object.keys(FIRE_SND); },
+    labFireRow(name) {
+      if (name.slice(0, 6) !== 'wfire_') return null;
+      return FIRE_SND[name.slice(6)] || FIRE_SND.blaster;
+    },
     labBankInfo(name) {
+      const fr = this.labFireRow(name);
+      if (fr) {
+        const b = bank[fr[0]];
+        return { takes: b && b.length && b[fr[3] % b.length] ? 1 : 0 };
+      }
       const b = bank[name];
       return { takes: b ? b.filter(Boolean).length : 0 };
     },
     /* the buffer the lab shows/edits: custom first, else bank take 0 */
-    labBuffer(name) { return LAB.buffers[name] || (bank[name] && bank[name][0]) || null; },
+    labBuffer(name) {
+      if (LAB.buffers[name]) return LAB.buffers[name];
+      const fr = this.labFireRow(name);
+      if (fr) {
+        if (LAB.buffers[fr[0]]) return LAB.buffers[fr[0]];   // bank-wide custom file
+        const b = bank[fr[0]];
+        return (b && b.length && b[fr[3] % b.length]) || null;
+      }
+      return (bank[name] && bank[name][0]) || null;
+    },
     labTrimOf(buf) { return trimStart(buf); },
     labSetBuffer(name, arrayBuffer) {
       if (!ctx) return Promise.reject(new Error('audio not started'));

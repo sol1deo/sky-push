@@ -108,7 +108,10 @@ SKY.Loot = (function () {
     }
     if (item.kind === 'nade') {
       const n = SKY.TUNING.grenades[item.nade];
-      return { glyph: GLYPHS[item.nade], name: n.label + ' ×' + item.count, color: n.color, kind,
+      // each grenade's own OUTLINE render (same icon as the HUD chip) — the
+      // generic glyph stays as the headless/failure fallback
+      const img = (SKY.Effects.nadeWireIcon && SKY.Effects.nadeWireIcon(item.nade, n.color)) || null;
+      return { img, glyph: GLYPHS[item.nade], name: n.label + ' ×' + item.count, color: n.color, kind,
         desc: item.nade === 'he' ? 'Classic boom. Cook it, lob it.'
             : item.nade === 'molly' ? 'Burning pool — stand in it and fly.'
             : 'Sucks everyone in, then POPS.' };

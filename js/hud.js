@@ -377,7 +377,8 @@ SKY.HUD = (function () {
       const d = SKY.Loot.describe(item);
       const r = SKY.Loot.RARITY[item.rarity] || { label: '', color: '#c6cdd9' };
       t.innerHTML =
-        `<span class="pt-ico" style="color:${d.color || r.color}">${d.glyph || ''}</span>
+        `<span class="pt-ico" style="color:${d.color || r.color}">${d.img
+          ? `<img src="${d.img}" alt="">` : (d.glyph || '')}</span>
          <span class="pt-tx"><b style="color:${r.color}">${d.name}</b></span>`;
       t.classList.remove('hidden', 'punch');
       void t.offsetWidth;

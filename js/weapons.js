@@ -228,7 +228,9 @@ SKY.Weapons = (function () {
       SKY.Effects.muzzleLight(_muzzle);
       if ((pawn._jetSfxT || 0) <= SKY.Game.time) {
         pawn._jetSfxT = SKY.Game.time + 0.16;
-        SKY.SFX.fire(pawn.weapon, push.tier / 3, W.kick, listenDist(_muzzle));
+        // its own roaring event (SFX LAB: 'flame') — a gunshot bank here read
+        // as "the flamethrower fires bullets"
+        SKY.SFX.flame(listenDist(_muzzle));
       }
     } else {
       SKY.Effects.muzzle(_muzzle, (skinDef && skinDef.muzzleColor) || W.color, pawn.isLocal, W.kick);
@@ -477,6 +479,12 @@ SKY.Weapons = (function () {
         } else if (res.pawn) {
           // remote-owned bullet: cosmetic impact only (their sim decides)
           SKY.Effects.hitBurst(point.clone(), 0, b.skin ? b.skin.color : b.color);
+        } else if (b.flame) {
+          // fire licks the surface and leaves a BURN, not a bullet hole
+          SKY.Effects.flamePuff(point.clone().addScaledVector(res.world.normal, 0.25), 1.1);
+          if (Math.random() < 0.4) {   // 18 rps would flush the decal ring
+            SKY.Effects.burnMark(point, res.world.normal);
+          }
         } else {
           if (b.skin) SKY.Effects.skinImpact(point, res.world.normal, b.skin.trail);
           else SKY.Effects.impactSpark(point, res.world.normal);
@@ -655,8 +663,19 @@ SKY.Weapons = (function () {
       });
       SKY.Effects.tintTracer(bullets[bullets.length - 1].vis, sTracer ? sTracer.color : null);
     }
-    SKY.Effects.muzzle(ori, (skinDef && skinDef.muzzleColor) || W.color, false, W.kick);
-    SKY.SFX.fire(m.w, m.tier / 3, W.kick * 0.6, listenDist(ori));
+    if (W.flameJet) {
+      // remote flamethrowers roar + billow like the local one (throttled —
+      // 18 rps of gunshot bank + muzzle burst was the "bullet sounds" bug)
+      const d0 = m.dirs[0];
+      if (d0) SKY.Effects.flameJet(ori, new THREE.Vector3(d0[0], d0[1], d0[2]), pspd);
+      if ((pawn._jetSfxT || 0) <= SKY.Game.time) {
+        pawn._jetSfxT = SKY.Game.time + 0.16;
+        SKY.SFX.flame(listenDist(ori));
+      }
+    } else {
+      SKY.Effects.muzzle(ori, (skinDef && skinDef.muzzleColor) || W.color, false, W.kick);
+      SKY.SFX.fire(m.w, m.tier / 3, W.kick * 0.6, listenDist(ori));
+    }
     // remote pawns don't tick cooldowns here — raise their gun arm anyway
     if (pawn.avatar && pawn.avatar.hotFor) pawn.avatar.hotFor(0.9);
   }

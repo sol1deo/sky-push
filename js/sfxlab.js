@@ -56,13 +56,19 @@ SKY.SfxLab = (function () {
   /* -------- catalog: every tunable event, its group and a REAL in-game
      trigger so what you hear in the lab is exactly what the game plays ---- */
   const S = () => SKY.SFX;
+  /* pretty per-gun labels for the override slots */
+  const wLabel = (k) => {
+    const w = SKY.TUNING && SKY.TUNING.weapons && SKY.TUNING.weapons[k];
+    return (w && w.label) || (k === 'seeker' ? 'TAG CANNON (IT)' : k.toUpperCase());
+  };
   const CATALOG = [
     ['WEAPONS', [
-      ['fire_light', 'Fire — light (pistol/burst/rico/magnum/flamer)', () => S().fire('pistol', 1, 1, 0)],
+      ['fire_light', 'Fire — light (pistol/burst/rico/magnum)', () => S().fire('pistol', 1, 1, 0)],
       ['fire_med', 'Fire — medium (smg/rifle/mega/minigun)', () => S().fire('smg', 1, 1, 0)],
       ['fire_heavy', 'Fire — heavy (scatter/boom/tag)', () => S().fire('scatter', 1, 1.6, 0)],
       ['fire_sniper', 'Fire — sniper (longshot/piston)', () => S().fire('longshot', 1, 1, 0)],
       ['glfire', 'Fire — launcher (lobber/quad)', () => S().fire('lobber', 1, 1.4, 0)],
+      ['flame', 'Flamethrower jet', () => S().flame(0)],
       ['reload', 'Reload start', () => S().reload()],
       ['reload_done', 'Reload complete', () => S().reloadDone()],
       ['dry', 'Empty mag click', () => S().dry()],
@@ -72,6 +78,12 @@ SKY.SfxLab = (function () {
       ['grapmiss', 'Grapple miss', () => S().grapMiss()],
       ['bounce', 'Ricochet bounce', () => S().bounce(3)],
     ]],
+    // per-gun override slots: guns sharing one bank (rifle + mega + minigun
+    // all ride fire_med) get their OWN volume/pitch/file here — until a slot
+    // is touched, the gun keeps using the shared bank sound above
+    ['PER-GUN FIRE', (SKY.SFX.labFireKinds ? SKY.SFX.labFireKinds() : [])
+      .filter((k) => k !== 'flamer')          // the flamer has its own event
+      .map((k) => ['wfire_' + k, wLabel(k), () => S().fire(k, 1, 1, 0)])],
     ['IMPACTS', [
       ['hit', 'Bullet hit (body)', () => S().hit(0.6, 4)],
       ['headshot', 'Headshot', () => S().headshot(4)],
@@ -346,7 +358,11 @@ SKY.SfxLab = (function () {
             <button id="sfx-reset" class="warn">RESET</button>
             <input type="file" id="sfx-filein" accept="audio/*" style="display:none">
           </div>
-          <div class="hint">TEST plays through the exact in-game call (same volume math) —
+          <div class="hint">${sel.indexOf('wfire_') === 0
+            ? `PER-GUN SLOT: this gun's shared bank sound plays UNCHANGED until you move a
+            slider (or drop a file) here — then these settings replace the shared ones for
+            THIS gun only. Reset returns it to the shared sound.<br><br>`
+            : ''}TEST plays through the exact in-game call (same volume math) —
           watch the meter up top: signal there = the game hears it too. SYNC repeats the
           trigger with a screen flash at the trigger instant; drag START TRIM until sound
           and flash line up. Dropping in a file auto-trims its silent lead-in. Everything

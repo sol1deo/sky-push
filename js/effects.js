@@ -522,6 +522,36 @@ SKY.Effects = (function () {
     scorchTexCv = new THREE.CanvasTexture(cv);
     return scorchTexCv;
   }
+  /* flamethrower burn: charred blotch with a faint ember-orange rim — walls
+     read as BURNT, not shot (the bullet-hole chips looked like gunfire) */
+  let burnTexCv = null;
+  function burnTex() {
+    if (burnTexCv) return burnTexCv;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 96;
+    const g = cv.getContext('2d');
+    const grad = g.createRadialGradient(48, 48, 3, 48, 48, 46);
+    grad.addColorStop(0, 'rgba(6,5,4,0.88)');
+    grad.addColorStop(0.45, 'rgba(12,9,7,0.62)');
+    grad.addColorStop(0.72, 'rgba(52,26,10,0.30)');   // scorched-brown halo
+    grad.addColorStop(0.88, 'rgba(96,44,14,0.12)');   // faint ember rim
+    grad.addColorStop(1, 'rgba(20,12,8,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(48, 48, 46, 0, Math.PI * 2); g.fill();
+    // soot blotches, denser toward the middle (soft — spokes read cartoony)
+    for (let i = 0; i < 22; i++) {
+      const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 34;
+      const br = 3 + Math.random() * 7;
+      const x = 48 + Math.cos(a) * r, y = 48 + Math.sin(a) * r;
+      const bg = g.createRadialGradient(x, y, 0, x, y, br);
+      bg.addColorStop(0, 'rgba(5,4,3,' + (0.34 * (1 - r / 52)).toFixed(2) + ')');
+      bg.addColorStop(1, 'rgba(5,4,3,0)');
+      g.fillStyle = bg;
+      g.beginPath(); g.arc(x, y, br, 0, Math.PI * 2); g.fill();
+    }
+    burnTexCv = new THREE.CanvasTexture(cv);
+    return burnTexCv;
+  }
   const _dz = new THREE.Vector3(0, 0, 1);
   function ensureDecals() {
     if (decals.length) return;
@@ -1145,9 +1175,80 @@ SKY.Effects = (function () {
   }
 
   /* ================================================================= */
+  /* ---------------- SNOW WEATHER ----------------
+   * One Points cloud recycled in a box around the camera. setSnow(x01) is
+   * the map's snowfall dial; setSnowStorm(k, dir) is the blizzard event's
+   * temporary boost (denser, faster, wind-slanted). Round-65 lesson: bare
+   * gl_Points draw as hard squares — the radial blob map is mandatory. */
+  const SNOW_N = 1100;
+  const SNOW_HX = 46, SNOW_HY = 26, SNOW_HZ = 46;
+  let snowPts = null, snowGeo = null, snowMat = null, snowVel = null;
+  let snowAmt = 0, snowStorm = 0;
+  const snowWind = new THREE.Vector3();
+  function ensureSnow() {
+    if (snowPts || !scene) return;
+    snowGeo = new THREE.BufferGeometry();
+    const pos = new Float32Array(SNOW_N * 3);
+    snowVel = new Float32Array(SNOW_N * 2);          // [fall speed, drift phase]
+    for (let i = 0; i < SNOW_N; i++) {
+      pos[i * 3] = SKY.U.rand(-SNOW_HX, SNOW_HX);
+      pos[i * 3 + 1] = SKY.U.rand(-SNOW_HY, SNOW_HY);
+      pos[i * 3 + 2] = SKY.U.rand(-SNOW_HZ, SNOW_HZ);
+      snowVel[i * 2] = 2.2 + Math.random() * 2.6;
+      snowVel[i * 2 + 1] = Math.random() * Math.PI * 2;
+    }
+    snowGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    snowMat = new THREE.PointsMaterial({
+      map: SKY.U.blobTexture(), color: 0xf4f8ff, size: 0.16,
+      transparent: true, opacity: 0.8, depthWrite: false,
+    });
+    snowPts = new THREE.Points(snowGeo, snowMat);
+    snowPts.frustumCulled = false;
+    snowPts.renderOrder = 3;
+    scene.add(snowPts);
+  }
+  const _snowWrap = (v, half) => {
+    const span = half * 2;
+    return ((v % span) + span * 1.5) % span - half;
+  };
+  function tickSnow(dt) {
+    const want = Math.min(1, snowAmt + snowStorm);
+    if (!snowPts && want <= 0.01) return;
+    ensureSnow();
+    if (!snowPts) return;
+    snowPts.visible = want > 0.01;
+    if (!snowPts.visible || !camera) return;
+    const n = Math.max(30, Math.floor(SNOW_N * want));
+    snowGeo.setDrawRange(0, n);
+    snowMat.opacity = 0.45 + 0.4 * want;
+    const cp = camera.position;
+    const t = performance.now() * 0.001;
+    const a = snowGeo.attributes.position.array;
+    for (let i = 0; i < n; i++) {
+      const ph = snowVel[i * 2 + 1];
+      let x = a[i * 3] + (Math.sin(t * 1.3 + ph) * 0.55 + snowWind.x) * dt;
+      let y = a[i * 3 + 1] - snowVel[i * 2] * (1 + snowStorm * 1.7) * dt;
+      let z = a[i * 3 + 2] + (Math.cos(t * 1.1 + ph * 1.7) * 0.55 + snowWind.z) * dt;
+      // recycle every flake into the camera-centered box (also covers the
+      // camera itself moving — flakes wrap instead of being left behind)
+      a[i * 3] = cp.x + _snowWrap(x - cp.x, SNOW_HX);
+      a[i * 3 + 1] = cp.y + _snowWrap(y - cp.y, SNOW_HY);
+      a[i * 3 + 2] = cp.z + _snowWrap(z - cp.z, SNOW_HZ);
+    }
+    snowGeo.attributes.position.needsUpdate = true;
+  }
+
   return {
     shakeOffset: shakeOff,
     splash, underwater, stream,
+    /* map snowfall dial (0 = clear skies) */
+    setSnow(x01) { snowAmt = SKY.U.clamp01(x01 || 0); },
+    /* blizzard event: k = 0..1 storm strength, dir = world wind direction */
+    setSnowStorm(k, dir) {
+      snowStorm = SKY.U.clamp01(k || 0);
+      if (dir && snowStorm > 0) snowWind.copy(dir).setY(0).normalize().multiplyScalar(14 * snowStorm);
+      else snowWind.set(0, 0, 0);
+    },
     camera() { return camera; },   // map culler / anyone needing the live cam
 
     init(sc, cam) {
@@ -1167,6 +1268,7 @@ SKY.Effects = (function () {
 
     tick(dt) {
       tickAnimMats();   // PULSE / SPECTRUM weapon finishes
+      tickSnow(dt);     // winter weather (map dial + blizzard events)
       // particles
       for (const p of parts) {
         if (p.life <= 0) continue;
@@ -1394,6 +1496,10 @@ SKY.Effects = (function () {
     /* decals */
     bulletHole(pos, normal) {
       placeDecal(pos, normal, 0.15 + Math.random() * 0.07, bulletHoleTex(), 14);
+    },
+    /* flame impact: a bigger, softer BURN mark */
+    burnMark(pos, normal) {
+      placeDecal(pos, normal, 0.7 + Math.random() * 0.55, burnTex(), 12);
     },
     scorch(pos, normal, size, life) {
       placeDecal(pos, normal, size || 2, scorchTex(), life || 18);

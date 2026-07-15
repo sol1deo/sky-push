@@ -290,6 +290,11 @@ SKY.Editor = (function () {
         holder.remove(ph);
         holder.add(obj);
         if (entry) { entry.inner = obj; updateCollVis(entry, true); }
+        // winter: per-prop snow cover (or the map-wide blanket dial)
+        const snowAmt = Math.max(pr.snow || 0, (def && def.snowAll) || 0);
+        if (snowAmt > 0 && !(pr.asset || '').startsWith('fx:') && SKY.Assets.applySnow) {
+          SKY.Assets.applySnow(obj, snowAmt);
+        }
         if (entry && objects[sel] === entry && selBox) selBox.update();
         // world-position setup (the sea measures seabed depth per vertex)
         if (obj.userData && obj.userData.postPlace) {
@@ -370,6 +375,56 @@ SKY.Editor = (function () {
       texs: ['sand', 'rock', 'grass', 'dirt'], rep: 10,
     });
     status('terrain added — open SCULPT in the inspector to shape it');
+  }
+
+  /* Unity-style terrain adder: duplicate the selected terrain onto one of its
+     edges. The new tile's seam row COPIES the neighbor edge heights and the
+     edge SLOPE, then a Hermite curve eases both smoothly down to flat — a
+     hillside running off the old tile keeps rolling instead of cliffing. */
+  function extendTerrain(dx, dz) {
+    const o = objects[sel];
+    if (!o || o.kind !== 'terrain') return;
+    const tr = o.data;
+    const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128), n = segs + 1;
+    const sx = trSX(tr), sz = trSZ(tr);
+    const hts = o.hts, os = o.splat8;
+    // (j = along the seam, k = cells INTO each tile from the seam)
+    // heights layout: i = iz * n + ix · ix0 = x -sx/2 · iz0 = z -sz/2
+    const oldIdx =
+      dx > 0 ? (j, k) => j * n + (segs - k) :
+      dx < 0 ? (j, k) => j * n + k :
+      dz > 0 ? (j, k) => (segs - k) * n + j :
+               (j, k) => k * n + j;
+    const newIdx =
+      dx > 0 ? (j, k) => j * n + k :
+      dx < 0 ? (j, k) => j * n + (segs - k) :
+      dz > 0 ? (j, k) => k * n + j :
+               (j, k) => (segs - k) * n + j;
+    const nh = new Float32Array(n * n);
+    const ns = new Uint8Array(n * n * 4);
+    for (let j = 0; j <= segs; j++) {
+      const h0 = hts[oldIdx(j, 0)];
+      // outward slope per cell at the seam -> Hermite tangent over the tile
+      const m0 = (h0 - hts[oldIdx(j, 1)]) * segs;
+      for (let k = 0; k <= segs; k++) {
+        const t = k / segs;
+        // cubic Hermite: value h0 + slope m0 at the seam, flat 0 at the far edge
+        const h = h0 * (2 * t * t * t - 3 * t * t + 1) + m0 * (t * t * t - 2 * t * t + t);
+        nh[newIdx(j, k)] = SKY.U.clamp(h, tr.base ? 0 : -80, 160);
+        // texture paint continues off the seam row
+        const sb = oldIdx(j, 0) * 4, db = newIdx(j, k) * 4;
+        ns[db] = os[sb]; ns[db + 1] = os[sb + 1]; ns[db + 2] = os[sb + 2]; ns[db + 3] = os[sb + 3];
+      }
+    }
+    const nd = {
+      p: [tr.p[0] + dx * sx, tr.p[1], tr.p[2] + dz * sz],
+      sx, sz, size: Math.max(sx, sz), segs,
+      h: SKY.MapData.encodeHeights(nh), splat: SKY.MapData.encodeSplat(ns),
+      texs: (tr.texs || ['sand', 'rock', 'grass', 'dirt']).slice(), rep: tr.rep || 10,
+    };
+    if (tr.base) nd.base = tr.base;
+    addAndSelect(def.terrains, nd);
+    status('terrain extended — the seam matches, the slope eases into flat ground');
   }
 
   function enterSculpt(tool) {
@@ -628,37 +683,107 @@ SKY.Editor = (function () {
     refreshOutliner();
   }
 
+  /* -------- crown/lobby spot selection: the markers are CLICKABLE and the
+     gizmo drives them directly (they used to be set-only via the toolbar) -- */
+  let spotSel = null;   // 'crown' | 'lobby' — a spot marker owns the gizmo
+  function spotMesh() {
+    return spotSel === 'crown' ? crownMarker : spotSel === 'lobby' ? lobbyMarker : null;
+  }
+  function clearSpotSel() {
+    if (!spotSel) return;
+    spotSel = null;
+    if (gizmo) {
+      if (objects[sel]) gizmo.attach(objects[sel].mesh);
+      else gizmo.detach();
+    }
+  }
+  function selectSpot(kind) {
+    select(-1);                    // also exits sculpt/paint/collider modes
+    spotSel = kind;
+    const m = spotMesh();
+    if (!m) { spotSel = null; return; }
+    if (gizmo) {
+      gizmo.attach(m);
+      // crown: position only · lobby: position + yaw (never scale)
+      if (kind === 'crown' ? gizmo.mode !== 'translate' : gizmo.mode === 'scale') {
+        gizmo.setMode('translate');
+      }
+    }
+    status(kind === 'crown'
+      ? 'CROWN SPOT — G moves it · Del resets it to map center'
+      : 'LOBBY SPOT — G moves it · R spins the facing · Del clears it');
+  }
+  /* live gizmo motion -> def.crown / def.lobby */
+  function writeBackSpot(final) {
+    const m = spotMesh();
+    if (!m) return;
+    if (spotSel === 'crown') {
+      m.rotation.set(0, 0, 0); m.scale.setScalar(1);
+      def.crown = [+m.position.x.toFixed(2), +m.position.y.toFixed(2), +m.position.z.toFixed(2)];
+      if (final) {
+        const btn = document.getElementById('ed-crownspot');
+        if (btn) btn.classList.toggle('sel', crownIsCustom());
+      }
+    } else if (spotSel === 'lobby' && def.lobby) {
+      m.rotation.x = m.rotation.z = 0; m.scale.setScalar(1);
+      def.lobby.p = [+m.position.x.toFixed(2), +m.position.y.toFixed(2), +m.position.z.toFixed(2)];
+      def.lobby.yaw = +m.rotation.y.toFixed(3);
+    }
+    markDirty();
+  }
+  /* nearest spot marker under a screen point (for click-select) */
+  function pickSpotAt(clientX, clientY) {
+    _m.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
+    ray.setFromCamera(_m, camera);
+    let best = null;
+    for (const mk of [crownMarker, lobbyMarker]) {
+      if (!mk) continue;
+      const hits = ray.intersectObject(mk, true);
+      if (hits.length && (!best || hits[0].distance < best.d)) {
+        best = { kind: mk.userData.edspot, d: hits[0].distance };
+      }
+    }
+    return best;
+  }
+
   /* -------- lobby spot: where the pre-match character lineup stands --------
      Set from the CURRENT editor view (stand where the lobby camera should be,
-     look at where the line should stand, hit the button). Not a selectable
-     object — one marker, set/clear via the toolbar button. */
+     look at where the line should stand, hit the button). The marker is
+     CLICK-SELECTABLE: G moves it, R spins the facing (writes def.lobby). */
   let lobbyMarker = null;
   function updateLobbyMarker() {
     if (lobbyMarker && lobbyMarker.parent) lobbyMarker.parent.remove(lobbyMarker);
     lobbyMarker = null;
     const btn = document.getElementById('ed-lobbyspot');
     if (btn) btn.classList.toggle('sel', !!(def && def.lobby));
-    if (!def || !def.lobby || !group) return;
+    if (!def || !def.lobby || !group) {
+      if (spotSel === 'lobby') clearSpotSel();
+      return;
+    }
     const L = def.lobby;
     lobbyMarker = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({ color: 0x57e389, wireframe: true });
-    // a row of three stand-in figures + an arrow showing the facing
-    const fx = -Math.sin(L.yaw || 0), fz = -Math.cos(L.yaw || 0);
+    // children live in LOCAL space (facing -Z); the GROUP carries position +
+    // yaw, so the transform gizmo can drive the spot directly
     const figGeo = THREE.CapsuleGeometry
       ? new THREE.CapsuleGeometry(0.35, 1.1, 2, 6)
       : new THREE.CylinderGeometry(0.35, 0.35, 1.8, 6);
     for (let i = -1; i <= 1; i++) {
       const fig = new THREE.Mesh(figGeo, mat);
-      fig.position.set(L.p[0] + fz * i * 1.8, L.p[1] + 0.95, L.p[2] - fx * i * 1.8);
+      fig.position.set(-i * 1.8, 0.95, 0);
       lobbyMarker.add(fig);
     }
     const arr = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.9, 6), mat);
-    arr.position.set(L.p[0] + fx * 1.6, L.p[1] + 0.5, L.p[2] + fz * 1.6);
+    arr.position.set(0, 0.5, -1.6);
     arr.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(fx, 0, fz));   // cone points along the facing
+      new THREE.Vector3(0, 0, -1));   // cone points along the facing
     lobbyMarker.add(arr);
+    lobbyMarker.position.set(L.p[0], L.p[1], L.p[2]);
+    lobbyMarker.rotation.y = L.yaw || 0;
     lobbyMarker.traverse((o) => { o.userData.edmarker = true; });
+    lobbyMarker.userData.edspot = 'lobby';
     group.add(lobbyMarker);
+    if (spotSel === 'lobby' && gizmo) gizmo.attach(lobbyMarker);
   }
   /* -------- crown spot: where the Crown Rush crown spawns/returns --------
      Same flow as the lobby spot: aim at the spot, hit the button. def.crown
@@ -673,24 +798,30 @@ SKY.Editor = (function () {
     crownMarker = null;
     const btn = document.getElementById('ed-crownspot');
     if (btn) btn.classList.toggle('sel', crownIsCustom());
-    if (!crownIsCustom() || !group) return;
+    if (!crownIsCustom() || !group) {
+      if (spotSel === 'crown') clearSpotSel();
+      return;
+    }
     const c = def.crown;
     crownMarker = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({ color: 0xffd34d, wireframe: true });
+    // local-space children; the GROUP sits at the spot (gizmo-drivable)
     const band = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.25, 10, 1, true), mat);
-    band.position.set(c[0], c[1], c[2]);
     crownMarker.add(band);
     for (let i = 0; i < 5; i++) {                       // crown spikes
       const a = (i / 5) * Math.PI * 2;
       const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.35, 4), mat);
-      spike.position.set(c[0] + Math.cos(a) * 0.42, c[1] + 0.28, c[2] + Math.sin(a) * 0.42);
+      spike.position.set(Math.cos(a) * 0.42, 0.28, Math.sin(a) * 0.42);
       crownMarker.add(spike);
     }
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.2, 4), mat);
-    beam.position.set(c[0], c[1] - 1.6, c[2]);          // drop line to the ground
+    beam.position.set(0, -1.6, 0);                      // drop line to the ground
     crownMarker.add(beam);
+    crownMarker.position.set(c[0], c[1], c[2]);
     crownMarker.traverse((o) => { o.userData.edmarker = true; });
+    crownMarker.userData.edspot = 'crown';
     group.add(crownMarker);
+    if (spotSel === 'crown' && gizmo) gizmo.attach(crownMarker);
   }
   function toggleCrownSpot() {
     if (crownIsCustom()) {
@@ -729,6 +860,8 @@ SKY.Editor = (function () {
   }
 
   function applyMood() {
+    // weather preview follows the map's snowfall dial (Editor.frame ticks Effects)
+    if (SKY.Effects.setSnow) SKY.Effects.setSnow((def && def.snow) || 0);
     for (const l of lights) scene.remove(l);
     lights = [];
     if (env) { scene.remove(env); env = null; }
@@ -956,6 +1089,7 @@ SKY.Editor = (function () {
   }
 
   function select(i) {
+    spotSel = null;                 // a normal selection releases the spot
     if (facePaint) { facePaint = null; paintDrag = false; }
     texSlotEdit = -1;
     // changing selection always leaves sculpt mode
@@ -985,6 +1119,7 @@ SKY.Editor = (function () {
     if (msel.length > 1) status(msel.length + ' selected — drag moves all · del deletes all');
   }
 
+  let pickDist = Infinity;   // distance of the last pick() hit (spot compare)
   function pick(clientX, clientY) {
     _m.set((clientX / window.innerWidth) * 2 - 1, -(clientY / window.innerHeight) * 2 + 1);
     ray.setFromCamera(_m, camera);
@@ -993,6 +1128,7 @@ SKY.Editor = (function () {
       const hits = ray.intersectObject(o.mesh, true);
       if (hits.length && hits[0].distance < bestD) { bestD = hits[0].distance; best = i; }
     });
+    pickDist = bestD;
     return best;
   }
 
@@ -1250,6 +1386,8 @@ SKY.Editor = (function () {
           `<option value="${s}"${s === def.sky ? ' selected' : ''}>${s}</option>`).join('')}</select></div>
         ${numRow('Kill height', def.killY, 'killY', 1)}
         ${numRow('Light %', Math.round((def.light !== undefined ? def.light : 1) * 100), 'light', 10)}
+        ${numRow('Snowfall 0–1', def.snow !== undefined ? def.snow : 0, 'msnow', 0.1)}
+        ${numRow('Snow on props 0–1', def.snowAll !== undefined ? def.snowAll : 0, 'msnowall', 0.1)}
         <div class="ed-row"><span>Sun godrays</span>
           <input type="checkbox" data-k="shaftsOn" ${((def.shafts === undefined || def.shafts === null)
             ? SKY.MapData.MOODS[def.mood].shafts : def.shafts) ? 'checked' : ''}></div>
@@ -1416,6 +1554,15 @@ SKY.Editor = (function () {
         + numRow('Detail', d.segs || 48, 'tsegs', 8)
         + numRow('Tex tiling', d.rep || 10, 'trep', 1);
       if (d.base) h += numRow('Base depth', d.base, 'tbase', 1);
+      // Unity-style terrain adder: grow the ground tile by tile
+      h += `<div class="ed-row"><span>Add terrain <small>onto an edge — the seam
+          continues this tile's slope</small></span></div>
+        <div class="ed-row ed-faces">
+          <span class="ed-face" data-tadd="nx">◀ −X</span>
+          <span class="ed-face" data-tadd="px">+X ▶</span>
+          <span class="ed-face" data-tadd="nz">−Z ▲</span>
+          <span class="ed-face" data-tadd="pz">+Z ▼</span>
+        </div>`;
       const texs = d.texs || ['sand', 'rock', 'grass', 'dirt'];
       // whole-terrain FLAT COLOR: no textures, one paint — sets all 4 slots
       const allHex = texs.every(t => t && t[0] === '#' && t === texs[0]) ? texs[0] : '#7c8a5a';
@@ -1469,6 +1616,10 @@ SKY.Editor = (function () {
     } else if (o.kind === 'prop') {
       h += numRow('Rot Y°', (d.r ? d.r[1] : 0) * 180 / Math.PI, 'pr1', 5);
       h += numRow('Scale', d.scale || 1, 'pscale', 0.1);
+      // winter: whiten the prop's upward faces (desert rocks -> snowy rocks)
+      if (!(d.asset || '').startsWith('fx:')) {
+        h += numRow('Snow cover 0–1', d.snow !== undefined ? d.snow : 0, 'psnow', 0.1);
+      }
       h += `<div class="ed-row"><span>Solid</span><input type="checkbox" data-k="psolid"${d.solid !== false ? ' checked' : ''}></div>`;
       if (d.solid !== false) {
         h += `<div class="ed-row"><span>Collision</span><select data-k="pcoll">
@@ -1541,6 +1692,9 @@ SKY.Editor = (function () {
             + `<div class="ed-row"><span>Shallow tint</span><input type="color" data-k="fxshallow" value="${fx.shallow}"></div>`
             + numRow('Shallow opacity', fx.shallowAlpha, 'fxshalla', 0.05)
             + numRow('Depth fade m', fx.fade, 'fxfade', 1)
+            + numRow('Shore foam 0–1', fx.foam !== undefined ? fx.foam : 0.7, 'fxfoam', 0.1)
+            + numRow('Foam width m', fx.foamw !== undefined ? fx.foamw : 3, 'fxfoamw', 0.5)
+            + numRow('Shore wave m', fx.shorewave !== undefined ? fx.shorewave : 0.5, 'fxshorewave', 0.1)
             + numRow('Swim drag', fx.drag, 'fxdrag', 0.2)
             + numRow('Sink rate', fx.gravity, 'fxgrav', 0.05)
             + numRow('Swim speed ×', fx.speed, 'fxspeed', 0.05)
@@ -1551,7 +1705,9 @@ SKY.Editor = (function () {
             + `<div class="ed-hint">WATER: players SWIM inside it (forward dives where
             you look, SPACE up / CTRL down, SPACE at the surface jumps out).
             Shallow areas over a sculpted seabed pick up the SHALLOW TINT and
-            turn clearer — pair it with a TERRAIN for beaches.</div>`;
+            turn clearer — pair it with a TERRAIN for beaches. SHORE FOAM puts
+            fizzing wash on the waterline, SHORE WAVE rolls swells up to it —
+            both follow the shape of your coast automatically.</div>`;
         }
         // event timing (sea events: tsunami / triangle / kraken / shark)
         if (fx.start !== undefined) h += numRow('Starts at s', fx.start, 'fxstart', 5);
@@ -1612,6 +1768,22 @@ SKY.Editor = (function () {
         applyMood();
       }
       else if (k === 'shaftsOn') { def.shafts = e.target.checked; applyMood(); }
+      else if (k === 'msnow') {
+        // snowfall previews LIVE in the editor (Editor.frame ticks Effects)
+        def.snow = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 1);
+        if (SKY.Effects.setSnow) SKY.Effects.setSnow(def.snow);
+        markDirty();
+      }
+      else if (k === 'msnowall') {
+        def.snowAll = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 1);
+        // repaint every placed prop with the new blanket amount
+        for (const q of objects) {
+          if (q.kind !== 'prop' || !q.inner) continue;
+          if ((q.data.asset || '').startsWith('fx:')) continue;
+          SKY.Assets.applySnow(q.inner, Math.max(q.data.snow || 0, def.snowAll));
+        }
+        markDirty();
+      }
       else if (k === 'fogOn') {
         def.fog = e.target.checked ? { color: '#a8bede', near: 30, far: 150, exp: 0 } : null;
         applyMood();
@@ -1703,6 +1875,15 @@ SKY.Editor = (function () {
     else if (k === 'pr0') { d.r = d.r || [0, 0, 0]; d.r[0] = num * Math.PI / 180; }
     else if (k === 'pr2') { d.r = d.r || [0, 0, 0]; d.r[2] = num * Math.PI / 180; }
     else if (k === 'pscale') d.scale = Math.max(0.05, num);
+    else if (k === 'psnow') {
+      d.snow = SKY.U.clamp(num, 0, 1);
+      // live repaint — no rebuild needed, the uniform updates in place
+      if (o.inner && !(d.asset || '').startsWith('fx:')) {
+        SKY.Assets.applySnow(o.inner, Math.max(d.snow, def.snowAll || 0));
+      }
+      markDirty();
+      return;
+    }
     else if (k === 'psolid') { d.solid = e.target.checked; updateCollVis(o); syncInspector(); }
     else if (k === 'pcoll') {
       d.coll = e.target.value || null;
@@ -1782,6 +1963,9 @@ SKY.Editor = (function () {
       else if (k === 'fxshallow') d.fx.shallow = e.target.value;
       else if (k === 'fxshalla') d.fx.shallowAlpha = SKY.U.clamp(num, 0.02, 0.98);
       else if (k === 'fxfade') d.fx.fade = SKY.U.clamp(num, 0.5, 60);
+      else if (k === 'fxfoam') d.fx.foam = SKY.U.clamp(num, 0, 1);
+      else if (k === 'fxfoamw') d.fx.foamw = SKY.U.clamp(num, 0, 30);
+      else if (k === 'fxshorewave') d.fx.shorewave = SKY.U.clamp(num, 0, 3);
       else if (k === 'fxdrag') d.fx.drag = SKY.U.clamp(num, 0, 10);
       else if (k === 'fxgrav') d.fx.gravity = SKY.U.clamp(num, -1, 2);
       else if (k === 'fxspeed') d.fx.speed = SKY.U.clamp(num, 0.1, 3);
@@ -2254,6 +2438,11 @@ SKY.Editor = (function () {
           else writeBackCollider(true);
           return;
         }
+        if (spotSel) {                             // crown/lobby spot drag
+          if (e.value) push();
+          else writeBackSpot(true);
+          return;
+        }
         if (e.value) {
           push();                                  // undo point at drag start
           // group translate: remember where everyone started
@@ -2272,6 +2461,7 @@ SKY.Editor = (function () {
       });
       gizmo.addEventListener('objectChange', () => {
         if (collEdit) { writeBackCollider(false); return; }
+        if (spotSel) { writeBackSpot(false); return; }
         const o = objects[sel];
         if (!o) return;
         writeBack(o);
@@ -2425,6 +2615,14 @@ SKY.Editor = (function () {
           rebuildTerrainMesh(o);
           syncInspector();
         }
+        return;
+      }
+      // terrain adder chips: duplicate the tile onto an edge
+      const tadd = e.target.closest('[data-tadd]');
+      if (tadd) {
+        const dir = tadd.dataset.tadd;
+        extendTerrain(dir === 'px' ? 1 : dir === 'nx' ? -1 : 0,
+                      dir === 'pz' ? 1 : dir === 'nz' ? -1 : 0);
         return;
       }
       // terrain sculpt tool + paint channel chips
@@ -2631,7 +2829,10 @@ SKY.Editor = (function () {
           Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4 &&
           !(e.target.closest && e.target.closest('#editor-ov'))) {
         const hit = pick(e.clientX, e.clientY);
-        if (e.shiftKey && hit >= 0) toggleSel(hit);
+        // crown/lobby markers are clickable too — nearest surface wins
+        const spot = pickSpotAt(e.clientX, e.clientY);
+        if (spot && (hit < 0 || spot.d < pickDist) && !e.shiftKey) selectSpot(spot.kind);
+        else if (e.shiftKey && hit >= 0) toggleSel(hit);
         else select(hit);
       }
     });
@@ -2699,14 +2900,24 @@ SKY.Editor = (function () {
         if (e.code === 'KeyR') gizmo.setMode('rotate');
         if (e.code === 'KeyS') gizmo.setMode('scale');
       }
+      if (gizmo && spotSel) {   // crown = move only · lobby = move + spin
+        if (e.code === 'KeyG') gizmo.setMode('translate');
+        if (e.code === 'KeyR' && spotSel === 'lobby') gizmo.setMode('rotate');
+      }
       if (e.code === 'KeyE' && !e.repeat && !faceScrub) startFaceExtend();
       if (e.code === 'KeyF') dropSel();
       if (e.code === 'KeyD' && e.shiftKey) duplicateSel();
-      if (e.code === 'Delete' || e.code === 'Backspace') deleteSel();
+      if (e.code === 'Delete' || e.code === 'Backspace') {
+        // a selected spot deletes as "reset/clear" (same as its toolbar toggle)
+        if (spotSel === 'crown') { clearSpotSel(); toggleCrownSpot(); return; }
+        if (spotSel === 'lobby') { clearSpotSel(); toggleLobbySpot(); return; }
+        deleteSel();
+      }
       if (e.code === 'Escape') {
         if (pipette) { exitPipette(); syncInspector(); return; }
         if (facePaint) { exitFacePaint(); return; }
         if (terra) { exitSculpt(); return; }
+        if (spotSel) { clearSpotSel(); status(''); return; }
         select(-1);
       }
       const nstep = e.shiftKey ? 0.1 : 0.5;
@@ -2767,5 +2978,7 @@ SKY.Editor = (function () {
   api.resume = resume;
   api.frame = frame;
   api.init = init;
+  /* test/debug introspection only — not used by game code */
+  api._dbg = () => ({ def, objects, sel, spotSel, crownMarker, lobbyMarker });
   return api;
 })();

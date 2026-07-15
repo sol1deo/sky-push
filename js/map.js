@@ -1633,6 +1633,19 @@ SKY.Map = (function () {
 
   /* ---- per-kind build / tick (vis = { g, ...state }) ---- */
   const EV_BUILD = {
+    blizzard(pr, o) {
+      // no world geometry — the show is the snowstorm itself (Effects) plus
+      // the wind force; the marker's facing is the wind direction
+      const g = new THREE.Group();
+      group.add(g);
+      const yaw = (pr.r && pr.r[1]) || 0;
+      const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      if (SKY.Game.player) {
+        SKY.HUD.subMsg('BLIZZARD — heavy wind!', 2.5);
+        SKY.SFX.gust();
+      }
+      return { g, fwd, gustT: 0.8 };
+    },
     tsunami(pr, o) {
       const g = new THREE.Group();
       const col = new THREE.Color(o.color).convertSRGBToLinear();
@@ -1749,7 +1762,29 @@ SKY.Map = (function () {
     },
   };
 
+  /* teardown when an event's window closes (only kinds that leak state) */
+  const EV_END = {
+    blizzard() { if (SKY.Effects.setSnowStorm) SKY.Effects.setSnowStorm(0); },
+  };
+
   const EV_TICK = {
+    blizzard(vis, dt, phase, pr, o) {
+      // ramp in/out across the window so the storm doesn't pop
+      const k = Math.min(1, Math.min(phase, 1 - phase) * 6 + 0.12);
+      if (SKY.Effects.setSnowStorm) SKY.Effects.setSnowStorm(k, vis.fwd);
+      // gusty roar (local ambience only — forces below are the synced part)
+      vis.gustT -= dt;
+      if (vis.gustT <= 0) { vis.gustT = 1.6; SKY.SFX.gust(); }
+      // wind force along the marker's facing: deterministic surge off the
+      // synced round clock; airborne pawns catch the FULL blast (that's the
+      // "blown off the map" moment), grounded ones lean into it
+      const pow = o.power !== undefined ? o.power : 30;
+      const surge = 0.55 + 0.45 * Math.sin(SKY.Game.roundTime * 2.1);
+      for (const p of SKY.Game.pawns) {
+        if (!p.alive || p.isRemote) continue;
+        p.vel.addScaledVector(vis.fwd, pow * surge * k * (p.grounded ? 0.35 : 1) * dt);
+      }
+    },
     tsunami(v, dt, phase, pr, o) {
       // sweep: starts range/2 behind the marker, rides through along facing
       const along = -o.range / 2 + o.range * phase;
@@ -1863,7 +1898,11 @@ SKY.Map = (function () {
       if (want && !st.on) { st.on = true; st.vis = EV_BUILD[kind](pr, o); }
       else if (!want && st.on) {
         st.on = false;
-        if (st.vis) { group.remove(st.vis.g); st.vis = null; }
+        if (st.vis) {
+          if (EV_END[kind]) EV_END[kind](st.vis);
+          group.remove(st.vis.g);
+          st.vis = null;
+        }
       }
       if (st.on && st.vis) EV_TICK[kind](st.vis, dt, phase, pr, o);
     });
@@ -2083,6 +2122,7 @@ SKY.Map = (function () {
     const D = SKY.MapData;
     lightMul = def.light !== undefined ? def.light : 1;
     lobbySpotDef = (def.lobby && Array.isArray(def.lobby.p)) ? def.lobby : null;
+    if (SKY.Effects.setSnow) SKY.Effects.setSnow(def.snow || 0);   // winter maps
     SKY.World.killY = def.killY;
     SKY.World.crownHome = new THREE.Vector3(def.crown[0], def.crown[1], def.crown[2]);
     const M = D.MOODS[def.mood];
@@ -2181,7 +2221,8 @@ SKY.Map = (function () {
       const isDoor = pr.door !== undefined ? !!pr.door : /door-rotate/.test(nm);
       const doorIdx = isDoor ? doorSeq++ : -1;
       // SEA EVENTS: invisible markers -> deterministic clock-driven shows
-      if (a === 'fx:tsunami' || a === 'fx:triangle' || a === 'fx:kraken' || a === 'fx:shark') {
+      if (a === 'fx:tsunami' || a === 'fx:triangle' || a === 'fx:kraken' ||
+          a === 'fx:shark' || a === 'fx:blizzard') {
         registerSeaEvent(a.slice(3), pr);
       }
       // WATER: register the swim volume — pawn physics (swim/buoyancy) and
@@ -2382,6 +2423,12 @@ SKY.Map = (function () {
           else if (carved) for (const b of carved) SKY.World.addSolid(toSolid(b.c, b.s));
           else SKY.World.addSolid(solidOpts);
         }
+        // WINTER: per-prop snow cover, or the map-wide "snow everything" dial
+        // (fx entities keep their own custom materials)
+        const snowAmt = Math.max(pr.snow || 0, def.snowAll || 0);
+        if (snowAmt > 0 && !a.startsWith('fx:') && SKY.Assets.applySnow) {
+          SKY.Assets.applySnow(obj, snowAmt);
+        }
         // ---- perf: asset-heavy maps live or die here ----
         // small props stop casting shadows (the shadow pass was re-drawing
         // hundreds of pebbles/planks every frame)
@@ -2455,6 +2502,8 @@ SKY.Map = (function () {
     SKY.World.reset();
     SKY.World.rideSolids = [];
     scene.background = null;   // sky domes handle the backdrop
+    // weather resets with the map (buildCustomMap re-arms its own snowfall)
+    if (SKY.Effects.setSnow) { SKY.Effects.setSnow(0); SKY.Effects.setSnowStorm(0); }
     const custom = SKY.MapData && SKY.MapData.get(id);
     if (custom) {
       currentId = id;

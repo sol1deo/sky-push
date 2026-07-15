@@ -33,6 +33,10 @@ because these creators are great:
   manta ray from **Quaternius**' "Animated Fish Pack" and the "Squidle" monster
   from "Ultimate Monsters" (https://quaternius.com), CC0; GLB conversions via
   poly.pizza.
+- **Winter & holiday props** (`models/holiday/`) — "Holiday Kit" by **Kenney**
+  (https://kenney.nl/assets/holiday-kit), CC0.
+- **Santa Claus** (`models/holiday/santa.glb`) — by **J-Toastie** via poly.pizza
+  (https://poly.pizza/m/WQP3xjYjPy), CC-BY 3.0 — thank you!
 
 ## Audio
 

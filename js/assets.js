@@ -122,6 +122,7 @@ SKY.Assets = (function () {
     { id: 'fx:triangle',   name: 'EVENT · bermuda triangle', folder: 'water' },
     { id: 'fx:kraken',     name: 'EVENT · kraken attack', folder: 'water' },
     { id: 'fx:shark',      name: 'EVENT · shark patrol', folder: 'water' },
+    { id: 'fx:blizzard',   name: 'EVENT · blizzard wind', folder: 'winter & holiday' },
     { id: 'fx:mountain',   name: 'mountain (backdrop)', folder: 'cliffs & rocks' },
     { id: 'fx:school',     name: 'fish school (swims)', folder: 'sea life' },
     { id: 'fx:sharkpatrol', name: 'shark — ambient swimmer', folder: 'sea life' },
@@ -158,8 +159,11 @@ SKY.Assets = (function () {
     //   power = wave height · range = wave length · size = side length
     //   deepAlpha/shallowAlpha + shallow tint + fade = the depth look
     //   drag/gravity/speed/jumpOut = swim feel (pawn physics reads these)
+    //   foam = shoreline foam strength · foamw = foam band width (m of depth)
+    //   shorewave = rolling shore-surge height (waves that lap the beach)
     sea:        { color: '#155a9e', power: 0.5, range: 18, size: 140,
                   deepAlpha: 0.9, shallowAlpha: 0.32, shallow: '#5fd8cf', fade: 10,
+                  foam: 0.7, foamw: 3, shorewave: 0.5,
                   drag: 1.7, gravity: 0.12, speed: 0.65, jumpOut: 1,
                   oxygen: 12, currents: 10, currentPower: 26 },
     // SEA EVENTS — invisible markers in-game; the event system in map.js
@@ -180,6 +184,10 @@ SKY.Assets = (function () {
     // shark: power = bite knock, size = patrol circle radius
     shark:      { color: '#d8e4ee', power: 16, size: 11,
                   start: 20, every: 35, dur: 12, chance: 100 },
+    // blizzard: heavy wind along the marker's facing — power = push force
+    // (airborne players catch the full blast; snowfall thickens while it blows)
+    blizzard:   { color: '#dfe9ff', power: 30,
+                  start: 30, every: 50, dur: 9, chance: 100 },
     // BACKDROP MOUNTAIN — seeded low-poly massif for valley skylines.
     //   size = base radius · height = peak height · peaks = extra summits ·
     //   seed = variation roll · snow = snowline (0 none … 1 fully capped)
@@ -391,15 +399,27 @@ SKY.Assets = (function () {
         transparent: true, opacity: 1, depthWrite: false,
         side: THREE.DoubleSide,   // the surface must exist when seen from BELOW
       });
+      // fade = meters of depth over which shallow turns into deep (also the
+      // scale for the foam band width below — declared before the shader)
+      const fade = Math.max(0.5, o.fade !== undefined ? o.fade : 10);
+      // shoreline foam: strength / band width (in adeep units = meters/fade)
+      const foamK = SKY.U.clamp(o.foam !== undefined ? o.foam : 0.7, 0, 1);
+      const foamW = SKY.U.clamp((o.foamw !== undefined ? o.foamw : 3) / fade, 0.02, 1);
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uShallowCol = { value: shallowCol };
         sh.uniforms.uADeep = { value: aDeep };
         sh.uniforms.uAShallow = { value: aShallow };
-        sh.vertexShader = 'attribute float adeep;\nvarying float vDeep;\n' +
+        sh.uniforms.uFoam = { value: foamK };
+        sh.uniforms.uFoamW = { value: foamW };
+        sh.uniforms.uTime = { value: 0 };
+        mat.userData.sh = sh;                    // onBeforeRender ticks uTime
+        sh.vertexShader = 'attribute float adeep;\nvarying float vDeep;\nvarying vec3 vWp;\n' +
           sh.vertexShader.replace('#include <begin_vertex>',
-            '#include <begin_vertex>\nvDeep = adeep;');
+            '#include <begin_vertex>\nvDeep = adeep;\n' +
+            'vWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         sh.fragmentShader = ('uniform vec3 uShallowCol;\nuniform float uADeep;\n' +
-          'uniform float uAShallow;\nvarying float vDeep;\n') +
+          'uniform float uAShallow;\nuniform float uFoam;\nuniform float uFoamW;\n' +
+          'uniform float uTime;\nvarying float vDeep;\nvarying vec3 vWp;\n') +
           sh.fragmentShader
             .replace('#include <color_fragment>',
               ['#include <color_fragment>',
@@ -411,7 +431,26 @@ SKY.Assets = (function () {
                // deep water swallows light: the abyss reads DARK from above,
                // not like a crisp seabed behind blue glass
                'diffuseColor.rgb *= mix(1.0, 0.62, dk);',
-               'diffuseColor.a = mix(uAShallow, uADeep, dk);'].join('\n'))
+               'diffuseColor.a = mix(uAShallow, uADeep, dk);',
+               // ---- SHORE FOAM: the waterline used to be a hard blue cutoff.
+               // DISCRETE wash lines ride the depth contours (phase = vDeep),
+               // wrap around islands and march toward the beach; fizz sparkle
+               // lives ON the lines (free-running speckle read as wallpaper).
+               'float dkRaw = clamp(vDeep, 0.0, 1.0);',
+               'float shoreK = uFoam * pow(1.0 - smoothstep(0.0, uFoamW, dkRaw), 1.6);',
+               'if (shoreK > 0.003) {',
+               '  float wash = smoothstep(0.55, 0.95, 0.5 + 0.5 * sin(vDeep * 30.0 - uTime * 2.6));',
+               '  float wash2 = smoothstep(0.62, 0.97, 0.5 + 0.5 * sin(vDeep * 52.0 - uTime * 4.1 + 1.7));',
+               '  float fizz = sin(vWp.x * 9.1 + uTime * 3.4) * sin(vWp.z * 8.3 - uTime * 2.9)',
+               '             * sin((vWp.x + vWp.z) * 5.7 + uTime * 4.6);',
+               '  fizz = 0.55 + 0.45 * smoothstep(0.0, 0.8, fizz);',
+               '  float foamAmt = clamp(shoreK * (wash + wash2 * 0.6) * fizz, 0.0, 1.0);',
+               '  // the very waterline keeps a solid lapping edge',
+               '  float line = 1.0 - smoothstep(0.0, 0.2 * uFoamW, dkRaw);',
+               '  foamAmt = max(foamAmt, uFoam * line * (0.7 + 0.3 * fizz));',
+               '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.97, 1.0), foamAmt);',
+               '  diffuseColor.a = clamp(diffuseColor.a + foamAmt * 0.55, 0.0, 0.96);',
+               '}'].join('\n'))
             .replace('#include <output_fragment>',
               [// fresnel: grazing angles pick up a soft sky sheen and go a bit
                // more solid; steep look-down stays clear (kept SUBTLE — the
@@ -426,11 +465,15 @@ SKY.Assets = (function () {
       sea.renderOrder = 2;   // draw after the seabed so blending reads right
       const amp = Math.max(0.01, o.power);
       const kw = (Math.PI * 2) / Math.max(4, o.range);
+      // shore surge: rolling swells whose crests follow the depth contours
+      // (phase rides adeep), marching toward the beach and dying on it
+      const shoreAmp = Math.max(0, o.shorewave !== undefined ? o.shorewave : 0.5);
       const pos = geo.attributes.position;
       const colA = geo.attributes.color;
       const _c = new THREE.Color();
       sea.onBeforeRender = () => {
         const t = performance.now() * 0.0009;
+        if (mat.userData.sh) mat.userData.sh.uniforms.uTime.value = t;
         const a = pos.array, c = colA.array;
         for (let i = 0; i < pos.count; i++) {
           const x = basePos[i * 3], z = basePos[i * 3 + 2];
@@ -439,7 +482,14 @@ SKY.Assets = (function () {
             Math.sin(z * kw * 0.8 + t * 1.4) * 0.3 +
             Math.sin((x + z) * kw * 0.45 - t * 2.3) * 0.35 +
             Math.sin(x * kw * 2.3 - t * 3.1) * Math.sin(z * kw * 2.1 + t * 2.6) * 0.14;
-          a[i * 3 + 1] = basePos[i * 3 + 1] + amp * h;
+          const dkv = adeep[i];
+          // shoaling: open-sea swell flattens as the water gets shallow —
+          // the surface CALMS onto the beach instead of clipping through it
+          const shoal = 0.4 + 0.6 * dkv;
+          // surge band peaks mid-shallow, zero at the waterline + open sea
+          const band = (1 - dkv) * Math.min(1, dkv / 0.3);
+          const surge = shoreAmp * Math.sin(dkv * 8.0 - t * 2.3) * band;
+          a[i * 3 + 1] = basePos[i * 3 + 1] + amp * h * shoal + surge;
           // height -> hue: mostly the base blue; crests lift late, only the
           // very peaks break into foam (full-range lerp read as whitewash)
           const k = SKY.U.clamp01((h + 1.2) / 2.4);
@@ -454,9 +504,7 @@ SKY.Assets = (function () {
       };
       g.add(sea);
       // measure the seabed depth under every vertex ONCE the prop has its
-      // world transform (map.js / the editor call this after placing) —
-      // fade = meters of depth over which shallow turns into deep
-      const fade = Math.max(0.5, o.fade !== undefined ? o.fade : 10);
+      // world transform (map.js / the editor call this after placing)
       g.userData.postPlace = (obj) => {
         obj.updateMatrixWorld(true);
         const v = new THREE.Vector3();
@@ -508,6 +556,16 @@ SKY.Assets = (function () {
       // editor-only marker: the wave wall footprint + a travel-direction arrow
       const mk = marker(new THREE.BoxGeometry(o.size || 60, o.height || 7, 1.6), col);
       mk.position.y = (o.height || 7) / 2;
+      const arrow = marker(new THREE.ConeGeometry(0.8, 2.4, 8), col);
+      arrow.rotation.x = -Math.PI / 2;
+      arrow.position.set(0, 1.2, -3.2);
+      g.add(mk, arrow);
+    } else if (name === 'blizzard') {
+      // editor-only marker: swirling wind ring + a direction arrow (the wind
+      // blows along the marker's facing — rotate the prop to aim the storm)
+      const mk = marker(new THREE.TorusGeometry(2.2, 0.16, 8, 22), col);
+      mk.rotation.x = -Math.PI / 2;
+      mk.position.y = 1.2;
       const arrow = marker(new THREE.ConeGeometry(0.8, 2.4, 8), col);
       arrow.rotation.x = -Math.PI / 2;
       arrow.position.set(0, 1.2, -3.2);
@@ -1200,8 +1258,49 @@ SKY.Assets = (function () {
     return out;
   }
 
+  /* ---------- procedural SNOW COVER ----------
+   * Whitens upward-facing surfaces of any prop (world-space normal mask) so
+   * desert-colored rock/cave kits sit naturally in winter maps. amount 0-1;
+   * re-callable: existing patched materials just update their uniform. */
+  function applySnow(root, amount) {
+    const amt = SKY.U.clamp(amount || 0, 0, 1);
+    root.traverse((oo) => {
+      if (!oo.isMesh || oo.isSkinnedMesh || !oo.material) return;
+      if (oo.name === 'edmarker' || oo.name === 'edcoll' || oo.name === 'nocoll') return;
+      const mats = Array.isArray(oo.material) ? oo.material : [oo.material];
+      const out = mats.map((m) => {
+        if (!m || m.userData.__seaMat) return m;
+        if (m.userData.__snow) { m.userData.__snow.value = amt; return m; }
+        // materials are SHARED between GLB clones — patch a private copy
+        const sm = m.clone();
+        sm.userData.__snow = { value: amt };
+        const prev = sm.onBeforeCompile;
+        sm.onBeforeCompile = (sh) => {
+          if (prev) prev(sh);
+          sh.uniforms.uSnowAmt = sm.userData.__snow;
+          sh.vertexShader = 'varying vec3 vSnowN;\n' + sh.vertexShader.replace(
+            '#include <begin_vertex>',
+            '#include <begin_vertex>\nvSnowN = normalize(mat3(modelMatrix) * objectNormal);');
+          sh.fragmentShader = 'uniform float uSnowAmt;\nvarying vec3 vSnowN;\n' +
+            sh.fragmentShader.replace(
+              '#include <color_fragment>',
+              ['#include <color_fragment>',
+               // tops catch the snow; high amounts dust the steeper faces too
+               'float snowK = smoothstep(0.35, 0.78, vSnowN.y) * uSnowAmt;',
+               'snowK = max(snowK, clamp(vSnowN.y, 0.0, 1.0) * uSnowAmt * 0.3);',
+               'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.94, 1.0), snowK);'
+              ].join('\n'));
+        };
+        sm.needsUpdate = true;
+        return sm;
+      });
+      oo.material = Array.isArray(oo.material) ? out : out[0];
+    });
+  }
+
   const api = {
     onChange: null,
+    applySnow,
     list() { return items.concat(packItems()); },
     get(id) {
       if (!id) return undefined;

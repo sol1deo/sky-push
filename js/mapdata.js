@@ -137,6 +137,11 @@ SKY.MapData = (function () {
       delete def.fog.density;
     }
     if (def.shafts !== true && def.shafts !== false) def.shafts = null;
+    // winter weather: snowfall amount + map-wide prop snow-cover (both 0-1)
+    if (typeof def.snow !== 'number' || !(def.snow > 0)) delete def.snow;
+    else def.snow = Math.min(1, def.snow);
+    if (typeof def.snowAll !== 'number' || !(def.snowAll > 0)) delete def.snowAll;
+    else def.snowAll = Math.min(1, def.snowAll);
     // optional lobby-lineup spot placed in the editor: {p:[x,y,z], yaw}
     if (def.lobby && !(Array.isArray(def.lobby.p) && def.lobby.p.length === 3)) def.lobby = null;
     if (def.lobby && typeof def.lobby.yaw !== 'number') def.lobby.yaw = 0;
