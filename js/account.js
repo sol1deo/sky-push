@@ -84,14 +84,20 @@ SKY.Account = (function () {
       api.enabled = true;
       const { data } = await sb.auth.getSession();
       session = data ? data.session : null;
+      let wasIn = !!session;
       sb.auth.onAuthStateChange((ev, s) => {
         session = s;
         if (!s) {
           profile = null;
           friends = []; pendingIn = []; pendingOut = [];
           stopPresence();
+          // sign-out: the account wallet leaves with the account — the
+          // device falls back to its own guest coins/skins
+          if (wasIn && SKY.Profile && SKY.Profile.guestMode) SKY.Profile.guestMode();
+          wasIn = false;
           changed();
         } else {
+          wasIn = true;
           afterLogin();
         }
       });
@@ -245,16 +251,10 @@ SKY.Account = (function () {
       if (!profile) await new Promise(r => setTimeout(r, 700));
     }
     if (!profile) return;
-    // cloud cosmetics REPLACE local guest state (account is the truth)
-    if (SKY.Profile) {
-      const cloud = profile.cosmetics;
-      if (cloud && Object.keys(cloud).length) {
-        Object.assign(SKY.Profile.data, cloud);
-        try { localStorage.setItem('skypush-profile', JSON.stringify(SKY.Profile.data)); } catch (e) {}
-      } else {
-        api.pushCosmetics();   // first login: adopt whatever the guest had
-      }
-      if (SKY.Profile.onChange) SKY.Profile.onChange();
+    // the account wallet takes over (cloud = truth; empty cloud on a first
+    // login adopts the guest bag). Guest storage stays untouched underneath.
+    if (SKY.Profile && SKY.Profile.accountMode) {
+      SKY.Profile.accountMode(profile.cosmetics || null);
     }
     // the account username IS the nickname
     if (SKY.Settings) {

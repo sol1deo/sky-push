@@ -6,7 +6,13 @@
 window.SKY = window.SKY || {};
 
 SKY.Profile = (function () {
+  // TWO wallets: the guest profile lives under KEY; a signed-in session runs
+  // on KEY_ACCT (mirror of the cloud bundle). Sign-out swaps back to the
+  // guest wallet — account coins/skins must NOT linger as device data (they
+  // used to, which also let a fresh account "adopt" the previous user's bag)
   const KEY = 'skypush-profile';
+  const KEY_ACCT = 'skypush-profile-acct';
+  let storeKey = KEY;
 
   /* character catalog: price 0 = starter (always owned) */
   const CHARS = [
@@ -36,8 +42,12 @@ SKY.Profile = (function () {
      the flash, reload names a viewmodel flourish (effects.js vm). */
   const FINISHES = [
     { id: 'stock',      name: 'STOCK',      price: 0,    tier: 'std' },
-    { id: 'fade',       name: 'FADE',       price: 400,  tier: 'anim', fx: 'fade' },
-    { id: 'spectrum',   name: 'SPECTRUM',   price: 600,  tier: 'anim', fx: 'spectrum' },
+    // ---- cheap PAINTS (spectrum retired — replaced by the paint row) ----
+    { id: 'obsidian',   name: 'OBSIDIAN',   price: 250,  tier: 'std', tint: '#17181f' },
+    { id: 'arctic',     name: 'ARCTIC',     price: 250,  tier: 'std', tint: '#dfe9f2' },
+    { id: 'jungle',     name: 'JUNGLE',     price: 300,  tier: 'std', tint: '#3f6b3a' },
+    { id: 'rosegold',   name: 'ROSE GOLD',  price: 350,  tier: 'std', tint: '#e8a68a', mult: 1.05 },
+    { id: 'fade',       name: 'FADE',       price: 400,  tier: 'std', fx: 'fade' },
     { id: 'carbonviper', name: 'CARBON VIPER', price: 700, tier: 'std', skin: 'carbonviper',
       glowLo: 0.52, glowAmt: 0.45 },
     { id: 'sakura',     name: 'SAKURA',     price: 750,  tier: 'std', skin: 'sakura',
@@ -70,11 +80,43 @@ SKY.Profile = (function () {
     { id: 'midas',      name: 'MIDAS',      price: 3000, tier: 'mythic', mythic: true,
       skin: 'midas', glowLo: 0.55, glowAmt: 0.9, anim: 'shimmer', orbitFx: 'coins',
       tracer: { color: '#ffd34d', trail: 'gold' }, muzzleColor: '#ffd34d', reload: 'spin' },
+    // flagship drop: obsidian-black body, molten crimson eclipse cracks,
+    // precessing blood-ring halo, crimson tracers, TOSS reload (gun flips
+    // up and gets caught), 'eclipse' glow — calm, then a surge
+    { id: 'bloodmoon',  name: 'BLOOD MOON', price: 3200, tier: 'mythic', mythic: true,
+      skin: 'bloodmoon', glowLo: 0.36, glowAmt: 1.2, anim: 'eclipse', orbitFx: 'halo',
+      tracer: { color: '#ff2e4a', trail: 'blood' }, muzzleColor: '#ff3050', reload: 'toss' },
   ];
 
   /* free cosmetic palettes (no purchase — just identity options) */
   const OUTFIT_COLORS = ['#ffd34d', '#40c8ff', '#ff5db1', '#7dff9e', '#a48aff',
     '#ffb85a', '#e63946', '#2ee6c8', '#f2f4f6', '#3a4150', '#0a0a0d'];
+
+  /* universal TRACER FX (store-only): your bullets shed these particles on
+     EVERY weapon — a mythic skin's own signature tracer still wins on the
+     gun that wears it */
+  const TRACERS = [
+    { id: 'flame', name: 'DRAGON BREATH', price: 800, color: '#ff7a20', trail: 'flame',
+      desc: 'every bullet billows fire' },
+    { id: 'spark', name: 'STATIC SURGE',  price: 800, color: '#59d8ff', trail: 'spark',
+      desc: 'crackling electric wake' },
+    { id: 'star',  name: 'STARDUST',      price: 800, color: '#b46bff', trail: 'star',
+      desc: 'a ribbon of falling stars' },
+    { id: 'gold',  name: 'GOLD RUSH',     price: 850, color: '#ffd34d', trail: 'gold',
+      desc: 'rounds that rain gold dust' },
+    { id: 'void',  name: 'VOID WAKE',     price: 900, color: '#8a4dff', trail: 'void',
+      desc: 'darkness follows every shot' },
+    { id: 'blood', name: 'BLOOD TRAIL',   price: 950, color: '#ff2e4a', trail: 'blood',
+      desc: 'crimson drops mark your line of fire' },
+  ];
+  /* KO SOUNDS (store-only): the noise YOUR victims make when you knock them
+     out — everyone in the match hears your signature */
+  const KO_SOUNDS = [
+    { id: 'oof',  name: 'OOF',         price: 400, desc: 'the classic. never gets old' },
+    { id: 'bonk', name: 'BONK',        price: 450, desc: 'wooden. deeply disrespectful' },
+    { id: 'fall', name: 'AIIEEE',      price: 500, desc: 'a long theatrical plummet' },
+    { id: 'horn', name: 'SAD TRUMPET', price: 600, desc: 'womp womp' },
+  ];
 
   const DEFAULTS = {
     coins: 300,
@@ -85,21 +127,30 @@ SKY.Profile = (function () {
     ownedFinishes: [],      // finish ids bought ('stock' implicit)
     finishes: {},           // weapon kind -> finish id (missing = stock)
     wpn: 'pistol',          // the weapon your character holds in lobbies
+    ownedFx: [],            // universal tracer FX bought (store)
+    fxTracer: null,         // equipped tracer FX id | null
+    ownedSnd: [],           // KO sounds bought (store)
+    koSnd: null,            // equipped KO sound id | null
   };
 
   let data = load();
 
   function load() {
     try {
-      const raw = localStorage.getItem(KEY);
+      const raw = localStorage.getItem(storeKey);
       if (!raw) return JSON.parse(JSON.stringify(DEFAULTS));
       return { ...JSON.parse(JSON.stringify(DEFAULTS)), ...JSON.parse(raw) };
     } catch (e) { return JSON.parse(JSON.stringify(DEFAULTS)); }
   }
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {}
+    try { localStorage.setItem(storeKey, JSON.stringify(data)); } catch (e) {}
     // logged-in players carry their cosmetics on the account (debounced push)
     if (SKY.Account && SKY.Account.pushCosmetics) SKY.Account.pushCosmetics();
+  }
+  /* wardrobe/loadout visuals re-resolve after a wallet swap */
+  function refreshAfterSwap() {
+    if (SKY.Effects && SKY.Effects.refreshSkins) SKY.Effects.refreshSkins();
+    if (api.onChange) api.onChange();
   }
   /* purchases REQUIRE an account once the account system is configured */
   function purchasesLocked() {
@@ -245,6 +296,12 @@ SKY.Profile = (function () {
         else if (f.anim === 'void') sh.uniforms.uGlowAmt.value = base * (0.6 + 0.4 * Math.sin(t * 1.4));
         else if (f.anim === 'drift') sh.uniforms.uGlowAmt.value = base * (0.8 + 0.2 * Math.sin(t * 1.1));
         else if (f.anim === 'ooze') sh.uniforms.uGlowAmt.value = base * (0.65 + 0.35 * Math.sin(t * 0.9));
+        else if (f.anim === 'eclipse') {
+          // long calm smolder, then a slow blood-red SURGE sweeping through
+          const cyc = (t * 0.22) % 1;
+          const surge = Math.max(0, Math.sin(cyc * Math.PI * 2)) ** 3;
+          sh.uniforms.uGlowAmt.value = base * (0.4 + 1.0 * surge);
+        }
         else if (f.anim === 'strobe') {
           // lightning: mostly calm, with sharp random-feeling double flashes
           const ph = t * 1.9;
@@ -343,6 +400,38 @@ SKY.Profile = (function () {
       if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
       return;
     }
+    if (type === 'halo') {             // BLOOD MOON: precessing crimson ring
+      const fx = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(rad + 0.075, 0.0035, 6, 44),
+        new THREE.MeshBasicMaterial({ color: 0xff2e4a, transparent: true,
+          opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+      ring.position.copy(c);
+      const N2 = 8;
+      const pos2 = new Float32Array(N2 * 3);
+      const drops = new THREE.Points(
+        new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos2, 3)),
+        new THREE.PointsMaterial({ color: 0xff4a5e, size: 0.008, map: softDot(),
+          transparent: true, opacity: 0.85, depthWrite: false,
+          blending: THREE.AdditiveBlending, sizeAttenuation: true }));
+      drops.frustumCulled = false;
+      fx.add(ring, drops);
+      fx.userData.tick = (t) => {
+        ring.rotation.set(Math.sin(t * 0.7) * 0.5, t * 0.9, Math.cos(t * 0.55) * 0.5);
+        ring.material.opacity = 0.4 + 0.25 * Math.sin(t * 1.3);
+        const a2 = drops.geometry.attributes.position.array;
+        for (let i = 0; i < N2; i++) {
+          const an = t * 1.1 + (i / N2) * Math.PI * 2;
+          a2[i * 3] = c.x + Math.cos(an) * (rad + 0.075);
+          a2[i * 3 + 1] = c.y + Math.sin(an * 2.3) * 0.03;
+          a2[i * 3 + 2] = c.z + Math.sin(an) * (len * 0.4);
+        }
+        drops.geometry.attributes.position.needsUpdate = true;
+      };
+      group.add(fx);
+      if (SKY.Effects && SKY.Effects.registerAnimObj) SKY.Effects.registerAnimObj(fx);
+      return;
+    }
     const KINDS = {
       embers: { n: 12, color: 0xff7a20, size: 0.009 },
       stars: { n: 10, color: 0xaad4ff, size: 0.007 },
@@ -422,7 +511,7 @@ SKY.Profile = (function () {
   }
 
   const api = {
-    CHARS, FINISHES, OUTFIT_COLORS,
+    CHARS, FINISHES, OUTFIT_COLORS, TRACERS, KO_SOUNDS,
     get data() { return data; },
     coins() { return data.coins; },
 
@@ -507,11 +596,71 @@ SKY.Profile = (function () {
     finishDef,
     charDef,
 
+    /* -------- store-only cosmetics: universal tracers + KO sounds -------- */
+    fxDef(id) { return TRACERS.find(t => t.id === id) || null; },
+    sndDef(id) { return KO_SOUNDS.find(s => s.id === id) || null; },
+    ownsFx(id) { return data.ownedFx.includes(id); },
+    ownsSnd(id) { return data.ownedSnd.includes(id); },
+    buyFx(id) {
+      const def = api.fxDef(id);
+      if (purchasesLocked() || !def || api.ownsFx(id) || data.coins < def.price) return false;
+      data.coins -= def.price;
+      data.ownedFx.push(id);
+      save();
+      if (api.onChange) api.onChange();
+      return true;
+    },
+    buySnd(id) {
+      const def = api.sndDef(id);
+      if (purchasesLocked() || !def || api.ownsSnd(id) || data.coins < def.price) return false;
+      data.coins -= def.price;
+      data.ownedSnd.push(id);
+      save();
+      if (api.onChange) api.onChange();
+      return true;
+    },
+    equipFx(id) {           // null = off
+      if (id !== null && !api.ownsFx(id)) return false;
+      data.fxTracer = id;
+      save();
+      if (api.onChange) api.onChange();
+      return true;
+    },
+    equipSnd(id) {          // null = off
+      if (id !== null && !api.ownsSnd(id)) return false;
+      data.koSnd = id;
+      save();
+      if (api.onChange) api.onChange();
+      return true;
+    },
+
+    /* -------- wallet swap (account.js drives this) --------
+     * accountMode(cloud): sign-in — run on the account wallet. A non-empty
+     * cloud bundle REPLACES the working data; an empty one (first login)
+     * adopts the current guest bag as the account's starting wardrobe.
+     * guestMode(): sign-out — reload the untouched guest wallet. */
+    accountMode(cloud) {
+      const adopt = !(cloud && Object.keys(cloud).length);
+      const guestBag = adopt ? JSON.parse(JSON.stringify(data)) : null;
+      storeKey = KEY_ACCT;
+      data = adopt
+        ? guestBag
+        : { ...JSON.parse(JSON.stringify(DEFAULTS)), ...cloud };
+      save();                      // mirror locally + push (covers adoption)
+      refreshAfterSwap();
+    },
+    guestMode() {
+      if (storeKey === KEY) return;
+      storeKey = KEY;
+      data = load();
+      refreshAfterSwap();
+    },
+
     /* everything cosmetic in one bundle — same shape the net roster carries
        (pawn.cos), so offline pawns/replays render identically to online */
     equipped() {
       return { char: data.char, fin: data.finishes, skin: data.skin, outfit: data.outfit,
-        wpn: data.wpn || 'pistol' };
+        wpn: data.wpn || 'pistol', fxt: data.fxTracer, ksnd: data.koSnd };
     },
     setLobbyWeapon(k) { data.wpn = k; save(); },
 

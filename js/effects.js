@@ -567,10 +567,19 @@ SKY.Effects = (function () {
       decals.push({ mesh, life: 0, max: 1 });
     }
   }
+  /* burn accumulation spots: flame heat per world location (burnMark) */
+  const burnSpots = [];
+  let burnIdx = 0;
+  for (let i = 0; i < 10; i++) {
+    burnSpots.push({ pos: new THREE.Vector3(), normal: new THREE.Vector3(),
+      heat: 0, hold: 0, rot: 0, d: null });
+  }
+
   function placeDecal(pos, normal, size, tex, life) {
     if (!scene) return;
     ensureDecals();
     const d = decals[decalIdx++ % DECAL_N];
+    d.opMul = 1;                 // burn decals dial this down (degrees of burn)
     d.life = d.max = life;
     if (d.mesh.material.map !== tex) {
       d.mesh.material.map = tex;
@@ -1140,6 +1149,15 @@ SKY.Effects = (function () {
         spawn({ pos: p.clone(), vel: kick(2.6, 2.4), life: SKY.U.rand(0.3, 0.5),
           size: 0.08, sizeEnd: 0.015, color: i % 2 ? '#ffd34d' : '#fff4c0', gravity: 5, drag: 0.7 });
       }
+    } else if (style === 'blood') {
+      // BLOOD MOON: crimson flash, dark droplets that sag, a red ring
+      spawn({ pos: p.clone(), life: 0.13, size: 0.45, sizeEnd: 0.14, color: '#ff2e4a' });
+      for (let i = 0; i < 7; i++) {
+        spawn({ pos: p.clone(), vel: kick(2.2, 1.8), life: SKY.U.rand(0.28, 0.48),
+          size: 0.1, sizeEnd: 0.03, color: i % 2 ? '#a3122b' : '#ff4a5e',
+          gravity: 7, drag: 0.9, blend: i % 2 ? 'normal' : undefined });
+      }
+      ring(p, '#ff2e4a', 0.8, 0.16);
     }
   }
 
@@ -1171,6 +1189,15 @@ SKY.Effects = (function () {
       spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-0.4, 0.4), SKY.U.rand(-0.6, 0.2), SKY.U.rand(-0.4, 0.4)),
         life: SKY.U.rand(0.25, 0.4), size: 0.08, sizeEnd: 0.02,
         color: Math.random() < 0.6 ? '#ffd34d' : '#fff4c0', gravity: 3, drag: 0.6 });
+    } else if (style === 'blood') {
+      // crimson streak that drips: bright bead + a sagging dark droplet
+      spawn({ pos: p, vel: new THREE.Vector3(SKY.U.rand(-0.3, 0.3), SKY.U.rand(-0.8, 0), SKY.U.rand(-0.3, 0.3)),
+        life: SKY.U.rand(0.22, 0.38), size: 0.09, sizeEnd: 0.02,
+        color: Math.random() < 0.65 ? '#ff2e4a' : '#ff8090', gravity: 4, drag: 0.7 });
+      if (Math.random() < 0.25) {
+        spawn({ pos: p, life: SKY.U.rand(0.3, 0.45), size: 0.11, sizeEnd: 0.3,
+          color: '#3d0a14', opacity: 0.5, drag: 0.8, blend: 'normal' });
+      }
     }
   }
 
@@ -1409,7 +1436,16 @@ SKY.Effects = (function () {
         if (d.life <= 0) continue;
         d.life -= dt;
         if (d.life <= 0) { d.mesh.visible = false; continue; }
-        d.mesh.material.opacity = Math.min(1, (d.life / d.max) * 4);
+        d.mesh.material.opacity = Math.min(1, (d.life / d.max) * 4) * (d.opMul || 1);
+      }
+      // burn spots cool once the flame moves off them
+      for (const s of burnSpots) {
+        if (s.heat <= 0) continue;
+        s.hold -= dt;
+        if (s.hold <= 0) {
+          s.heat = Math.max(0, s.heat - dt * 6);
+          if (s.heat <= 0 && s.d) s.d = null;   // the mark fades on its own
+        }
       }
       // floating text
       for (let i = texts.length - 1; i >= 0; i--) {
@@ -1501,13 +1537,19 @@ SKY.Effects = (function () {
       const d = SKY.Input.takeFrameDelta();
       vm.sway.x = SKY.U.damp(vm.sway.x, SKY.U.clamp(-d.dx * 0.0022, -0.09, 0.09), 9, dt);
       vm.sway.y = SKY.U.damp(vm.sway.y, SKY.U.clamp(d.dy * 0.0022, -0.07, 0.07), 9, dt);
-      let spin = 0, dip = 0, roll = 0;
+      let spin = 0, dip = 0, roll = 0, toss = 0;
       if (reloadFrac !== undefined && reloadFrac >= 0) {
         const k = reloadFrac * reloadFrac * (3 - 2 * reloadFrac);   // smoothstep
         if (vm.finReload === 'spin') {
           // mythic flourish: sideways BARREL ROLL instead of the stock backflip
           roll = -Math.PI * 2 * k;
           dip = Math.sin(Math.PI * reloadFrac) * 0.05;
+        } else if (vm.finReload === 'toss') {
+          // BLOOD MOON: the gun is TOSSED — flies up double-flipping, drops
+          // back into the hand right as the mag clicks home
+          spin = -Math.PI * 4 * k;
+          toss = Math.sin(Math.PI * reloadFrac) * 0.34;
+          dip = -toss * 0.35;              // negative dip = the gun RISES
         } else {
           spin = -Math.PI * 2 * k;
           dip = Math.sin(Math.PI * reloadFrac) * 0.07;
@@ -1619,9 +1661,50 @@ SKY.Effects = (function () {
     bulletHole(pos, normal) {
       placeDecal(pos, normal, 0.15 + Math.random() * 0.07, bulletHoleTex(), 14);
     },
-    /* flame impact: a bigger, softer BURN mark */
+    /* flame impact: burns BUILD UP — nothing shows until a spot has been
+       flamed for a beat, then the mark deepens and spreads with exposure
+       (degrees of burn). Called for every flame world-hit; heat cools when
+       the jet moves away, so a sweep leaves faint scorches and a held jet
+       chars the wall black. */
     burnMark(pos, normal) {
-      placeDecal(pos, normal, 0.7 + Math.random() * 0.55, burnTex(), 12);
+      ensureDecals();
+      let spot = null;
+      for (const s of burnSpots) {
+        if (s.heat > 0 && s.pos.distanceToSquared(pos) < 1.1) { spot = s; break; }
+      }
+      if (!spot) {
+        spot = burnSpots[burnIdx++ % burnSpots.length];
+        spot.pos.copy(pos);
+        spot.normal.copy(normal);
+        spot.heat = 0;
+        spot.rot = Math.random() * Math.PI * 2;
+        if (spot.d) { spot.d.mesh.visible = false; spot.d = null; }
+      }
+      spot.heat = Math.min(30, spot.heat + 1);
+      spot.hold = 1.2;                        // keeps cooling at bay while fed
+      // ~0.35s of sustained flame (18 rps) before the first mark shows
+      if (!spot.d && spot.heat >= 6) {
+        const d = decals[decalIdx++ % DECAL_N];
+        d.life = d.max = 14;
+        if (d.mesh.material.map !== burnTex()) {
+          d.mesh.material.map = burnTex();
+          d.mesh.material.needsUpdate = true;
+        }
+        d.mesh.position.copy(spot.pos).addScaledVector(spot.normal, 0.02);
+        d.mesh.quaternion.setFromUnitVectors(_dz, spot.normal);
+        d.mesh.rotateZ(spot.rot);
+        d.mesh.visible = true;
+        spot.d = d;
+      }
+      if (spot.d) {
+        // degree of burn: opacity + size track the accumulated heat
+        // (opMul because the decal tick recomputes opacity every frame)
+        const k = SKY.U.clamp01((spot.heat - 5) / 22);
+        spot.d.life = spot.d.max = 12 + k * 10;      // deep burns outlive light ones
+        spot.d.opMul = 0.25 + k * 0.75;
+        const sz = 0.55 + k * 1.15;
+        spot.d.mesh.scale.set(sz, sz, 1);
+      }
     },
     scorch(pos, normal, size, life) {
       placeDecal(pos, normal, size || 2, scorchTex(), life || 18);

@@ -44,6 +44,7 @@ SKY.SFX = (function () {
     reload: 1, reload_done: 1, dry: 1, pick: 2, cash: 4, crown: 1, beep: 1,
     go: 1, ko: 2, aircannon: 1, win: 1, lose: 1, uiclick: 4,
     taunt: 1, cheer: 1, alarm: 1,
+    ko_oof: 1, ko_bonk: 1, ko_fall: 1, ko_horn: 1,   // store KO sounds
   };
   const FILE_FOR = { thunder_smp: 'thunder' };   // bank name -> file prefix
   const bank = {};          // name -> [AudioBuffer] (buffers survive rebuilds)
@@ -555,6 +556,19 @@ SKY.SFX = (function () {
     ko(loud)  { const v = loud ? 0.42 : 0.26;
                 if (sample('ko', v, 0.95)) return;
                 tone(600, 90, 0.5, 'sawtooth', v); noise(0.3, 500, v * 0.7); },
+    /* store KO sounds: the killer's signature, sung by their victim.
+       Also the store's PREVIEW button (dist 0 = full volume). */
+    koVoice(id, dist) {
+      const a = att(dist === undefined ? 0 : dist);
+      if (a < 0.05) return;
+      if (sample('ko_' + id, 0.65 * a)) return;
+      // synth stand-ins until the samples stream in
+      if (id === 'bonk') { tone(390, 170, 0.11, 'sine', 0.3 * a); }
+      else if (id === 'fall') { tone(1400, 260, 0.7, 'sine', 0.16 * a); }
+      else if (id === 'horn') { tone(233, 220, 0.32, 'sawtooth', 0.2 * a);
+                                tone(208, 196, 0.5, 'sawtooth', 0.2 * a, 0.36); }
+      else { tone(180, 90, 0.16, 'sawtooth', 0.25 * a); }   // oof-ish grunt
+    },
     countdown(){ if (sample('beep', 0.3, 0.85)) return;
                 tone(440, 440, 0.09, 'square', 0.16); },
     go()      { if (sample('go', 0.4)) return;

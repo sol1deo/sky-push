@@ -846,8 +846,16 @@ SKY.Net = (function () {
         }
         SKY.HUD.killFeed(m.line);
         SKY.SFX.ko(pawn.isLocal);
+        // killer's signature KO sound (cos rides the roster — no wire change)
+        const kvp = m.killer ? G.pawns.find(p => p.netId === m.killer) : null;
+        const kvs = kvp ? (kvp.isLocal && SKY.Profile ? SKY.Profile.data.koSnd
+          : kvp.cos && kvp.cos.ksnd) : null;
+        if (kvs && SKY.SFX.koVoice) {
+          const me2 = G.player;
+          SKY.SFX.koVoice(kvs, me2 && me2.alive ? me2.pos.distanceTo(pawn.pos) : 8);
+        }
         if (pawn.isLocal) {
-          if (m.elim) SKY.HUD.showRespawn('ELIMINATED — spectating the chaos');
+          if (m.elim) G._specReason = 'ELIMINATED';   // spectate pill says it (once)
           else if (G.mode === 'lbs') SKY.HUD.showRespawn('YEETED! Pick a reward…');
           else SKY.HUD.showRespawn('Respawning…');
         }

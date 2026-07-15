@@ -861,6 +861,13 @@ SKY.Game = (function () {
         : SKY.U.pick(FALL_LINES).replace('{v}', vTag);
       SKY.HUD.killFeed(line);
       SKY.SFX.ko(pawn.isLocal || (killer && killer.isLocal));
+      // the killer's purchased KO sound: their victims sing it for everyone
+      const ksnd = killer ? (killer.isLocal && SKY.Profile ? SKY.Profile.data.koSnd
+        : killer.cos && killer.cos.ksnd) : null;
+      if (ksnd && SKY.SFX.koVoice) {
+        const me = api.player;
+        SKY.SFX.koVoice(ksnd, me && me.alive ? me.pos.distanceTo(pawn.pos) : 8);
+      }
       pawn.lastHitBy = null;
 
       // bots love rubbing it in
@@ -883,7 +890,7 @@ SKY.Game = (function () {
           } else {
             pawn.eliminated = true;
             SKY.HUD.killFeed('<b>' + pawn.name + '</b> is OUT');
-            if (pawn.isLocal) SKY.HUD.showRespawn('Tagged out — LMB: next player · SPACE: orbit');
+            if (pawn.isLocal) api._specReason = 'TAGGED OUT';
           }
         }
         if (pawn.recentHits) pawn.recentHits.length = 0;
@@ -947,7 +954,7 @@ SKY.Game = (function () {
       } else {
         pawn.eliminated = true;
         SKY.HUD.killFeed('<b>' + pawn.name + '</b> is eliminated');
-        if (pawn.isLocal) SKY.HUD.showRespawn('Eliminated — spectating');
+        if (pawn.isLocal) api._specReason = 'ELIMINATED';
       }
       // online: tell everyone (and send loot choices to a remote victim)
       if (SKY.Net.online && SKY.Net.role === 'host') SKY.Net.hostKo(pawn, line, killer, assist);
@@ -1065,7 +1072,10 @@ SKY.Game = (function () {
           tgt.pos.z + _v.z * 5);
       }
       camera.fov = SKY.U.damp(camera.fov, 72, 8, rdt);
-      SKY.HUD.spectate(tgt, api._specOrbit);
+      // ONE pill only: the spectate pill carries the elimination reason —
+      // the respawn pill stacked right behind it said the same thing twice
+      SKY.HUD.showRespawn(null);
+      SKY.HUD.spectate(tgt, api._specOrbit, api._specReason);
       return true;
     },
 

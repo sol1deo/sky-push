@@ -568,8 +568,9 @@ SKY.HUD = (function () {
 
     scoreboard(show) { el.sb.classList.toggle('hidden', !show); },
 
-    /* spectate pill (eliminated players riding someone else's run) */
-    spectate(tgt, orbit) {
+    /* spectate pill (eliminated players riding someone else's run) —
+       `reason` folds the old separate elimination pill into this one */
+    spectate(tgt, orbit, reason) {
       const elx = $('spec-ov');
       if (!elx) return;
       if (!tgt) {
@@ -577,10 +578,10 @@ SKY.HUD = (function () {
         elx._k = '';
         return;
       }
-      const k = tgt.name + (orbit ? 1 : 0);
+      const k = tgt.name + (orbit ? 1 : 0) + (reason || '');
       if (elx._k !== k) {
         elx._k = k;
-        elx.innerHTML = `<small>SPECTATING</small> <b style="color:${tgt.color}">${tgt.name}</b>
+        elx.innerHTML = `<small>${reason || 'SPECTATING'}</small> <b style="color:${tgt.color}">${tgt.name}</b>
           <span>LMB next · RMB prev · SPACE ${orbit ? 'follow' : 'orbit'}</span>`;
         elx.classList.remove('hidden');
       }

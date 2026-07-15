@@ -229,11 +229,11 @@
   .lk-card.locked img, .lk-card.locked .lk-ph { opacity:.55; }
   .lk-card.lk-poor { animation:lkpoor .3s; border-color:var(--danger); }
   @keyframes lkpoor { 25% { transform:translateX(-4px); } 75% { transform:translateX(4px); } }
-  /* MYTHIC skins get the living border + badge */
-  .lk-card.lk-mythic, .lk-detail.lk-mythic, .lk-feat.lk-mythic { border-color:#a05cff;
-    box-shadow:0 0 14px rgba(160,92,255,.22) inset, 0 0 10px rgba(160,92,255,.18);
+  /* MYTHIC skins get the living border + badge — molten red-gold ember glow */
+  .lk-card.lk-mythic, .lk-detail.lk-mythic, .lk-feat.lk-mythic { border-color:#ff5a2e;
+    box-shadow:0 0 14px rgba(255,90,46,.24) inset, 0 0 10px rgba(255,150,50,.2);
     animation:lkmythic 2.6s ease-in-out infinite; }
-  @keyframes lkmythic { 50% { box-shadow:0 0 22px rgba(160,92,255,.4) inset, 0 0 16px rgba(160,92,255,.35); } }
+  @keyframes lkmythic { 50% { box-shadow:0 0 22px rgba(255,90,46,.45) inset, 0 0 16px rgba(255,170,60,.4); } }
   /* ---------- skin-first weapons shop ---------- */
   .lk-schip { display:inline-block; font-size:8px; font-weight:800; letter-spacing:.14em;
     padding:2px 6px; border-radius:4px; color:#10131c; }
@@ -329,6 +329,45 @@
   .st-buy:hover { filter:brightness(1.12); }
   .st-buy.st-listed { background:var(--bg2); color:#7dff9e; border:1px solid var(--line2); }
   .st-note { font-size:10px; color:var(--faint); margin-top:14px; line-height:1.5; }
+  /* ---------- store hub (featured / drop / fx / sounds / characters) ---------- */
+  .st-siderow { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .st-skin { cursor:pointer; }
+  .st-drop { position:relative; display:flex; gap:16px; align-items:center; margin:16px 0;
+    border-radius:14px; padding:14px 18px; cursor:pointer; overflow:hidden;
+    background:linear-gradient(115deg, #1c0d12 0%, #0c0a12 55%, #2a0e14 100%); }
+  .st-droptag { position:absolute; top:10px; right:14px; font-size:9px; font-weight:800;
+    letter-spacing:.3em; color:#ff5a2e; }
+  .st-dropart img { width:260px; height:140px; object-fit:contain;
+    filter:drop-shadow(0 8px 22px rgba(255,60,40,.35)); }
+  .st-dropinfo h2 { margin:2px 0 4px; font-size:26px; font-style:italic; letter-spacing:.04em; }
+  .st-fxrow { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+  .st-fx { display:flex; align-items:center; gap:12px; border:1px solid var(--line2);
+    border-radius:10px; padding:10px 12px; background:rgba(255,255,255,.03); }
+  .st-fx.st-eq { border-color:#fff; }
+  .st-fxdot { width:26px; height:26px; flex:0 0 26px; border-radius:50%;
+    background:radial-gradient(circle, var(--fxc) 0%, transparent 70%);
+    box-shadow:0 0 12px var(--fxc); animation:fxpulse 1.6s ease-in-out infinite; }
+  @keyframes fxpulse { 50% { transform:scale(.8); opacity:.7; } }
+  .st-fxinfo { flex:1; min-width:0; }
+  .st-fxinfo b { display:block; font-size:12px; letter-spacing:.08em; }
+  .st-fxinfo small { color:var(--dim); font-size:10.5px; }
+  .st-play { width:34px; height:34px; flex:0 0 34px; border-radius:50%;
+    border:1px solid var(--line2); background:rgba(255,255,255,.06); color:var(--brand);
+    font-size:13px; cursor:pointer; }
+  .st-play:hover { border-color:var(--brand); }
+  .st-act { white-space:nowrap; }
+  .st-charrow { display:grid; grid-template-columns:repeat(auto-fill, minmax(110px, 1fr));
+    gap:8px; margin-bottom:14px; }
+  .st-char { border:1px solid var(--line2); border-radius:10px; padding:10px 8px;
+    text-align:center; cursor:pointer; background:rgba(255,255,255,.03); }
+  .st-char:hover { border-color:var(--brand); }
+  .st-char.st-eq { border-color:#fff; }
+  .st-char img { width:56px; height:56px; border-radius:50%; object-fit:cover; }
+  .st-charph { width:56px; height:56px; border-radius:50%; margin:0 auto;
+    background:#1c2230; display:flex; align-items:center; justify-content:center;
+    font-size:22px; font-weight:900; color:var(--dim); }
+  .st-char b { display:block; font-size:11px; letter-spacing:.08em; margin-top:6px; }
+  .st-char small { color:var(--dim); font-size:9.5px; }
   @media (max-width:900px) { .st-grid { grid-template-columns:repeat(2, 1fr); } #panel-store { min-width:0; } }
   /* locker sub-tabs + the weapon picker grid */
   .lk-tabs { display:flex; gap:6px; margin:10px 0 16px; }
@@ -1686,7 +1725,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 69</div>
+  <div id="build-foot" class="rail-foot">prototype · build 70</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -2045,43 +2084,43 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=69"></script>
-<script src="js/profile.js?v=69"></script>
-<script src="js/account.js?v=69"></script>
-<script src="js/accountui.js?v=69"></script>
-<script src="js/utils.js?v=69"></script>
-<script src="js/gfx.js?v=69"></script>
-<script src="js/mapdata.js?v=69"></script>
-<script src="js/audio.js?v=69"></script>
-<script src="js/sfxlab.js?v=69"></script>
-<script src="js/voice.js?v=69"></script>
-<script src="js/settings.js?v=69"></script>
-<script src="js/input.js?v=69"></script>
-<script src="js/world.js?v=69"></script>
-<script src="js/effects.js?v=69"></script>
-<script src="js/map.js?v=69"></script>
-<script src="js/characters.js?v=69"></script>
-<script src="js/pawn.js?v=69"></script>
-<script src="js/weapons.js?v=69"></script>
-<script src="js/loot.js?v=69"></script>
-<script src="js/pickups.js?v=69"></script>
-<script src="js/sparks.js?v=69"></script>
-<script src="js/grenades.js?v=69"></script>
-<script src="js/grapple.js?v=69"></script>
-<script src="js/bots.js?v=69"></script>
-<script src="js/hud.js?v=69"></script>
-<script src="js/game.js?v=69"></script>
-<script src="js/attract.js?v=69"></script>
-<script src="js/net.js?v=69"></script>
-<script src="js/dof.js?v=69"></script>
+<script src="js/config.js?v=70"></script>
+<script src="js/profile.js?v=70"></script>
+<script src="js/account.js?v=70"></script>
+<script src="js/accountui.js?v=70"></script>
+<script src="js/utils.js?v=70"></script>
+<script src="js/gfx.js?v=70"></script>
+<script src="js/mapdata.js?v=70"></script>
+<script src="js/audio.js?v=70"></script>
+<script src="js/sfxlab.js?v=70"></script>
+<script src="js/voice.js?v=70"></script>
+<script src="js/settings.js?v=70"></script>
+<script src="js/input.js?v=70"></script>
+<script src="js/world.js?v=70"></script>
+<script src="js/effects.js?v=70"></script>
+<script src="js/map.js?v=70"></script>
+<script src="js/characters.js?v=70"></script>
+<script src="js/pawn.js?v=70"></script>
+<script src="js/weapons.js?v=70"></script>
+<script src="js/loot.js?v=70"></script>
+<script src="js/pickups.js?v=70"></script>
+<script src="js/sparks.js?v=70"></script>
+<script src="js/grenades.js?v=70"></script>
+<script src="js/grapple.js?v=70"></script>
+<script src="js/bots.js?v=70"></script>
+<script src="js/hud.js?v=70"></script>
+<script src="js/game.js?v=70"></script>
+<script src="js/attract.js?v=70"></script>
+<script src="js/net.js?v=70"></script>
+<script src="js/dof.js?v=70"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=69"></script>
-<script src="js/vidrender.js?v=69"></script>
-<script src="js/demos.js?v=69"></script>
-<script src="js/locker.js?v=69"></script>
-<script src="js/store.js?v=69"></script>
-<script src="js/assets.js?v=69"></script>
-<script src="js/editor.js?v=69"></script>
-<script src="js/main.js?v=69"></script>
+<script src="js/replay.js?v=70"></script>
+<script src="js/vidrender.js?v=70"></script>
+<script src="js/demos.js?v=70"></script>
+<script src="js/locker.js?v=70"></script>
+<script src="js/store.js?v=70"></script>
+<script src="js/assets.js?v=70"></script>
+<script src="js/editor.js?v=70"></script>
+<script src="js/main.js?v=70"></script>
 </body>
 </html>

@@ -16,8 +16,12 @@ SKY.Locker = (function () {
 
   /* skin-first shop copy: the card sells the FANTASY, mythics list their FX */
   const SKIN_DESC = {
+    obsidian: 'murdered-out matte black',
+    arctic: 'clean polar white',
+    jungle: 'deep od-green field paint',
+    rosegold: 'soft metallic rose gold',
     fade: 'three-color chrome fade along the body',
-    spectrum: 'cycles the entire rainbow, forever',
+    bloodmoon: 'obsidian body, molten crimson eclipse cracks · BLOOD RING HALO · CRIMSON TRACERS · TOSS RELOAD',
     carbonviper: 'woven carbon fiber, serpent-red weave',
     sakura: 'hanami lacquer with gold-leaf flecks',
     gilded: 'baroque gold filigree over dark gunmetal',
@@ -32,11 +36,13 @@ SKY.Locker = (function () {
     phoenix: 'flame plumage · wing stream · FIRE TRACERS · SPIN RELOAD',
     midas: 'liquid gold · golden drip · GILDED TRACERS · SPIN RELOAD',
   };
+  // mythic = molten red-gold (the old purple hid against dark panels and
+  // read LESS premium than the magenta PREMIUM tier right under it)
   const TIER_CHIP = {
     std: ['PAINT', '#8a9cb8'],
     anim: ['ANIMATED', '#40c8ff'],
     epic: ['PREMIUM', '#d92cff'],
-    mythic: ['MYTHIC', '#a05cff'],
+    mythic: ['MYTHIC', '#ff5a2e'],
   };
 
   const WEAPON_ROW = ['pistol', 'blaster', 'scatter', 'smg', 'burst', 'bouncer',
@@ -303,29 +309,9 @@ SKY.Locker = (function () {
             : '<span class="lk-wst lk-mute">stock</span>'}
         </div>`;
       }).join('');
+      // (the FEATURED hero moved to the STORE — the locker is your wardrobe)
       const skins = P.FINISHES.filter(x => x.id !== 'stock')
         .slice().sort((a, b) => b.price - a.price);
-      // FEATURED: the priciest skin you don't own yet, rotating daily
-      const unowned = skins.filter(x => !WEAPON_ROW.some(k => P.ownsFinish(k, x.id)));
-      const feat = unowned.length
-        ? unowned[Math.floor(Date.now() / 864e5) % Math.min(unowned.length, 6)] : null;
-      const featHtml = feat ? (() => {
-        const img = SKY.Effects.weaponThumb(show, feat.id);
-        const [chipTxt, chipCol] = TIER_CHIP[feat.tier || 'std'];
-        return `<div class="lk-feat${feat.mythic ? ' lk-mythic' : ''}" data-sk="${feat.id}">
-          <div class="lk-featart">${img ? `<img src="${img}" draggable="false">` : ''}</div>
-          <div class="lk-featinfo">
-            <div class="lk-featlbl">FEATURED</div>
-            <h2>${feat.name}</h2>
-            <div class="lk-ddesc">${SKIN_DESC[feat.id] || ''}</div>
-            <div class="lk-featrow">
-              <span class="lk-schip" style="background:${chipCol}">${chipTxt}</span>
-              <span class="lk-featprice">⬡ ${feat.price}</span>
-              <button class="lk-buy" data-sk="${feat.id}">VIEW</button>
-            </div>
-          </div>
-        </div>`;
-      })() : '';
       const cards = skins.map((f) => {
         const img = SKY.Effects.weaponThumb(show, f.id);
         const ownedN = WEAPON_ROW.filter(k => P.ownsFinish(k, f.id)).length;
@@ -341,8 +327,7 @@ SKY.Locker = (function () {
       body = `
         <h4 class="lk-h">YOUR LOADOUT <small>what each gun wears — click one to preview the skins on it</small></h4>
         <div class="lk-wstrip lk-lorow">${loadout}</div>
-        ${featHtml}
-        <h4 class="lk-h">ALL SKINS <small>pick the look — then choose which guns wear it</small></h4>
+        <h4 class="lk-h">YOUR SKINS <small>everything you own — greyed cards are still in the STORE</small></h4>
         <div class="lk-grid lk-sgrid">${cards}</div>`;
     }
 
@@ -516,6 +501,16 @@ SKY.Locker = (function () {
     renderPanel,
     tick(dt) { tickPreview(dt); tickInspect(dt); },
     refreshPreview() { rebuildPreview(); },
+    skinDesc(id) { return SKIN_DESC[id] || ''; },
+    /* store deep-link: jump straight to a skin's detail page */
+    openSkin(id) {
+      lkTab = 'weapons';
+      selSkin = id;
+      if (!WEAPON_ROW.includes(selWeapon)) selWeapon = SKY.Profile.data.wpn || 'pistol';
+      const tab = document.getElementById('tab-locker');
+      if (tab) tab.click();       // selectTab shows the panel + renders...
+      renderPanel();              // ...then the detail state wins
+    },
     init() {
       const refreshCoins = () => {
         const chip = document.querySelector('.lk-coins b');

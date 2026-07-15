@@ -89,6 +89,16 @@ SKY.Weapons = (function () {
     if (!id || id === 'stock') return null;
     return SKY.Profile ? SKY.Profile.finishDef(id) : null;
   }
+  /* store-bought UNIVERSAL tracer FX — rides every weapon that doesn't have
+     its own mythic tracer (local = live profile, remotes = cos bundle) */
+  function fxTracerOf(pawn) {
+    if (!SKY.Profile) return null;
+    const id = pawn.isLocal ? SKY.Profile.data.fxTracer
+      : pawn.cos ? pawn.cos.fxt : null;
+    if (!id) return null;
+    const t = SKY.Profile.fxDef(id);
+    return t ? { color: t.color, trail: t.trail } : null;
+  }
 
   /* opts: burstShot (follow-up shot of a burst — skips the cooldown gate),
      chargeMul / speedMul / recoilMul (piston charge release) */
@@ -179,7 +189,7 @@ SKY.Weapons = (function () {
     const pspd = W.projSpeed * (opts.speedMul || 1);
     const pgrav = (W.projGravity || 0) * (opts.gravMul || 1);
     const skinDef = skinDefOf(pawn, pawn.weapon);
-    const sTracer = skinDef && skinDef.tracer;
+    const sTracer = (skinDef && skinDef.tracer) || fxTracerOf(pawn);
     for (let i = 0; i < (W.pellets || 1); i++) {
       _pdir.copy(_dir);
       if (spread > 0) {
@@ -480,11 +490,10 @@ SKY.Weapons = (function () {
           // remote-owned bullet: cosmetic impact only (their sim decides)
           SKY.Effects.hitBurst(point.clone(), 0, b.skin ? b.skin.color : b.color);
         } else if (b.flame) {
-          // fire licks the surface and leaves a BURN, not a bullet hole
+          // fire licks the surface; every hit feeds the burn accumulator —
+          // the mark only appears (and deepens) with SUSTAINED flame
           SKY.Effects.flamePuff(point.clone().addScaledVector(res.world.normal, 0.25), 1.1);
-          if (Math.random() < 0.4) {   // 18 rps would flush the decal ring
-            SKY.Effects.burnMark(point, res.world.normal);
-          }
+          SKY.Effects.burnMark(point, res.world.normal);
         } else {
           if (b.skin) SKY.Effects.skinImpact(point, res.world.normal, b.skin.trail);
           else SKY.Effects.impactSpark(point, res.world.normal);
@@ -644,7 +653,7 @@ SKY.Weapons = (function () {
     const pspd = m.spd || W.projSpeed;
     const pgrav = m.grv !== undefined ? m.grv : (W.projGravity || 0);
     const skinDef = skinDefOf(pawn, m.w);      // their mythic tracers show here too
-    const sTracer = skinDef && skinDef.tracer;
+    const sTracer = (skinDef && skinDef.tracer) || fxTracerOf(pawn);
     for (const d of m.dirs) {
       bullets.push({
         pos: ori.clone(), prev: ori.clone(),
