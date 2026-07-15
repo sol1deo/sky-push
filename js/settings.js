@@ -13,6 +13,7 @@ SKY.Settings = (function () {
     sens: 1.0,          // multiplier on mouse sensitivity
     fov: 95,
     renderScale: 1.0,   // multiplier on pixel ratio
+    dynRes: true,       // auto resolution drop on low fps (OFF if it flickers)
     shadows: 'high',    // high | low | off  (applies on next round)
     vignette: true,
     shafts: true,       // cinematic sun rays (applies on next map load)
@@ -113,6 +114,7 @@ SKY.Settings = (function () {
       ${check('Raw mouse input', 'rawInput', 'no OS accel + spike filter — turn OFF for the classic feel')}
       <h4>GRAPHICS</h4>
       ${slider('Render scale', 'renderScale', 0.5, 1.5, 0.05, v => Math.round(v * 100) + '%')}
+      ${check('Dynamic resolution', 'dynRes', 'drops resolution when fps dips — turn OFF if the screen flashes black')}
       <div class="set-row"><span>Shadows</span>
         <select data-k="shadows">
           <option value="high" ${data.shadows === 'high' ? 'selected' : ''}>High</option>

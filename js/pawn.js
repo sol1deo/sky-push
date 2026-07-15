@@ -63,8 +63,12 @@ window.SKY = window.SKY || {};
       this.hookLockT = 0;                 // heavy knock jams the hook briefly
       this.pounding = false; this._crouchWas = false;
 
-      // grenades (G)
+      // grenades (G). nadeLoadout = a picked grenade PACK (card / map pickup):
+      // it becomes your G-slot for the rest of the round, refilled each life —
+      // teleport() used to stomp a fresh pick back to the starters ("I picked
+      // molotovs and respawned with nothing")
       this.nades = { ...SKY.TUNING.nadeStart };
+      this.nadeLoadout = null;
 
       // SPARK RUSH: banked sparks + claimed level-ups; deaths scatter the
       // drop where you LAST STOOD, not into the void you fell into
@@ -684,7 +688,8 @@ window.SKY = window.SKY || {};
       this.slotAmmo[2] = Math.round(SKY.TUNING.weapons.pistol.mag * this.mods.magMult);
       if (this.slots[1]) this.slotAmmo[1] = Math.round(SKY.TUNING.weapons[this.slots[1]].mag * this.mods.magMult);
       this.ammo = this.slotAmmo[this.activeSlot];
-      this.nades = { ...SKY.TUNING.nadeStart };
+      // respawn refills the G-slot too — the picked pack wins over starters
+      this.nades = this.nadeLoadout ? { ...this.nadeLoadout } : { ...SKY.TUNING.nadeStart };
       if (this.grapple) { this.grapple = null; }
       if (this.isLocal) { SKY.Input.yaw = yaw; SKY.Input.pitch = 0; }
     }

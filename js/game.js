@@ -256,6 +256,7 @@ SKY.Game = (function () {
         p.slots = { 1: null, 2: 'pistol' };
         p.slotAmmo = { 1: 0, 2: SKY.TUNING.weapons.pistol.mag };
         p.activeSlot = 2; p.drawT = 0;
+        p.nadeLoadout = null;   // grenade picks last one round, like weapons
         p.mods = { speedMult: 1, jumpMult: 1, cdMult: 1, knockResist: 1,
                    grappleRangeMult: 1, grappleCdMult: 1, magMult: 1, gravMult: 1, powerMult: 1 };
         p.abilities = { doubleJump: false, dash: false, pound: false };

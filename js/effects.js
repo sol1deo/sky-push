@@ -1238,9 +1238,129 @@ SKY.Effects = (function () {
     snowGeo.attributes.position.needsUpdate = true;
   }
 
+  /* ---------------- RAIN + LIGHTNING (storm weather) ----------------
+   * Rain = line segments recycled around the camera (points read as snow);
+   * lightning = screen flash + light spike + a jagged bolt in the distance.
+   * Both are COSMETIC — per-client randomness is fine (no sync needed). */
+  const RAIN_N = 700;
+  const RAIN_HX = 30, RAIN_HY = 22, RAIN_HZ = 30;
+  let rainSeg = null, rainGeo = null, rainMat = null, rainDrop = null;
+  let rainAmt = 0;
+  function ensureRain() {
+    if (rainSeg || !scene) return;
+    rainGeo = new THREE.BufferGeometry();
+    const pos = new Float32Array(RAIN_N * 6);          // 2 verts per drop
+    rainDrop = new Float32Array(RAIN_N * 4);           // x,y,z,speed per drop
+    for (let i = 0; i < RAIN_N; i++) {
+      rainDrop[i * 4] = SKY.U.rand(-RAIN_HX, RAIN_HX);
+      rainDrop[i * 4 + 1] = SKY.U.rand(-RAIN_HY, RAIN_HY);
+      rainDrop[i * 4 + 2] = SKY.U.rand(-RAIN_HZ, RAIN_HZ);
+      rainDrop[i * 4 + 3] = 20 + Math.random() * 9;
+    }
+    rainGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    rainMat = new THREE.LineBasicMaterial({
+      color: 0xaec6e0, transparent: true, opacity: 0.34, depthWrite: false,
+    });
+    rainSeg = new THREE.LineSegments(rainGeo, rainMat);
+    rainSeg.frustumCulled = false;
+    rainSeg.renderOrder = 3;
+    scene.add(rainSeg);
+  }
+  function tickRain(dt) {
+    if (!rainSeg && rainAmt <= 0.01) return;
+    ensureRain();
+    if (!rainSeg) return;
+    rainSeg.visible = rainAmt > 0.01;
+    if (!rainSeg.visible || !camera) return;
+    const n = Math.max(40, Math.floor(RAIN_N * rainAmt));
+    rainGeo.setDrawRange(0, n * 2);
+    rainMat.opacity = 0.2 + 0.22 * rainAmt;
+    const cp = camera.position;
+    const a = rainGeo.attributes.position.array;
+    for (let i = 0; i < n; i++) {
+      const v = rainDrop[i * 4 + 3];
+      let x = rainDrop[i * 4] + 2.2 * dt;              // slight constant drift
+      let y = rainDrop[i * 4 + 1] - v * dt;
+      let z = rainDrop[i * 4 + 2];
+      x = cp.x + _snowWrap(x - cp.x, RAIN_HX);
+      y = cp.y + _snowWrap(y - cp.y, RAIN_HY);
+      z = cp.z + _snowWrap(z - cp.z, RAIN_HZ);
+      rainDrop[i * 4] = x; rainDrop[i * 4 + 1] = y; rainDrop[i * 4 + 2] = z;
+      const len = 0.3 + v * 0.014;
+      a[i * 6] = x; a[i * 6 + 1] = y; a[i * 6 + 2] = z;
+      a[i * 6 + 3] = x + 0.1; a[i * 6 + 4] = y + len; a[i * 6 + 5] = z;
+    }
+    rainGeo.attributes.position.needsUpdate = true;
+  }
+  /* lightning: DOM double-flash + a point-light spike + a distant bolt */
+  let stormOv = null, stormFlashT = 0, stormLight = null, boltLine = null, boltT = 0;
+  function lightning(k) {
+    k = k === undefined ? 1 : k;
+    if (!stormOv) {
+      stormOv = document.createElement('div');
+      stormOv.style.cssText = 'position:fixed;inset:0;background:#eaf2ff;opacity:0;' +
+        'pointer-events:none;z-index:3;';
+      document.body.appendChild(stormOv);
+    }
+    stormFlashT = 0.42;                       // double-blink decays in tick
+    if (scene && camera) {
+      if (!stormLight) {
+        stormLight = new THREE.PointLight(0xdfeaff, 0, 500);
+        scene.add(stormLight);
+      }
+      const ang = Math.random() * Math.PI * 2, d = 50 + Math.random() * 90;
+      stormLight.position.set(camera.position.x + Math.cos(ang) * d, 70,
+        camera.position.z + Math.sin(ang) * d);
+      stormLight.intensity = 2.6 * k;
+      // jagged bolt under the light: rebuilt per strike, fades in ~0.18s
+      if (!boltLine) {
+        const bg = new THREE.BufferGeometry();
+        bg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(14 * 3), 3));
+        boltLine = new THREE.Line(bg, new THREE.LineBasicMaterial({
+          color: 0xf2f7ff, transparent: true, opacity: 0,
+          blending: THREE.AdditiveBlending, depthWrite: false }));
+        boltLine.frustumCulled = false;
+        scene.add(boltLine);
+      }
+      const bp = boltLine.geometry.attributes.position.array;
+      let bx = stormLight.position.x, bz = stormLight.position.z;
+      for (let i = 0; i < 14; i++) {
+        const f = i / 13;
+        bp[i * 3] = bx; bp[i * 3 + 1] = 78 * (1 - f); bp[i * 3 + 2] = bz;
+        bx += SKY.U.rand(-4, 4); bz += SKY.U.rand(-4, 4);
+      }
+      boltLine.geometry.attributes.position.needsUpdate = true;
+      boltT = 0.2;
+    }
+  }
+  function tickStorm(dt) {
+    if (stormFlashT > 0) {
+      stormFlashT = Math.max(0, stormFlashT - dt);
+      // two pulses: a hard leader flash and a softer return stroke
+      const tt = 0.42 - stormFlashT;
+      const p = tt < 0.08 ? tt / 0.08 : tt < 0.14 ? 0.35 :
+                tt < 0.2 ? 0.6 : Math.max(0, stormFlashT / 0.22) * 0.4;
+      if (stormOv) stormOv.style.opacity = (p * 0.32).toFixed(3);
+    } else if (stormOv && stormOv.style.opacity !== '0') {
+      stormOv.style.opacity = '0';
+    }
+    if (stormLight && stormLight.intensity > 0) {
+      stormLight.intensity = Math.max(0, stormLight.intensity - dt * 14);
+    }
+    if (boltLine && boltT > 0) {
+      boltT = Math.max(0, boltT - dt);
+      boltLine.material.opacity = Math.min(1, boltT / 0.14);
+    } else if (boltLine && boltLine.material.opacity > 0) {
+      boltLine.material.opacity = 0;
+    }
+  }
+
   return {
     shakeOffset: shakeOff,
     splash, underwater, stream,
+    /* map rain dial + a lightning strike trigger (map.js storm ticker) */
+    setRain(x01) { rainAmt = SKY.U.clamp01(x01 || 0); },
+    lightning,
     /* map snowfall dial (0 = clear skies) */
     setSnow(x01) { snowAmt = SKY.U.clamp01(x01 || 0); },
     /* blizzard event: k = 0..1 storm strength, dir = world wind direction */
@@ -1269,6 +1389,8 @@ SKY.Effects = (function () {
     tick(dt) {
       tickAnimMats();   // PULSE / SPECTRUM weapon finishes
       tickSnow(dt);     // winter weather (map dial + blizzard events)
+      tickRain(dt);     // storm weather
+      tickStorm(dt);    // lightning flash/bolt decay
       // particles
       for (const p of parts) {
         if (p.life <= 0) continue;

@@ -21,12 +21,24 @@
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));   // perf
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // DYNAMIC RESOLUTION state. Every setPixelRatio REALLOCATES the drawing
+  // buffer — on many Windows setups that presents as a black frame. The old
+  // ladder oscillated on heavy maps (drop → fps recovers → climb 3s later →
+  // drop again) = "screen keeps flickering black". Guards: long up-cooldown,
+  // and a climb that immediately tanks BURNS that rung for the rest of the map.
+  const PR_STEPS = [1.5, 1.25, 1.05, 0.85];
+  let prIdx = 0, prRecover = 0;
+  let prNoUpUntil = 0, prUpAt = -1e9, prCeil = 0;
+  const applyPr = () => renderer.setPixelRatio(
+    Math.min(window.devicePixelRatio, PR_STEPS[prIdx]) *
+    (SKY.Settings.data.renderScale || 1));
   // graphics settings hook (render scale / shadows — applies immediately)
   let lastShadows = null;
   SKY.applyGraphics = () => {
     const S = SKY.Settings.data;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5) * S.renderScale);
     renderer.setSize(window.innerWidth, window.innerHeight);
+    prIdx = 0; prCeil = 0; prRecover = 0;   // settings change = fresh dyn-res ladder
     if (S.shadows !== lastShadows) {
       lastShadows = S.shadows;
       renderer.shadowMap.enabled = S.shadows !== 'off';
@@ -173,8 +185,8 @@
   let booted = false;
   let fpsAcc = 0, fpsN = 0;
   const fpsEl = document.getElementById('fps');
-  const PR_STEPS = [1.5, 1.25, 1.05, 0.85];   // dynamic-resolution ladder
-  let prIdx = 0, prRecover = 0;
+  // (dynamic-resolution state lives up top, next to applyGraphics — it must
+  // exist before Settings.init() triggers the first applyGraphics call)
 
   /* gameplay render = two passes: the world, then the first-person weapons
      (layer 1) over a CLEARED depth buffer — guns no longer clip into walls.
@@ -241,16 +253,24 @@
       // DYNAMIC RESOLUTION: sustained sub-48 sheds pixels one step at a
       // time; a solid 3s above 58 earns a step back. Heavy custom maps sit
       // playable instead of chugging at native res.
-      if (SKY.Game.state === 'playing') {
+      if (SKY.Game.state === 'playing' && SKY.Settings.data.dynRes !== false) {
+        const nowMs = performance.now();
         if (fps < 48 && prIdx < PR_STEPS.length - 1) {
+          // dropping right after a climb = that rung can't hold this map
+          if (nowMs - prUpAt < 12000) prCeil = Math.max(prCeil, prIdx + 1);
           prIdx++; prRecover = 0;
-          renderer.setPixelRatio(Math.min(window.devicePixelRatio, PR_STEPS[prIdx]));
-        } else if (fps > 58 && prIdx > 0) {
+          prNoUpUntil = nowMs + 20000;   // stay down a while — no ping-pong
+          applyPr();
+        } else if (fps > 58 && prIdx > prCeil && nowMs > prNoUpUntil) {
           if (++prRecover >= 6) {
-            prIdx--; prRecover = 0;
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, PR_STEPS[prIdx]));
+            prIdx--; prRecover = 0; prUpAt = nowMs;
+            applyPr();
           }
         } else prRecover = 0;
+      } else if (SKY.Game.state === 'menu' && (prIdx || prCeil)) {
+        // fresh map, fresh ladder (and full res for the menu)
+        prIdx = 0; prCeil = 0; prRecover = 0; prUpAt = -1e9; prNoUpUntil = 0;
+        applyPr();
       }
       fpsAcc = 0; fpsN = 0;
     }

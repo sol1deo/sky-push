@@ -22,6 +22,7 @@ SKY.Map = (function () {
   const tickers = [];             // per-map update functions(dt, time)
   const crumbleList = [];
   const fallingMeshes = [];
+  const blockReg = [];      // ALL static blocks {solid, mesh} — quake/collapse pool
   let shaking = null;
   let crumbleTimer = 0;
   let overtime = false;
@@ -126,6 +127,9 @@ SKY.Map = (function () {
     });
     if (opts.crumble) crumbleList.push({ solid, mesh: m });
     if (opts.ride) SKY.World.rideSolids.push(solid);
+    // every STATIC block registers for the quake/collapse events (movers
+    // would fight their path drivers)
+    if (!opts.path && !opts.move) blockReg.push({ solid, mesh: m });
     return solid;
   }
 
@@ -618,7 +622,7 @@ SKY.Map = (function () {
         const tr = trucks[p.truck];
         if (!tr || tr.phase !== 'riding') return;
         tr.phase = 'warn'; tr.t = 2.2;
-        SKY.HUD.subMsg('Truck ' + (tr.i + 1) + ' breaking down — jump!', 3);
+
         SKY.SFX.honk();
       },
     };
@@ -759,7 +763,7 @@ SKY.Map = (function () {
         return { spots };
       },
       exec(p) {
-        SKY.HUD.subMsg('Eruption incoming', 2.5);
+
         for (const s of p.spots) {
           const pos = new THREE.Vector3(s[0], s[1], s[2]);
           warnDecal(pos, 1.6, 0xff6a2a);
@@ -884,7 +888,7 @@ SKY.Map = (function () {
       exec(p) {
         gust.dir.set(p.dx, 0, p.dz);
         gust.active = 2.6;
-        SKY.HUD.subMsg('Wind gust ' + p.label, 2.6);
+
         SKY.SFX.gust();
       },
     };
@@ -1022,7 +1026,7 @@ SKY.Map = (function () {
         const pos = new THREE.Vector3(p.pos[0], p.pos[1], p.pos[2]);
         warnDecal(pos, 1.4, 0xcfe0ff);
         strikes.push({ pos, t: 1.4, done: false });
-        SKY.HUD.subMsg('Lightning', 1.6);
+
       },
     };
   }
@@ -1123,7 +1127,7 @@ SKY.Map = (function () {
         return { dir: Math.random() < 0.5 ? 1 : -1 };   // big wave rolls the deck
       },
       exec(p) {
-        SKY.HUD.subMsg('Big wave — hold on!', 2.5);
+
         SKY.SFX.gust();
         const wave = { t: 2.2, dir: p.dir };
         tickers.push((dt) => {
@@ -1640,11 +1644,48 @@ SKY.Map = (function () {
       group.add(g);
       const yaw = (pr.r && pr.r[1]) || 0;
       const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      if (SKY.Game.player) {
-        SKY.HUD.subMsg('BLIZZARD — heavy wind!', 2.5);
-        SKY.SFX.gust();
-      }
+      SKY.SFX.gust();
       return { g, fwd, gustT: 0.8 };
+    },
+    /* STRUCTURE QUAKE: everything near the marker SWAYS (visual — the
+       collision stays put, offsets are small enough to lie about), the
+       ground tremors, and periodic jolts throw people around */
+    quake(pr, o) {
+      const g = new THREE.Group();
+      group.add(g);
+      const r = o.size !== undefined ? o.size : 30;
+      const c = new THREE.Vector3(pr.p[0], pr.p[1], pr.p[2]);
+      const sway = [];
+      for (const b of blockReg) {
+        if (b.done || !b.mesh.parent) continue;
+        if (b.mesh.position.distanceTo(c) > r) continue;
+        sway.push({ mesh: b.mesh, base: b.mesh.position.clone(), ph: sway.length * 1.73 });
+      }
+      // frozen static props within reach rock too (roots keep frozen
+      // children — recomposing the root matrix cascades to them)
+      for (const cu of cullables) {
+        const d = Math.hypot(cu.x - c.x, cu.z - c.z);
+        if (d > r || !cu.obj.parent) continue;
+        sway.push({ mesh: cu.obj, base: cu.obj.position.clone(), ph: sway.length * 1.73 });
+      }
+      SKY.SFX.rumble(0);
+      return { g, c, r, sway, jT: 1.1, rmbT: 1.2, dustT: 0 };
+    },
+    /* COLLAPSE: blocks near the marker shake loose and REALLY fall —
+       solids removed, meshes tumble, whoever stood on them goes with them.
+       Nearest blocks give way first; the map heals on the next round. */
+    collapse(pr, o) {
+      const g = new THREE.Group();
+      group.add(g);
+      const r = o.size !== undefined ? o.size : 24;
+      const c = new THREE.Vector3(pr.p[0], pr.p[1], pr.p[2]);
+      const list = blockReg
+        .filter((b) => !b.done && b.mesh.parent &&
+          b.mesh.position.distanceTo(c) <= r)
+        .sort((a, b2) => a.mesh.position.distanceTo(c) - b2.mesh.position.distanceTo(c))
+        .map((b, i, arr) => ({ reg: b, at: 0.1 + (i / Math.max(1, arr.length)) * 0.6 }));
+      SKY.SFX.rumble(0);
+      return { g, c, r, list, rmbT: 0 };
     },
     tsunami(pr, o) {
       const g = new THREE.Group();
@@ -1668,7 +1709,7 @@ SKY.Map = (function () {
       const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
       g.rotation.y = yaw;
       if (SKY.Game.player) {
-        SKY.HUD.subMsg('TSUNAMI incoming!', 2.5);
+
         SKY.SFX.gust();
       }
       return { g, fwd, right, sprayT: 0 };
@@ -1706,7 +1747,7 @@ SKY.Map = (function () {
       g.position.set(pr.p[0], pr.p[1], pr.p[2]);
       group.add(g);
       if (SKY.Game.player) {
-        SKY.HUD.subMsg('The BERMUDA TRIANGLE opens…', 2.5);
+
         SKY.SFX.thunder();
       }
       return { g, swirls, ring };
@@ -1736,7 +1777,7 @@ SKY.Map = (function () {
       g.position.set(pr.p[0], pr.p[1], pr.p[2]);
       group.add(g);
       if (SKY.Game.player) {
-        SKY.HUD.subMsg('KRAKEN! Tentacles from the deep!', 2.5);
+
         SKY.SFX.rumble();
       }
       return { g, tents, slamT: 1.2, o };
@@ -1757,7 +1798,7 @@ SKY.Map = (function () {
       g.add(fin);
       g.position.set(pr.p[0], pr.p[1], pr.p[2]);
       group.add(g);
-      if (SKY.Game.player) SKY.HUD.subMsg('Shark in the water!', 2.2);
+
       return { g, fin, ang: evRand(pr, 999) * Math.PI * 2, wakeT: 0, o };
     },
   };
@@ -1765,9 +1806,99 @@ SKY.Map = (function () {
   /* teardown when an event's window closes (only kinds that leak state) */
   const EV_END = {
     blizzard() { if (SKY.Effects.setSnowStorm) SKY.Effects.setSnowStorm(0); },
+    quake(vis) {
+      // park every swayed mesh back exactly where it belongs
+      for (const s of vis.sway) {
+        s.mesh.position.copy(s.base);
+        s.mesh.updateMatrix();
+      }
+    },
+    collapse(vis) {
+      // blocks still mid-shake when the window closed: put them back
+      for (const it of vis.list) {
+        if (it.done || !it.shake) continue;
+        it.reg.mesh.position.copy(it.shake.base);
+        it.reg.mesh.updateMatrix();
+      }
+    },
   };
 
   const EV_TICK = {
+    quake(vis, dt, phase, pr, o) {
+      const k = Math.min(1, Math.min(phase, 1 - phase) * 7 + 0.1);
+      const T = SKY.Game.roundTime;
+      // structural sway: the whole tower leans and shudders
+      for (const s of vis.sway) {
+        s.mesh.position.set(
+          s.base.x + (Math.sin(T * 8.3 + s.ph) * 0.09 + Math.sin(T * 23 + s.ph) * 0.025) * k,
+          s.base.y + Math.sin(T * 11.7 + s.ph * 2.1) * 0.05 * k,
+          s.base.z + (Math.cos(T * 7.6 + s.ph) * 0.09 + Math.cos(T * 19 + s.ph) * 0.025) * k);
+        s.mesh.updateMatrix();   // frozen meshes recompose on demand
+      }
+      const me = SKY.Game.player;
+      if (me && me.alive && me.pos.distanceTo(vis.c) < vis.r * 1.6) {
+        SKY.Effects.shake(dt * 2.4 * k);
+      }
+      vis.rmbT -= dt;
+      if (vis.rmbT <= 0) {
+        vis.rmbT = 1.2;
+        SKY.SFX.rumble(me && me.alive ? me.pos.distanceTo(vis.c) : 20);
+      }
+      // ground jolts: periodic radial kicks — deterministic off the clock
+      vis.jT -= dt;
+      if (vis.jT <= 0) {
+        vis.jT = 1.4;
+        const pow = o.power !== undefined ? o.power : 26;
+        evKnock(vis.c, vis.r, pow * 0.32, pow * 0.5);
+      }
+      // dust shaken off the structures
+      vis.dustT -= dt;
+      if (vis.dustT <= 0 && vis.sway.length) {
+        vis.dustT = 0.12;
+        const s = vis.sway[(Math.random() * vis.sway.length) | 0];
+        _ev.copy(s.base);
+        _ev.x += SKY.U.rand(-2, 2); _ev.z += SKY.U.rand(-2, 2);
+        SKY.Effects.burst(_ev, { count: 2, speed: 1.2, color: '#b9b2a4',
+          gravity: 9, life: 0.8, size: 0.5 });
+      }
+    },
+    collapse(vis, dt, phase, pr, o) {
+      const me = SKY.Game.player;
+      if (me && me.alive && me.pos.distanceTo(vis.c) < vis.r * 2) {
+        SKY.Effects.shake(dt * 2.8);
+      }
+      vis.rmbT -= dt;
+      if (vis.rmbT <= 0) {
+        vis.rmbT = 1.0;
+        SKY.SFX.rumble(me && me.alive ? me.pos.distanceTo(vis.c) : 20);
+      }
+      for (const it of vis.list) {
+        if (it.done || phase < it.at) continue;
+        if (!it.shake) {
+          it.shake = { t: 0.9, base: it.reg.mesh.position.clone() };
+        }
+        it.shake.t -= dt;
+        if (it.shake.t > 0) {
+          // the warning wobble — get OFF this block
+          it.reg.mesh.position.set(
+            it.shake.base.x + SKY.U.rand(-0.08, 0.08),
+            it.shake.base.y + SKY.U.rand(-0.05, 0.05),
+            it.shake.base.z + SKY.U.rand(-0.08, 0.08));
+          it.reg.mesh.updateMatrix();
+        } else {
+          // it goes: collision OUT, mesh tumbles into the void for real
+          SKY.World.removeSolid(it.reg.solid);
+          it.reg.mesh.position.copy(it.shake.base);
+          it.reg.mesh.matrixAutoUpdate = true;   // it moves every frame now
+          fallingMeshes.push({ mesh: it.reg.mesh, vy: 0 });
+          it.reg.done = true;
+          it.done = true;
+          dirty = true;                          // next round reloads the map
+          SKY.Effects.burst(it.shake.base, { count: 10, speed: 5, color: '#c9c2b4',
+            gravity: 10, life: 0.9, size: 0.55 });
+        }
+      }
+    },
     blizzard(vis, dt, phase, pr, o) {
       // ramp in/out across the window so the storm doesn't pop
       const k = Math.min(1, Math.min(phase, 1 - phase) * 6 + 0.12);
@@ -1882,14 +2013,19 @@ SKY.Map = (function () {
     o.every = Math.max(5, o.every || 30);
     o.dur = Math.min(Math.max(1, o.dur || 8), o.every);
     const st = { on: false, vis: null };
+    // rand = timing scatter (default FULL): the event fires at a seeded-
+    // random moment inside each cycle instead of on a metronome — every
+    // peer computes the same roll, so it stays perfectly synced
+    const jit = SKY.U.clamp(o.rand !== undefined ? o.rand : 1, 0, 1);
     tickers.push((dt) => {
       const playing = SKY.Game.state === 'playing' || SKY.Game.state === 'roundend';
       const t = SKY.Game.roundTime;
       let want = false, phase = 0;
       if (playing && t >= o.start) {
         const cyc = Math.floor((t - o.start) / o.every);
-        const ph = (t - o.start) - cyc * o.every;
-        if (ph < o.dur &&
+        const off = evRand(pr, cyc * 13 + 5) * Math.max(0, o.every - o.dur) * jit;
+        const ph = (t - o.start) - cyc * o.every - off;
+        if (ph >= 0 && ph < o.dur &&
             evRand(pr, cyc) * 100 < (o.chance !== undefined ? o.chance : 100)) {
           want = true;
           phase = ph / o.dur;
@@ -2123,6 +2259,21 @@ SKY.Map = (function () {
     lightMul = def.light !== undefined ? def.light : 1;
     lobbySpotDef = (def.lobby && Array.isArray(def.lobby.p)) ? def.lobby : null;
     if (SKY.Effects.setSnow) SKY.Effects.setSnow(def.snow || 0);   // winter maps
+    if (SKY.Effects.setRain) SKY.Effects.setRain(def.rain || 0);   // storm maps
+    // THUNDER: random-interval lightning (flash + bolt + delayed rumble).
+    // Cosmetic — each client rolls its own strikes, nothing to sync.
+    if (def.thunder > 0 && SKY.Effects.lightning) {
+      let thunderT = SKY.U.rand(2, 6);
+      tickers.push((dt) => {
+        thunderT -= dt;
+        if (thunderT > 0) return;
+        thunderT = SKY.U.rand(5, 16) / Math.max(0.15, def.thunder);
+        const big = Math.random() < 0.35;
+        SKY.Effects.lightning(big ? 1 : 0.6);
+        // sound arrives after the light, like it should
+        setTimeout(() => { if (group) SKY.SFX.thunder(); }, big ? 350 : SKY.U.rand(600, 1400));
+      });
+    }
     SKY.World.killY = def.killY;
     SKY.World.crownHome = new THREE.Vector3(def.crown[0], def.crown[1], def.crown[2]);
     const M = D.MOODS[def.mood];
@@ -2222,7 +2373,8 @@ SKY.Map = (function () {
       const doorIdx = isDoor ? doorSeq++ : -1;
       // SEA EVENTS: invisible markers -> deterministic clock-driven shows
       if (a === 'fx:tsunami' || a === 'fx:triangle' || a === 'fx:kraken' ||
-          a === 'fx:shark' || a === 'fx:blizzard') {
+          a === 'fx:shark' || a === 'fx:blizzard' || a === 'fx:quake' ||
+          a === 'fx:collapse') {
         registerSeaEvent(a.slice(3), pr);
       }
       // WATER: register the swim volume — pawn physics (swim/buoyancy) and
@@ -2493,6 +2645,7 @@ SKY.Map = (function () {
     skyGroup = new THREE.Group();
     group.add(skyGroup);
     decor.length = 0; clouds.length = 0; crumbleList.length = 0;
+    blockReg.length = 0;
     tickers.length = 0; fallingMeshes.length = 0; shaking = null;
     overtime = false; dirty = false;
     starLayer = null; meteor = null; meteorT = 6;
@@ -2502,8 +2655,9 @@ SKY.Map = (function () {
     SKY.World.reset();
     SKY.World.rideSolids = [];
     scene.background = null;   // sky domes handle the backdrop
-    // weather resets with the map (buildCustomMap re-arms its own snowfall)
+    // weather resets with the map (buildCustomMap re-arms its own weather)
     if (SKY.Effects.setSnow) { SKY.Effects.setSnow(0); SKY.Effects.setSnowStorm(0); }
+    if (SKY.Effects.setRain) SKY.Effects.setRain(0);
     const custom = SKY.MapData && SKY.MapData.get(id);
     if (custom) {
       currentId = id;

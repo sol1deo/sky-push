@@ -154,7 +154,9 @@ SKY.Loot = (function () {
     if (item.kind === 'weapon') {
       pawn.giveWeapon(item.id);      // slot 1, drawn immediately
     } else if (item.kind === 'nade') {
-      pawn.nades = { type: item.nade, count: item.count };
+      // the pack IS your G-slot from here on — survives the respawn teleport
+      pawn.nadeLoadout = { type: item.nade, count: item.count };
+      pawn.nades = { ...pawn.nadeLoadout };
     } else {
       pawn.owned.add(item.id);
       item.apply(pawn);

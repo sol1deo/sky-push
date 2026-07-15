@@ -54,14 +54,27 @@ SKY.World = (function () {
        so every peer simulates identically. */
     surfaceAt(w, x, z) {
       if (!w.amp || !w.kw) return w.level;
+      // MIRRORS the open-sea terms of the fx:sea vertex loop (assets.js) —
+      // same constants incl. the storm chop + rogue wave, minus the
+      // shore-only shoal/surge (those need the per-vertex depth map)
       const t = performance.now() * 0.0009;
       const lx = x - w.x, lz = z - w.z, kw = w.kw;
-      const h =
+      let h =
         Math.sin(lx * kw + t * 1.9) * 0.55 +
         Math.sin(lz * kw * 0.8 + t * 1.4) * 0.3 +
         Math.sin((lx + lz) * kw * 0.45 - t * 2.3) * 0.35 +
         Math.sin(lx * kw * 2.3 - t * 3.1) * Math.sin(lz * kw * 2.1 + t * 2.6) * 0.14;
-      return w.level + w.amp * h;
+      const storm = Math.min(1, (w.opts && w.opts.storm) || 0);
+      let rogue = 0;
+      if (storm > 0) {
+        h += storm * (Math.sin(lx * kw * 3.1 - t * 4.8) * 0.3 +
+                      Math.sin(lz * kw * 2.7 + t * 5.4) * 0.22 +
+                      Math.sin((lx - lz) * kw * 1.9 - t * 6.2) * 0.18);
+        const proj = lx * 0.8321 + lz * 0.5547;
+        const su = ((proj - t * 10) % 110 + 110) % 110 - 55;
+        rogue = storm * (1.5 + w.amp * 1.8) * Math.exp(-(su * su) / 81);
+      }
+      return w.level + w.amp * (1 + storm * 2.2) * h + rogue;
     },
     waterAt(x, y, z, waves) {
       for (const w of api.waters) {

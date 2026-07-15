@@ -35,6 +35,9 @@ because these creators are great:
   poly.pizza.
 - **Winter & holiday props** (`models/holiday/`) — "Holiday Kit" by **Kenney**
   (https://kenney.nl/assets/holiday-kit), CC0.
+- **Industrial props** (`models/factory/`, `models/cityind/`) — "Factory Kit"
+  and "City Kit (Industrial)" by **Kenney** (https://kenney.nl/assets/factory-kit,
+  https://kenney.nl/assets/city-kit-industrial), CC0.
 - **Santa Claus** (`models/holiday/santa.glb`) — by **J-Toastie** via poly.pizza
   (https://poly.pizza/m/WQP3xjYjPy), CC-BY 3.0 — thank you!
 

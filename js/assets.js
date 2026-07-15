@@ -123,6 +123,8 @@ SKY.Assets = (function () {
     { id: 'fx:kraken',     name: 'EVENT · kraken attack', folder: 'water' },
     { id: 'fx:shark',      name: 'EVENT · shark patrol', folder: 'water' },
     { id: 'fx:blizzard',   name: 'EVENT · blizzard wind', folder: 'winter & holiday' },
+    { id: 'fx:quake',      name: 'EVENT · structure quake', folder: 'gadgets' },
+    { id: 'fx:collapse',   name: 'EVENT · collapse (blocks fall)', folder: 'gadgets' },
     { id: 'fx:mountain',   name: 'mountain (backdrop)', folder: 'cliffs & rocks' },
     { id: 'fx:school',     name: 'fish school (swims)', folder: 'sea life' },
     { id: 'fx:sharkpatrol', name: 'shark — ambient swimmer', folder: 'sea life' },
@@ -161,9 +163,12 @@ SKY.Assets = (function () {
     //   drag/gravity/speed/jumpOut = swim feel (pawn physics reads these)
     //   foam = shoreline foam strength · foamw = foam band width (m of depth)
     //   shorewave = rolling shore-surge height (waves that lap the beach)
+    //   storm = 0-1 chaos dial (bigger swell + chop + rogue wave trains)
+    //   crestcol = wave-top/foam tint (night maps hated the locked white)
     sea:        { color: '#155a9e', power: 0.5, range: 18, size: 140,
                   deepAlpha: 0.9, shallowAlpha: 0.32, shallow: '#5fd8cf', fade: 10,
                   foam: 0.7, foamw: 3, shorewave: 0.5,
+                  storm: 0, crestcol: '#eef6ff',
                   drag: 1.7, gravity: 0.12, speed: 0.65, jumpOut: 1,
                   oxygen: 12, currents: 10, currentPower: 26 },
     // SEA EVENTS — invisible markers in-game; the event system in map.js
@@ -188,6 +193,14 @@ SKY.Assets = (function () {
     // (airborne players catch the full blast; snowfall thickens while it blows)
     blizzard:   { color: '#dfe9ff', power: 30,
                   start: 30, every: 50, dur: 9, chance: 100 },
+    // quake: everything within SIZE sways/shudders, periodic jolts throw
+    // players (power = jolt force). collapse: blocks within SIZE shake loose
+    // and REALLY fall, nearest to the marker first — build the breakable
+    // part of a structure out of BLOCKS and plant this inside it
+    quake:      { color: '#d8b45a', power: 26, size: 30,
+                  start: 40, every: 55, dur: 10, chance: 100 },
+    collapse:   { color: '#ff7a4a', size: 24,
+                  start: 60, every: 90, dur: 8, chance: 60 },
     // BACKDROP MOUNTAIN — seeded low-poly massif for valley skylines.
     //   size = base radius · height = peak height · peaks = extra summits ·
     //   seed = variation roll · snow = snowline (0 none … 1 fully capped)
@@ -378,7 +391,10 @@ SKY.Assets = (function () {
       // fresnel term makes grazing angles glassier — the water finally reads
       // as water instead of a blue tarp.
       const size = Math.max(20, o.size);
-      const segs = SKY.U.clamp(Math.round(size / 3), 24, 56);
+      // v4: double the mesh density AND ditch per-frame computeVertexNormals
+      // for ANALYTIC normals (wave derivatives) — the old combo shaded every
+      // 3m facet flat-ish, which read as "triangles, way too lowpoly"
+      const segs = SKY.U.clamp(Math.round(size / 2), 32, 96);
       const geo = new THREE.PlaneGeometry(size, size, segs, segs);
       geo.rotateX(-Math.PI / 2);
       const basePos = geo.attributes.position.array.slice();
@@ -388,8 +404,11 @@ SKY.Assets = (function () {
       geo.setAttribute('adeep', new THREE.BufferAttribute(adeep, 1));
       const base = col.clone().convertSRGBToLinear();
       const deep = base.clone().multiplyScalar(0.35);
-      const crest = base.clone().lerp(new THREE.Color(0.35, 0.55, 0.75), 0.3);
-      const foam = new THREE.Color(0.85, 0.95, 1);
+      // crest/foam colors are CREATOR-TINTABLE (white tops glowed wrong on
+      // night maps) — default keeps the classic near-white look
+      const crestFoam = new THREE.Color(o.crestcol || '#eef6ff').convertSRGBToLinear();
+      const crest = base.clone().lerp(crestFoam, 0.35);
+      const foam = crestFoam.clone();
       const shallowCol = new THREE.Color(o.shallow || '#5fd8cf').convertSRGBToLinear();
       const aDeep = SKY.U.clamp(o.deepAlpha !== undefined ? o.deepAlpha : 0.9, 0.05, 0.98);
       const aShallow = SKY.U.clamp(o.shallowAlpha !== undefined ? o.shallowAlpha : 0.35, 0.02, 0.98);
@@ -411,6 +430,7 @@ SKY.Assets = (function () {
         sh.uniforms.uAShallow = { value: aShallow };
         sh.uniforms.uFoam = { value: foamK };
         sh.uniforms.uFoamW = { value: foamW };
+        sh.uniforms.uFoamCol = { value: crestFoam };
         sh.uniforms.uTime = { value: 0 };
         mat.userData.sh = sh;                    // onBeforeRender ticks uTime
         sh.vertexShader = 'attribute float adeep;\nvarying float vDeep;\nvarying vec3 vWp;\n' +
@@ -419,7 +439,7 @@ SKY.Assets = (function () {
             'vWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         sh.fragmentShader = ('uniform vec3 uShallowCol;\nuniform float uADeep;\n' +
           'uniform float uAShallow;\nuniform float uFoam;\nuniform float uFoamW;\n' +
-          'uniform float uTime;\nvarying float vDeep;\nvarying vec3 vWp;\n') +
+          'uniform vec3 uFoamCol;\nuniform float uTime;\nvarying float vDeep;\nvarying vec3 vWp;\n') +
           sh.fragmentShader
             .replace('#include <color_fragment>',
               ['#include <color_fragment>',
@@ -448,7 +468,7 @@ SKY.Assets = (function () {
                '  // the very waterline keeps a solid lapping edge',
                '  float line = 1.0 - smoothstep(0.0, 0.2 * uFoamW, dkRaw);',
                '  foamAmt = max(foamAmt, uFoam * line * (0.7 + 0.3 * fizz));',
-               '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.97, 1.0), foamAmt);',
+               '  diffuseColor.rgb = mix(diffuseColor.rgb, uFoamCol, foamAmt);',
                '  diffuseColor.a = clamp(diffuseColor.a + foamAmt * 0.55, 0.0, 0.96);',
                '}'].join('\n'))
             .replace('#include <output_fragment>',
@@ -468,20 +488,45 @@ SKY.Assets = (function () {
       // shore surge: rolling swells whose crests follow the depth contours
       // (phase rides adeep), marching toward the beach and dying on it
       const shoreAmp = Math.max(0, o.shorewave !== undefined ? o.shorewave : 0.5);
+      // STORM dial: bigger swell + short chop + traveling ROGUE WAVE trains.
+      // World.surfaceAt MIRRORS every open-sea term here (same constants) so
+      // the camera's underwater check tracks the storm surface — change one,
+      // change both.
+      const storm = SKY.U.clamp(o.storm || 0, 0, 1);
+      const stormMul = 1 + storm * 2.2;
+      const RGX = 0.8321, RGZ = 0.5547;          // rogue travel direction
+      const RL = 110, RW = 9;                    // train spacing / swell width
+      const rogueH = storm * (1.5 + amp * 1.8);  // meters
       const pos = geo.attributes.position;
+      const nrmA = geo.attributes.normal;
       const colA = geo.attributes.color;
       const _c = new THREE.Color();
       sea.onBeforeRender = () => {
         const t = performance.now() * 0.0009;
         if (mat.userData.sh) mat.userData.sh.uniforms.uTime.value = t;
-        const a = pos.array, c = colA.array;
+        const a = pos.array, nA = nrmA.array, c = colA.array;
         for (let i = 0; i < pos.count; i++) {
           const x = basePos[i * 3], z = basePos[i * 3 + 2];
-          const h =
-            Math.sin(x * kw + t * 1.9) * 0.55 +
-            Math.sin(z * kw * 0.8 + t * 1.4) * 0.3 +
-            Math.sin((x + z) * kw * 0.45 - t * 2.3) * 0.35 +
-            Math.sin(x * kw * 2.3 - t * 3.1) * Math.sin(z * kw * 2.1 + t * 2.6) * 0.14;
+          // base swell — sin AND cos per term: the cos terms are the exact
+          // surface gradient, which becomes the smooth analytic normal
+          const p1 = x * kw + t * 1.9, p2 = z * kw * 0.8 + t * 1.4;
+          const p3 = (x + z) * kw * 0.45 - t * 2.3;
+          const p4x = x * kw * 2.3 - t * 3.1, p4z = z * kw * 2.1 + t * 2.6;
+          const s4x = Math.sin(p4x), s4z = Math.sin(p4z);
+          let h = Math.sin(p1) * 0.55 + Math.sin(p2) * 0.3 +
+                  Math.sin(p3) * 0.35 + s4x * s4z * 0.14;
+          let dhx = (Math.cos(p1) * 0.55 + Math.cos(p3) * 0.1575) * kw +
+                    Math.cos(p4x) * s4z * 0.322 * kw;
+          let dhz = (Math.cos(p2) * 0.24 + Math.cos(p3) * 0.1575) * kw +
+                    s4x * Math.cos(p4z) * 0.294 * kw;
+          if (storm > 0) {
+            // chop: short, fast, angry
+            const q1 = x * kw * 3.1 - t * 4.8, q2 = z * kw * 2.7 + t * 5.4;
+            const q3 = (x - z) * kw * 1.9 - t * 6.2;
+            h += storm * (Math.sin(q1) * 0.3 + Math.sin(q2) * 0.22 + Math.sin(q3) * 0.18);
+            dhx += storm * (Math.cos(q1) * 0.93 + Math.cos(q3) * 0.342) * kw;
+            dhz += storm * (Math.cos(q2) * 0.594 - Math.cos(q3) * 0.342) * kw;
+          }
           const dkv = adeep[i];
           // shoaling: open-sea swell flattens as the water gets shallow —
           // the surface CALMS onto the beach instead of clipping through it
@@ -489,18 +534,41 @@ SKY.Assets = (function () {
           // surge band peaks mid-shallow, zero at the waterline + open sea
           const band = (1 - dkv) * Math.min(1, dkv / 0.3);
           const surge = shoreAmp * Math.sin(dkv * 8.0 - t * 2.3) * band;
-          a[i * 3 + 1] = basePos[i * 3 + 1] + amp * h * shoal + surge;
+          const dispAmp = amp * stormMul * shoal;
+          let y = basePos[i * 3 + 1] + dispAmp * h + surge;
+          let gx = dispAmp * dhx, gz = dispAmp * dhz;
+          let rh = 0;
+          if (rogueH > 0) {
+            // rogue swell: a big lone wave marching across the whole sea
+            const proj = x * RGX + z * RGZ;
+            const su = ((proj - t * 10) % RL + RL) % RL - RL / 2;
+            const pulse = Math.exp(-(su * su) / (RW * RW));
+            rh = rogueH * pulse * shoal;
+            y += rh;
+            const dp = rh * (-2 * su / (RW * RW));
+            gx += dp * RGX; gz += dp * RGZ;
+          }
+          a[i * 3 + 1] = y;
+          // analytic normal = normalize(-dY/dx, 1, -dY/dz) — buttery smooth,
+          // and worlds cheaper than recomputing face normals every frame
+          const inv = 1 / Math.sqrt(gx * gx + 1 + gz * gz);
+          nA[i * 3] = -gx * inv; nA[i * 3 + 1] = inv; nA[i * 3 + 2] = -gz * inv;
           // height -> hue: mostly the base blue; crests lift late, only the
-          // very peaks break into foam (full-range lerp read as whitewash)
-          const k = SKY.U.clamp01((h + 1.2) / 2.4);
+          // very peaks break into foam — storms whitecap earlier, and the
+          // rogue wave carries a foaming crown
+          // storm widens the normalization window too — otherwise the chop
+          // saturates k and the whole ocean whitecaps (the round-44 trap)
+          const hCol = h + rh / Math.max(0.3, amp * stormMul);
+          const k = SKY.U.clamp01((hCol + 1.2 + storm * 0.7) / (2.4 + storm * 1.4));
+          const th1 = 0.66 - storm * 0.05, th2 = 0.88 - storm * 0.06;
           _c.copy(deep).lerp(base, Math.min(1, k * 1.7));
-          if (k > 0.66) _c.lerp(crest, (k - 0.66) / 0.34);
-          if (k > 0.88) _c.lerp(foam, (k - 0.88) / 0.12 * 0.9);
+          if (k > th1) _c.lerp(crest, Math.min(1, (k - th1) / (1 - th1)));
+          if (k > th2) _c.lerp(foam, Math.min(1, (k - th2) / (1 - th2)) * 0.9);
           c[i * 3] = _c.r; c[i * 3 + 1] = _c.g; c[i * 3 + 2] = _c.b;
         }
         pos.needsUpdate = true;
+        nrmA.needsUpdate = true;
         colA.needsUpdate = true;
-        geo.computeVertexNormals();
       };
       g.add(sea);
       // measure the seabed depth under every vertex ONCE the prop has its
@@ -560,6 +628,20 @@ SKY.Assets = (function () {
       arrow.rotation.x = -Math.PI / 2;
       arrow.position.set(0, 1.2, -3.2);
       g.add(mk, arrow);
+    } else if (name === 'quake' || name === 'collapse') {
+      // editor-only marker: the danger radius + a jagged "crack" zigzag
+      const r = o.size !== undefined ? o.size : (name === 'quake' ? 30 : 24);
+      const mk = marker(new THREE.CylinderGeometry(r, r, 0.6, 24, 1, true), col);
+      mk.position.y = 0.4;
+      const zig = [];
+      for (let i = 0; i <= 8; i++) {
+        zig.push(new THREE.Vector3((i - 4) * r * 0.16, 0.5,
+          (i % 2 ? 1 : -1) * r * 0.07));
+      }
+      const crack = new THREE.Line(new THREE.BufferGeometry().setFromPoints(zig),
+        new THREE.LineBasicMaterial({ color: col }));
+      crack.name = 'edmarker';
+      g.add(mk, crack);
     } else if (name === 'blizzard') {
       // editor-only marker: swirling wind ring + a direction arrow (the wind
       // blows along the marker's facing — rotate the prop to aim the storm)

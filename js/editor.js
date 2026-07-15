@@ -1022,8 +1022,9 @@ SKY.Editor = (function () {
   }
 
   function applyMood() {
-    // weather preview follows the map's snowfall dial (Editor.frame ticks Effects)
+    // weather preview follows the map's dials (Editor.frame ticks Effects)
     if (SKY.Effects.setSnow) SKY.Effects.setSnow((def && def.snow) || 0);
+    if (SKY.Effects.setRain) SKY.Effects.setRain((def && def.rain) || 0);
     for (const l of lights) scene.remove(l);
     lights = [];
     if (env) { scene.remove(env); env = null; }
@@ -1567,6 +1568,8 @@ SKY.Editor = (function () {
         ${numRow('Light %', Math.round((def.light !== undefined ? def.light : 1) * 100), 'light', 10)}
         ${numRow('Snowfall 0–1', def.snow !== undefined ? def.snow : 0, 'msnow', 0.1)}
         ${numRow('Snow on props 0–1', def.snowAll !== undefined ? def.snowAll : 0, 'msnowall', 0.1)}
+        ${numRow('Rain 0–1', def.rain !== undefined ? def.rain : 0, 'msrain', 0.1)}
+        ${numRow('Thunder 0–1', def.thunder !== undefined ? def.thunder : 0, 'msthunder', 0.1)}
         <div class="ed-row"><span>Sun godrays</span>
           <input type="checkbox" data-k="shaftsOn" ${((def.shafts === undefined || def.shafts === null)
             ? SKY.MapData.MOODS[def.mood].shafts : def.shafts) ? 'checked' : ''}></div>
@@ -1890,6 +1893,9 @@ SKY.Editor = (function () {
             + numRow('Shore foam 0–1', fx.foam !== undefined ? fx.foam : 0.7, 'fxfoam', 0.1)
             + numRow('Foam width m', fx.foamw !== undefined ? fx.foamw : 3, 'fxfoamw', 0.5)
             + numRow('Shore wave m', fx.shorewave !== undefined ? fx.shorewave : 0.5, 'fxshorewave', 0.1)
+            + numRow('Storm 0–1', fx.storm !== undefined ? fx.storm : 0, 'fxstorm', 0.1)
+            + `<div class="ed-row"><span>Crest color <small>wave tops + foam</small></span>
+              <input type="color" data-k="fxcrestcol" value="${fx.crestcol || '#eef6ff'}"></div>`
             + numRow('Swim drag', fx.drag, 'fxdrag', 0.2)
             + numRow('Sink rate', fx.gravity, 'fxgrav', 0.05)
             + numRow('Swim speed ×', fx.speed, 'fxspeed', 0.05)
@@ -1910,10 +1916,12 @@ SKY.Editor = (function () {
         if (fx.dur !== undefined) h += numRow('Duration s', fx.dur, 'fxdur', 1);
         if (fx.chance !== undefined) h += numRow('Chance %', fx.chance, 'fxchance', 10);
         if (fx.start !== undefined) {
-          h += `<div class="ed-hint">Event: first fires STARTS-AT seconds into the round,
-          then repeats EVERY seconds, staying active for DURATION. CHANCE rolls
-          per cycle (same result for every player). Place several markers for
-          random-feeling spawns.</div>`;
+          h += numRow('Random timing 0–1', fx.rand !== undefined ? fx.rand : 1, 'fxrand', 0.1);
+          h += `<div class="ed-hint">Event: first arms STARTS-AT seconds in, then once
+          per EVERY-second cycle, active for DURATION. CHANCE rolls per cycle and
+          RANDOM TIMING scatters WHEN in the cycle it strikes (1 = anywhere,
+          0 = metronome) — every player sees the same roll. No announcement
+          text: the world itself is the warning.</div>`;
         }
         // tip: Rot X/Z steer spot lights — rotate via the raw fields
         if (d.asset === 'fx:spot') {
@@ -1967,6 +1975,17 @@ SKY.Editor = (function () {
         // snowfall previews LIVE in the editor (Editor.frame ticks Effects)
         def.snow = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 1);
         if (SKY.Effects.setSnow) SKY.Effects.setSnow(def.snow);
+        markDirty();
+      }
+      else if (k === 'msrain') {
+        def.rain = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 1);
+        if (SKY.Effects.setRain) SKY.Effects.setRain(def.rain);   // live preview
+        markDirty();
+      }
+      else if (k === 'msthunder') {
+        // frequency dial: strikes land in-game (and a taste right now)
+        def.thunder = SKY.U.clamp(parseFloat(e.target.value) || 0, 0, 1);
+        if (def.thunder > 0 && SKY.Effects.lightning) SKY.Effects.lightning(0.7);
         markDirty();
       }
       else if (k === 'msnowall') {
@@ -2151,6 +2170,7 @@ SKY.Editor = (function () {
       else if (k === 'fxevery') d.fx.every = Math.max(5, num);
       else if (k === 'fxdur') d.fx.dur = Math.max(1, num);
       else if (k === 'fxchance') d.fx.chance = SKY.U.clamp(num, 0, 100);
+      else if (k === 'fxrand') d.fx.rand = SKY.U.clamp(num, 0, 1);
       else if (k === 'fxcount') d.fx.count = SKY.U.clamp(Math.round(num), 1, 30);
       else if (k === 'fxsway') d.fx.sway = e.target.checked ? 1 : 0;
       else if (k === 'fxpeaks') d.fx.peaks = SKY.U.clamp(Math.round(num), 1, 6);
@@ -2164,6 +2184,8 @@ SKY.Editor = (function () {
       else if (k === 'fxfoam') d.fx.foam = SKY.U.clamp(num, 0, 1);
       else if (k === 'fxfoamw') d.fx.foamw = SKY.U.clamp(num, 0, 30);
       else if (k === 'fxshorewave') d.fx.shorewave = SKY.U.clamp(num, 0, 3);
+      else if (k === 'fxstorm') d.fx.storm = SKY.U.clamp(num, 0, 1);
+      else if (k === 'fxcrestcol') d.fx.crestcol = e.target.value;
       else if (k === 'fxdrag') d.fx.drag = SKY.U.clamp(num, 0, 10);
       else if (k === 'fxgrav') d.fx.gravity = SKY.U.clamp(num, -1, 2);
       else if (k === 'fxspeed') d.fx.speed = SKY.U.clamp(num, 0.1, 3);

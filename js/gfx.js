@@ -164,6 +164,39 @@ SKY.GFX = (function () {
     'box-large', 'box-open', 'bucket', 'barrel-open', 'resource-planks',
     'resource-wood', 'resource-stone', 'metal-panel', 'floor-old', 'fence-fortified',
     'tool-axe', 'tool-pickaxe'];
+  // Kenney Factory Kit — the OIL RIG / industrial construction set: catwalks,
+  // big pipe runs w/ valves, cranes, machines, hoppers, structure frames
+  // (folder: factory/, ×4)
+  const FACTORY_NAMES = ['catwalk-corner', 'catwalk-cross', 'catwalk-junction',
+    'catwalk-stairs', 'catwalk-stairs-loop', 'catwalk-straight',
+    'pipe-large', 'pipe-large-bend', 'pipe-large-bump', 'pipe-large-cross',
+    'pipe-large-curve', 'pipe-large-junction', 'pipe-large-long', 'pipe-large-side',
+    'pipe-large-valve', 'pipe-glass-large', 'pipe-glass-large-bend',
+    'pipe-glass-large-valve', 'pipe-glass-large-long',
+    'crane', 'crane-lift', 'crane-magnet',
+    'machine', 'machine-bed', 'machine-fortified', 'machine-window',
+    'machine-window-bar', 'machine-connection-pipe',
+    'hopper-high-round', 'hopper-high-square', 'hopper-round', 'hopper-square',
+    'structure-corner-inner', 'structure-corner-outer', 'structure-doorway',
+    'structure-doorway-wide', 'structure-high', 'structure-medium',
+    'structure-short', 'structure-tall', 'structure-wall', 'structure-window',
+    'structure-window-wide', 'structure-yellow-high', 'structure-yellow-medium',
+    'structure-yellow-short', 'structure-yellow-tall',
+    'piston-round', 'piston-square', 'robot-arm-a', 'robot-arm-b', 'cog-a', 'cog-b',
+    'conveyor', 'conveyor-corner', 'conveyor-long', 'conveyor-stripe',
+    'conveyor-junction-t', 'box-large', 'box-long', 'box-small', 'box-wide', 'cone',
+    'floor', 'floor-large', 'top', 'top-large',
+    'door', 'door-wide-open', 'door-wide-half', 'door-wide-closed',
+    'scanner-high', 'scanner-low', 'screen-panel-wide', 'screen-wide',
+    'lever-double', 'lever-single', 'warning-orange', 'warning-traffic'];
+  // Kenney City Kit Industrial — refinery-style buildings, chimneys, tank
+  // (folder: cityind/, ×4)
+  const CITYIND_NAMES = ['building-a', 'building-b', 'building-c', 'building-d',
+    'building-e', 'building-f', 'building-g', 'building-h', 'building-i',
+    'building-j', 'building-k', 'building-l', 'building-m', 'building-n',
+    'building-o', 'building-p', 'building-q', 'building-r', 'building-s',
+    'building-t', 'chimney-basic', 'chimney-large', 'chimney-medium',
+    'chimney-small', 'detail-tank'];
   // Kenney Holiday Kit — winter/christmas: snowy trees, cabins (walk-in, doors
   // swing via the door-rotate convention), sleds, presents, snowman, trainset,
   // menorah/kinara/festivus for everyone else (folder: holiday/, ×4)
@@ -203,6 +236,8 @@ SKY.GFX = (function () {
     { dir: 'roads', prefix: 'rd-', names: ROAD_NAMES, folder: 'roads & park', scale: 4, lambert: true },
     { dir: 'camp', prefix: 'camp-', names: CAMP_NAMES, folder: 'camping', scale: 4, lambert: true },
     { dir: 'holiday', prefix: 'hol-', names: HOLIDAY_NAMES, folder: 'winter & holiday', scale: 4, lambert: true },
+    { dir: 'factory', prefix: 'fac-', names: FACTORY_NAMES, folder: 'industrial', scale: 4, lambert: true },
+    { dir: 'cityind', prefix: 'ind-', names: CITYIND_NAMES, folder: 'industrial', scale: 4, lambert: true },
     // Santa (poly.pizza, J-Toastie, CC-BY 3.0) — rigged GLB rendered as a
     // statue; bind-pose geometry is ~1.2m, so ×1.7 puts him at ~2m tall
     { dir: 'holiday', prefix: 'hol-', names: ['santa'], folder: 'winter & holiday', scale: 1.7, lambert: true },

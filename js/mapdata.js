@@ -142,6 +142,11 @@ SKY.MapData = (function () {
     else def.snow = Math.min(1, def.snow);
     if (typeof def.snowAll !== 'number' || !(def.snowAll > 0)) delete def.snowAll;
     else def.snowAll = Math.min(1, def.snowAll);
+    // storm weather: rain amount + thunder frequency (both 0-1)
+    if (typeof def.rain !== 'number' || !(def.rain > 0)) delete def.rain;
+    else def.rain = Math.min(1, def.rain);
+    if (typeof def.thunder !== 'number' || !(def.thunder > 0)) delete def.thunder;
+    else def.thunder = Math.min(1, def.thunder);
     // optional lobby-lineup spot placed in the editor: {p:[x,y,z], yaw}
     if (def.lobby && !(Array.isArray(def.lobby.p) && def.lobby.p.length === 3)) def.lobby = null;
     if (def.lobby && typeof def.lobby.yaw !== 'number') def.lobby.yaw = 0;
