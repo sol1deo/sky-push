@@ -430,6 +430,7 @@ SKY.Editor = (function () {
   function enterSculpt(tool) {
     const o = objects[sel];
     if (!o || o.kind !== 'terrain') return;
+    stampMode = null;                    // sculpt replaces an armed stamp
     if (terra && terra.tool === tool) { exitSculpt(); return; }
     terra = terra || { radius: 7, strength: 6, chan: 0 };
     terra.tool = tool;
@@ -524,6 +525,167 @@ SKY.Editor = (function () {
       o.geo.computeVertexNormals();
       if (o.sidesUpdate) o.sidesUpdate(hts);   // walls track the rim live
     }
+  }
+
+  /* ================= TERRAIN STAMPS (Unity-style) =================
+   * One-click landforms: pick a stamp, click the terrain — a seeded
+   * noise heightmap is ADDED into the heightfield (they stack). The Seed
+   * dial rolls endless variants; SHIFT-click inverts (mountain digs). */
+  let stampMode = null;                       // { type } while a stamp is armed
+  const stampOpt = { size: 44, height: 16, seed: 1 };
+  /* seeded value noise + fBm + ridged — stamps must be deterministic */
+  function vhash(ix, iz, seed) {
+    let h = (Math.imul(ix, 374761393) + Math.imul(iz, 668265263) +
+             Math.imul(seed | 0, 2654435761)) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+  function vnoise(x, z, seed) {
+    const ix = Math.floor(x), iz = Math.floor(z);
+    const fx = x - ix, fz = z - iz;
+    const sx2 = fx * fx * (3 - 2 * fx), sz2 = fz * fz * (3 - 2 * fz);
+    const a = vhash(ix, iz, seed), b = vhash(ix + 1, iz, seed);
+    const c = vhash(ix, iz + 1, seed), d = vhash(ix + 1, iz + 1, seed);
+    return (a * (1 - sx2) + b * sx2) * (1 - sz2) + (c * (1 - sx2) + d * sx2) * sz2;
+  }
+  function fbm2(x, z, seed, oct) {
+    let v = 0, amp = 0.5, f = 1;
+    for (let o = 0; o < (oct || 4); o++) {
+      v += vnoise(x * f, z * f, seed + o * 101) * amp;
+      amp *= 0.5; f *= 2.05;
+    }
+    return v;                                  // ~0..1
+  }
+  function ridged2(x, z, seed, oct) {
+    let v = 0, amp = 0.55, f = 1;
+    for (let o = 0; o < (oct || 4); o++) {
+      v += (1 - Math.abs(vnoise(x * f, z * f, seed + o * 77) * 2 - 1)) * amp;
+      amp *= 0.5; f *= 2.1;
+    }
+    return v;                                  // ~0..1.1, creased ridgelines
+  }
+  /* u,v = stamp space -1..1 (pre-rotated) -> SIGNED height -1..1; every
+     stamp falls to 0 at its own edge so it blends into the ground */
+  const STAMPS = {
+    mountain(u, v, s) {
+      const r = Math.hypot(u, v);
+      if (r >= 1) return 0;
+      return Math.pow(1 - r, 1.35) * (0.42 + 0.58 * ridged2(u * 2.6 + 9, v * 2.6 + 9, s, 4));
+    },
+    hill(u, v, s) {
+      const r = Math.hypot(u, v);
+      if (r >= 1) return 0;
+      return ((Math.cos(r * Math.PI) + 1) / 2) * (0.86 + 0.14 * fbm2(u * 3, v * 3, s, 3));
+    },
+    ridge(u, v, s) {                           // long crest running along U
+      const w = Math.abs(v) * 1.9;
+      const endT = Math.max(0, 1 - Math.max(0, Math.abs(u) * 1.15 - 0.35) / 0.65);
+      if (w >= 1 || endT <= 0) return 0;
+      return Math.pow(1 - w, 1.5) * endT * (0.5 + 0.5 * ridged2(u * 3.2 + 3, v * 1.4, s, 3));
+    },
+    valley(u, v, s) {                          // meandering riverbed, digs DOWN
+      const w = Math.abs(v + (fbm2(u * 1.7, 3.3, s, 3) - 0.5) * 0.55) * 2.0;
+      const endT = Math.max(0, 1 - Math.max(0, Math.abs(u) * 1.1 - 0.45) / 0.55);
+      if (w >= 1 || endT <= 0) return 0;
+      return -Math.pow(1 - w, 1.7) * endT;
+    },
+    canyon(u, v, s) {                          // steep walls, flat floor
+      const w = Math.abs(v + (fbm2(u * 2.2, 7.7, s, 3) - 0.5) * 0.4) * 2.1;
+      const endT = Math.max(0, 1 - Math.max(0, Math.abs(u) * 1.1 - 0.45) / 0.55);
+      if (w >= 1 || endT <= 0) return 0;
+      return -Math.min(1, (1 - SKY.U.clamp01((w - 0.55) / 0.45)) * 1.15) * endT;
+    },
+    crater(u, v, s) {
+      const r = Math.hypot(u, v);
+      if (r >= 1) return 0;
+      const bowl = -Math.pow(Math.max(0, 1 - r / 0.72), 1.4);
+      const rim = Math.exp(-Math.pow((r - 0.74) / 0.14, 2)) * 0.5;
+      return bowl + rim * (0.85 + 0.3 * fbm2(u * 4 + 5, v * 4 + 5, s, 3));
+    },
+    plateau(u, v, s) {                         // steep-sided mesa, eroded rim
+      const r = Math.hypot(u, v);
+      if (r >= 1) return 0;
+      const edge = 0.62 + (fbm2(Math.atan2(v, u) * 1.6 + 8, r * 2, s, 3) - 0.5) * 0.22;
+      return Math.pow(SKY.U.clamp01((edge - r) / 0.16), 0.8);
+    },
+    dunes(u, v, s) {
+      const r = Math.hypot(u, v);
+      if (r >= 1) return 0;
+      const wave = 1 - Math.abs(Math.sin(v * 5.2 + fbm2(u * 2, v * 1.2, s, 3) * 2.6));
+      return Math.pow(Math.max(0, 1 - r * r), 1.2) * wave * 0.8;
+    },
+  };
+  function enterStamp(type) {
+    const o = objects[sel];
+    if (!o || o.kind !== 'terrain') return;
+    if (stampMode && stampMode.type === type) { exitStamp(); return; }
+    if (terra) { terra = null; terraStroke = null; }   // stamp replaces sculpt
+    stampMode = { type };
+    if (gizmo) gizmo.detach();
+    if (!brushRing) {
+      brushRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.05, 8, 40),
+        new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true,
+          opacity: 0.85, depthTest: false }));
+      brushRing.rotation.x = -Math.PI / 2;
+      brushRing.renderOrder = 6;
+      brushRing.raycast = () => {};
+    }
+    if (!brushRing.parent) group.add(brushRing);
+    brushRing.scale.setScalar(stampOpt.size / 2);
+    syncInspector();
+    status(type.toUpperCase() + ' stamp — click the terrain to place it · SHIFT inverts · ESC done');
+  }
+  function exitStamp() {
+    stampMode = null;
+    if (brushRing && brushRing.parent && !terra) brushRing.parent.remove(brushRing);
+    if (gizmo && objects[sel]) gizmo.attach(objects[sel].mesh);
+    syncInspector();
+    status('');
+  }
+  function applyStamp(pt, invert) {
+    const o = objects[sel];
+    if (!o || o.kind !== 'terrain' || !stampMode) return;
+    const tr = o.data;
+    const segs = SKY.U.clamp(Math.round(tr.segs || 48), 8, 128), n = segs + 1;
+    const sx = trSX(tr), sz = trSZ(tr);
+    const cellX = sx / segs, cellZ = sz / segs;
+    push();
+    const S = STAMPS[stampMode.type];
+    const R = Math.max(2, stampOpt.size / 2);
+    const H = (invert ? -1 : 1) * stampOpt.height;
+    const rot = vhash(3, 7, stampOpt.seed) * Math.PI * 2;  // seeded orientation
+    const ca = Math.cos(rot), sa = Math.sin(rot);
+    const cx = (pt.x - tr.p[0] + sx / 2) / cellX;
+    const cz = (pt.z - tr.p[2] + sz / 2) / cellZ;
+    const rgx = Math.ceil(R / cellX) + 1, rgz = Math.ceil(R / cellZ) + 1;
+    const ix0 = Math.max(0, Math.floor(cx - rgx)), ix1 = Math.min(segs, Math.ceil(cx + rgx));
+    const iz0 = Math.max(0, Math.floor(cz - rgz)), iz1 = Math.min(segs, Math.ceil(cz + rgz));
+    const hts = o.hts, pos = o.geo.attributes.position;
+    for (let iz = iz0; iz <= iz1; iz++) {
+      for (let ix = ix0; ix <= ix1; ix++) {
+        const wx = (ix - cx) * cellX, wz = (iz - cz) * cellZ;
+        const u = (wx * ca + wz * sa) / R, v = (-wx * sa + wz * ca) / R;
+        if (u < -1 || u > 1 || v < -1 || v > 1) continue;
+        const h = S(u, v, stampOpt.seed | 0);
+        if (!h) continue;
+        const i = iz * n + ix;
+        hts[i] = SKY.U.clamp(hts[i] + h * H, tr.base ? 0 : -80, 300);
+        pos.array[i * 3 + 1] = hts[i];
+      }
+    }
+    pos.needsUpdate = true;
+    o.geo.computeVertexNormals();
+    o.geo.computeBoundingSphere();
+    if (o.sidesUpdate) o.sidesUpdate(hts);
+    o.data.h = SKY.MapData.encodeHeights(hts);
+    markDirty();
+    // seas re-measure their shallows against the new landform
+    for (const q of objects) {
+      if (q.kind === 'prop' && q.inner && q.inner.userData.postPlace) {
+        q.inner.userData.postPlace(q.inner);
+      }
+    }
+    status(stampMode.type + ' stamped — click again to stack, SEED for a new variant');
   }
 
   /* stroke ended: bake the arrays back into the def + refresh dependents */
@@ -1092,10 +1254,11 @@ SKY.Editor = (function () {
     spotSel = null;                 // a normal selection releases the spot
     if (facePaint) { facePaint = null; paintDrag = false; }
     texSlotEdit = -1;
-    // changing selection always leaves sculpt mode
-    if (terra && (!objects[i] || objects[i] !== objects[sel])) {
+    // changing selection always leaves sculpt/stamp mode
+    if ((terra || stampMode) && (!objects[i] || objects[i] !== objects[sel])) {
       terra = null;
       terraStroke = null;
+      stampMode = null;
       if (brushRing && brushRing.parent) brushRing.parent.remove(brushRing);
     }
     sel = i;
@@ -1194,23 +1357,39 @@ SKY.Editor = (function () {
     status('redo');
   }
 
-  /* ================= clipboard ================= */
+  /* ================= clipboard (multi-object aware) ================= */
   function copySel(cut) {
-    const o = objects[sel];
-    if (!o) return;
-    clipboard = { kind: o.kind, json: JSON.stringify(o.data) };
-    if (cut) { deleteSel(); status('cut'); } else status('copied ' + o.kind);
+    const idxs = msel.filter((i) => objects[i]);
+    if (!idxs.length) return;
+    clipboard = { items: idxs.map((i) =>
+      ({ kind: objects[i].kind, json: JSON.stringify(objects[i].data) })) };
+    const label = idxs.length > 1 ? idxs.length + ' objects' : objects[idxs[0]].kind;
+    if (cut) { deleteSel(); status('cut ' + label); } else status('copied ' + label);
   }
   function paste() {
-    if (!clipboard) { status('clipboard empty'); return; }
+    const items = clipboard &&
+      (clipboard.items || (clipboard.json ? [{ kind: clipboard.kind, json: clipboard.json }] : null));
+    if (!items || !items.length) { status('clipboard empty'); return; }
     // paste IN PLACE — an offset broke axis alignment; move it with G after
-    const item = JSON.parse(clipboard.json);
-    const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns, item: def.items, prop: def.props, terrain: def.terrains }[clipboard.kind];
     push();
-    arr.push(item);
+    const pasted = [];
+    for (const it of items) {
+      const arr = { block: def.blocks, pad: def.pads, spawn: def.spawns,
+        item: def.items, prop: def.props, terrain: def.terrains }[it.kind];
+      if (!arr) continue;
+      const item = JSON.parse(it.json);
+      arr.push(item);
+      pasted.push(item);
+    }
     rebuild();
-    select(objects.findIndex(o => o.data === item));
-    status('pasted');
+    // re-select the WHOLE pasted set (primary = last) so G drags it together
+    msel = [];
+    objects.forEach((o, ix) => { if (pasted.indexOf(o.data) >= 0) msel.push(ix); });
+    sel = msel.length ? msel[msel.length - 1] : -1;
+    spotSel = null;
+    updateSelVisuals(); syncInspector(); refreshOutliner();
+    status('pasted ' + (pasted.length > 1
+      ? pasted.length + ' objects — G moves them together' : (pasted.length ? '' : 'nothing')));
   }
 
   /* arrow-key nudging (one undo point per burst) — moves the whole selection */
@@ -1595,6 +1774,22 @@ SKY.Editor = (function () {
              ['flatten', '▬ FLAT'], ['paint', '🖌 PAINT']].map(([t, l]) =>
             `<span class="ed-face${tool === t ? ' sel' : ''}" data-tt="${t}">${l}</span>`).join('')}
         </div>`;
+      // one-click landform stamps (seeded — the SEED dial rolls variants)
+      h += `<div class="ed-row"><span>Stamps <small>click terrain to place</small></span></div>
+        <div class="ed-row ed-faces">
+          ${Object.keys(STAMPS).map((t) =>
+            `<span class="ed-face${stampMode && stampMode.type === t ? ' sel' : ''}"
+              data-tstamp="${t}">${t.toUpperCase()}</span>`).join('')}
+        </div>`;
+      if (stampMode) {
+        h += numRow('Stamp size m', stampOpt.size, 'tssize', 5)
+          + numRow('Peak / depth m', stampOpt.height, 'tsheight', 2)
+          + numRow('Variant seed', stampOpt.seed, 'tsseed', 1)
+          + `<div class="ed-hint">Click the terrain to stamp a ${stampMode.type.toUpperCase()} —
+          they ADD to what's there, so clicks stack. SHIFT-click inverts
+          (mountain digs a pit, valley builds a wall). Change SEED for a
+          different shape and orientation. ESC exits.</div>`;
+      }
       if (terra) {
         h += numRow('Brush size', terra.radius, 'tbrush', 1)
           + numRow('Strength', terra.strength, 'tstr', 1);
@@ -1938,8 +2133,11 @@ SKY.Editor = (function () {
       rebuildTerrainMesh(o);
       return;
     }
-    else if (k === 'tbrush') { if (terra) { terra.radius = SKY.U.clamp(num || 7, 1, 40); if (brushRing) brushRing.scale.setScalar(terra.radius); } return; }
-    else if (k === 'tstr') { if (terra) terra.strength = SKY.U.clamp(num || 6, 0.5, 40); return; }
+    else if (k === 'tbrush') { if (terra) { terra.radius = SKY.U.clamp(num || 7, 1, 150); if (brushRing) brushRing.scale.setScalar(terra.radius); } return; }
+    else if (k === 'tstr') { if (terra) terra.strength = SKY.U.clamp(num || 6, 0.5, 120); return; }
+    else if (k === 'tssize') { stampOpt.size = SKY.U.clamp(num || 44, 4, 400); if (brushRing && stampMode) brushRing.scale.setScalar(stampOpt.size / 2); return; }
+    else if (k === 'tsheight') { stampOpt.height = SKY.U.clamp(num || 16, 0.5, 200); return; }
+    else if (k === 'tsseed') { stampOpt.seed = Math.round(num) || 1; return; }
     else if (k.indexOf('fx') === 0 && o.kind === 'prop') {
       d.fx = { ...SKY.Assets.fxDefaults(d.asset), ...(d.fx || {}) };
       if (k === 'fxcolor') d.fx.color = e.target.value;
@@ -2431,6 +2629,10 @@ SKY.Editor = (function () {
     if (THREE.TransformControls) {
       gizmo = new THREE.TransformControls(camera, SKY.Input._canvas);
       gizmo.setSize(0.9);
+      // LOCAL space: move/rotate handles follow the object's own rotation
+      // (scale always worked that way — world-aligned G/R on a rotated
+      // object felt broken next to it)
+      gizmo.setSpace('local');
       gizmo.addEventListener('dragging-changed', (e) => {
         gizmoDrag = e.value;
         if (collEdit) {                            // a collider box owns the gizmo
@@ -2625,6 +2827,9 @@ SKY.Editor = (function () {
                       dir === 'pz' ? 1 : dir === 'nz' ? -1 : 0);
         return;
       }
+      // terrain stamp chips
+      const tstamp = e.target.closest('[data-tstamp]');
+      if (tstamp) { enterStamp(tstamp.dataset.tstamp); return; }
       // terrain sculpt tool + paint channel chips
       const tt = e.target.closest('[data-tt]');
       if (tt) { enterSculpt(tt.dataset.tt); return; }
@@ -2801,6 +3006,11 @@ SKY.Editor = (function () {
           paintDrag = true;
           paintFaceAt(e.clientX, e.clientY);
         }
+        // stamp mode: LMB places one landform per click
+        if (stampMode && objects[sel] && objects[sel].kind === 'terrain') {
+          const pt = terrainHit(e.clientX, e.clientY);
+          if (pt) applyStamp(pt, e.shiftKey);
+        }
         // sculpt mode: LMB starts a brush stroke instead of a selection
         if (terra && objects[sel] && objects[sel].kind === 'terrain') {
           const pt = terrainHit(e.clientX, e.clientY);
@@ -2825,6 +3035,7 @@ SKY.Editor = (function () {
       if (e.button === 0 && facePaint) return;   // paint mode never re-selects
       if (e.button === 0 && terraStroke) { endStroke(); return; }
       if (e.button === 0 && terra) return;   // brush mode never re-selects
+      if (e.button === 0 && stampMode) return;   // stamp mode never re-selects
       if (e.button === 0 && !gizmoDrag && (!gizmo || !gizmo.axis) &&
           Math.abs(e.clientX - downX) < 4 && Math.abs(e.clientY - downY) < 4 &&
           !(e.target.closest && e.target.closest('#editor-ov'))) {
@@ -2839,13 +3050,13 @@ SKY.Editor = (function () {
     window.addEventListener('mousemove', (e) => {
       if (!api.active) return;
       if (paintDrag) paintFaceAt(e.clientX, e.clientY);
-      if (terra && !looking && !(e.target.closest && e.target.closest('#editor-ov'))) {
+      if ((terra || stampMode) && !looking && !(e.target.closest && e.target.closest('#editor-ov'))) {
         const pt = terrainHit(e.clientX, e.clientY);
         if (pt) {
           brushAt = pt;
           if (brushRing) {
             brushRing.position.set(pt.x, pt.y + 0.15, pt.z);
-            brushRing.scale.setScalar(terra.radius);
+            brushRing.scale.setScalar(terra ? terra.radius : stampOpt.size / 2);
           }
         }
       }
@@ -2868,10 +3079,11 @@ SKY.Editor = (function () {
       e.preventDefault();
       const dir = (e.deltaY || e.deltaX) > 0 ? -1 : 1;
       if (e.ctrlKey) {
-        terra.strength = SKY.U.clamp(terra.strength + dir, 0.5, 40);
+        terra.strength = SKY.U.clamp(terra.strength + dir, 0.5, 120);
         status('strength ' + terra.strength.toFixed(0) + '   (CTRL+scroll)');
       } else {
-        terra.radius = SKY.U.clamp(terra.radius + dir * (terra.radius >= 12 ? 2 : 1), 1, 40);
+        terra.radius = SKY.U.clamp(
+          terra.radius + dir * (terra.radius >= 40 ? 6 : terra.radius >= 12 ? 2 : 1), 1, 150);
         if (brushRing) brushRing.scale.setScalar(terra.radius);
         status('brush ' + terra.radius.toFixed(0) + '   (SHIFT+scroll)');
       }
@@ -2917,6 +3129,7 @@ SKY.Editor = (function () {
         if (pipette) { exitPipette(); syncInspector(); return; }
         if (facePaint) { exitFacePaint(); return; }
         if (terra) { exitSculpt(); return; }
+        if (stampMode) { exitStamp(); return; }
         if (spotSel) { clearSpotSel(); status(''); return; }
         select(-1);
       }
@@ -2979,6 +3192,6 @@ SKY.Editor = (function () {
   api.frame = frame;
   api.init = init;
   /* test/debug introspection only — not used by game code */
-  api._dbg = () => ({ def, objects, sel, spotSel, crownMarker, lobbyMarker });
+  api._dbg = () => ({ def, objects, sel, msel, spotSel, crownMarker, lobbyMarker, gizmo, stampMode, stampOpt });
   return api;
 })();
