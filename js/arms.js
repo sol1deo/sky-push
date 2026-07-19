@@ -26,8 +26,8 @@ SKY.Arms = (() => {
     scale: 0.46,                 // arm size vs a 1.9u body (post-normalize)
     lenMul: 2.1,                 // STRETCH the bone chain (longer, not fatter —
                                  // stock UACP arms can't reach the gun at all)
-    shoulderR: [0.36, -0.54, -0.06],
-    shoulderL: [-0.36, -0.54, -0.06],
+    shoulderR: [0.38, -0.60, -0.02],
+    shoulderL: [-0.38, -0.60, -0.02],
     elbowHintR: [1.6, -1, -0.25],   // camera-space, normalized at use
     elbowHintL: [-1.6, -1, -0.25],
     fistRotR: [-1.5708, 0, -0.6],   // knuckles up, fingers forward, rolled out
@@ -68,8 +68,11 @@ SKY.Arms = (() => {
       port:  [0.0, -0.045, -L * 0.12],
     };
     if (cls === 'pistol' || cls === 'revolver') {
-      r.grip = [0, -0.035, L * 0.22];
-      r.fore = [0, -0.06, L * 0.20];       // support hand cups the grip base
+      r.grip = [0.012, -0.035, L * 0.22];
+      // support hand cups the grip from the LEFT-below at a cant — both
+      // fists on the same spot read as interpenetrating mitts
+      r.fore = [-0.045, -0.062, L * 0.15];
+      r.foreRot = [0.25, 0.45, 0.55];
       r.mag = [0, -0.08, L * 0.22];        // mag lives IN the grip
       r.bolt = [0, 0.03, L * 0.05];        // slide top
     }
@@ -241,30 +244,32 @@ SKY.Arms = (() => {
     ],
     /* draw: gun starts LOW + rotated (coming off the back), raise, then a
        class-flavored ready gesture. u runs over DRAW_DUR real seconds. */
+    /* the left hand RIDES the gun up (on its foregrip) — starting it at a
+       far-left 'cam' pose made it sweep across the whole screen */
     draw_rifle: [
-      { t: 0.00, gun: [0.06, -0.30, 0.10, 0.9, -0.25, 0.20], lh: ['cam', -0.25, -0.45, -0.30] },
-      { t: 0.42, gun: [0.01, -0.02, 0.02, 0.10, -0.02, 0.02], lh: ['fore', 0, -0.04, 0.02] },
+      { t: 0.00, gun: [0.06, -0.30, 0.10, 0.9, -0.25, 0.20], lh: ['fore', 0, -0.02, 0.02] },
+      { t: 0.42, gun: [0.01, -0.02, 0.02, 0.10, -0.02, 0.02], lh: ['fore', 0, -0.01, 0.01] },
       { t: 0.55, gun: [0, 0, 0, 0, 0, 0], lh: ['bolt', 0, 0.01, -0.01] },
       { t: 0.70, gun: [0.01, 0, 0.02, 0.08, -0.02, 0.06], lh: ['bolt', 0, 0.005, 0.09], ev: 'rack' },
       { t: 0.85, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     draw_pistol: [
-      { t: 0.00, gun: [0.05, -0.26, 0.08, 0.8, 0.2, -0.15], lh: ['cam', -0.22, -0.42, -0.28] },
+      { t: 0.00, gun: [0.05, -0.26, 0.08, 0.8, 0.2, -0.15], lh: ['fore', 0, -0.02, 0.02] },
       { t: 0.40, gun: [0.01, -0.02, 0.01, 0.10, 0.03, -0.02], lh: ['bolt', 0, 0.02, -0.02] },
       { t: 0.58, gun: [0.01, 0, 0.02, 0.12, 0, -0.02], lh: ['bolt', 0, 0.015, 0.07], ev: 'rack' },
       { t: 0.80, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     draw_shotgun: [
-      { t: 0.00, gun: [0.06, -0.30, 0.10, 0.9, -0.3, 0.25], lh: ['cam', -0.25, -0.45, -0.30] },
+      { t: 0.00, gun: [0.06, -0.30, 0.10, 0.9, -0.3, 0.25], lh: ['fore', 0, -0.02, 0.02] },
       { t: 0.42, gun: [0.01, -0.02, 0.02, 0.10, -0.03, 0.03], lh: ['fore', 0, -0.02, 0.02] },
       { t: 0.58, gun: [0.01, -0.01, 0.02, 0.14, -0.02, 0.04], lh: ['fore', 0, -0.01, 0.10], ev: 'rack' },
       { t: 0.75, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     draw_revolver: [
-      { t: 0.00, gun: [0.05, -0.26, 0.08, 0.8, 0.25, -0.2], lh: ['cam', -0.22, -0.42, -0.28] },
+      { t: 0.00, gun: [0.05, -0.26, 0.08, 0.8, 0.25, -0.2], lh: ['fore', 0, -0.02, 0.02] },
       { t: 0.45, gun: [0.01, -0.01, 0.01, 0.08, 0.03, -0.30] },
       { t: 0.62, gun: [0.01, 0.01, 0.01, 0.02, 0, 0.35], ev: 'rack' },
       { t: 0.80, lh: ['fore', 0, 0, 0] },
@@ -444,6 +449,28 @@ SKY.Arms = (() => {
       // mesh stretches between joints without getting thicker
       lo.position.multiplyScalar(CFG.lenMul);
       fi.position.multiplyScalar(CFG.lenMul);
+      // sleeve continuation: a tinted tube riding the upper-arm bone,
+      // extending shoulder-ward past the cut so the arm never visibly ENDS
+      // on screen no matter the pose
+      let tintMat = null, skinMat = null;
+      inst.root.traverse((o) => {
+        if (!o.isMesh || !o.material || tintMat) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (m.name === inst.tint) tintMat = m;
+          else if (m.name === 'Skin' && !skinMat) skinMat = m;
+        }
+      });
+      const upLen = lo.position.length();
+      const upDir = lo.position.clone().normalize();
+      const tubeR = (inst.height || 1.9) * 0.052;
+      const tube = new THREE.Mesh(
+        new THREE.CylinderGeometry(tubeR, tubeR * 0.9, upLen * 1.5, 8),
+        tintMat || skinMat || new THREE.MeshLambertMaterial({ color: 0x666e7c }));
+      tube.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), upDir);
+      tube.position.copy(upDir).multiplyScalar(-upLen * 0.5);
+      tube.layers.set(VM_LAYER);
+      up.add(tube);
       rig.arms[side] = {
         anchor, sh, up, lo, fi,
         bindSh: sh.quaternion.clone(), bindUp: up.quaternion.clone(),
@@ -612,49 +639,62 @@ SKY.Arms = (() => {
     }
   }
 
-  /* ---------------- timeline sampling ---------------- */
-  function smooth(t) { return t * t * (3 - 2 * t); }
-  function sampleChan(keys, u, name, out) {
-    // piecewise-eased interpolation of an array channel; holds across gaps
-    let prev = null, next = null;
-    for (const k of keys) {
-      if (k[name] === undefined) continue;
-      if (k.t <= u) prev = k;
-      else { next = k; break; }
-    }
-    if (!prev && !next) return null;
-    if (!prev) prev = next;
-    if (!next || next === prev) return copyArr(prev[name], out);
-    const span = Math.max(1e-5, next.t - prev.t);
-    const f = smooth(Math.min(1, Math.max(0, (u - prev.t) / span)));
-    return lerpArr(prev[name], next[name], f, out);
+  /* ---------------- timeline sampling ----------------
+   * Catmull-Rom through the keys: per-segment smoothstep had ZERO velocity
+   * at every key — the reload literally stopped 10+ times per cycle and
+   * read as stutter. A spline flows through the keys in one continuous
+   * motion with natural follow-through/overshoot. */
+  function catmull(p0, p1, p2, p3, s) {
+    const s2 = s * s, s3 = s2 * s;
+    return 0.5 * ((2 * p1) + (-p0 + p2) * s +
+      (2 * p0 - 5 * p1 + 4 * p2 - p3) * s2 +
+      (-p0 + 3 * p1 - 3 * p2 + p3) * s3);
   }
-  function copyArr(a, out) { for (let i = 0; i < out.length; i++) out[i] = a[i] !== undefined ? a[i] : 0; return out; }
-  function lerpArr(a, b, f, out) {
-    for (let i = 0; i < out.length; i++) {
-      const av = a[i] !== undefined ? a[i] : 0, bv = b[i] !== undefined ? b[i] : 0;
-      out[i] = av + (bv - av) * f;
+  function chanKeys(keys, name) {
+    const c = keys.__ck || (keys.__ck = {});
+    if (!c[name]) {
+      const list = [];
+      for (const k of keys) if (k[name] !== undefined) list.push(k);
+      c[name] = list;
+    }
+    return c[name];
+  }
+  const cv = (k, name, i) => { const v = k[name][i]; return v === undefined ? 0 : v; };
+  function sampleChan(keys, u, name, out) {
+    const ks = chanKeys(keys, name);
+    if (!ks.length) return null;
+    let i = -1;
+    for (let j = 0; j < ks.length; j++) { if (ks[j].t <= u) i = j; else break; }
+    if (i < 0) return copyArr(ks[0][name], out);
+    if (i >= ks.length - 1) return copyArr(ks[ks.length - 1][name], out);
+    const k1 = ks[i], k2 = ks[i + 1];
+    const k0 = ks[Math.max(0, i - 1)], k3 = ks[Math.min(ks.length - 1, i + 2)];
+    const s = (u - k1.t) / Math.max(1e-5, k2.t - k1.t);
+    for (let c = 0; c < out.length; c++) {
+      out[c] = catmull(cv(k0, name, c), cv(k1, name, c), cv(k2, name, c), cv(k3, name, c), s);
     }
     return out;
   }
+  function copyArr(a, out) { for (let i = 0; i < out.length; i++) out[i] = a[i] !== undefined ? a[i] : 0; return out; }
   function sampleHand(keys, u, name) {
-    // hand channels carry a socket id (string) — interpolate positions only
-    // when both keys share the socket, else snap-at-key (damping smooths it)
-    let prev = null, next = null;
-    for (const k of keys) {
-      if (k[name] === undefined) continue;
-      if (k.t <= u) prev = k;
-      else { next = k; break; }
-    }
-    if (!prev && !next) return null;
-    if (!prev) return next[name];
-    if (!next || next === prev) return prev[name];
-    const a = prev[name], b = next[name];
+    // hand channels carry a socket id — spline within runs of the SAME
+    // socket; a socket switch holds (the hand damp bridges the jump)
+    const ks = chanKeys(keys, name);
+    if (!ks.length) return null;
+    let i = -1;
+    for (let j = 0; j < ks.length; j++) { if (ks[j].t <= u) i = j; else break; }
+    if (i < 0) return ks[0][name];
+    if (i >= ks.length - 1) return ks[ks.length - 1][name];
+    const k1 = ks[i], k2 = ks[i + 1];
+    const a = k1[name], b = k2[name];
     if (a[0] !== b[0]) return a;
-    const span = Math.max(1e-5, next.t - prev.t);
-    const f = smooth((u - prev.t) / span);
+    const k0 = (i > 0 && ks[i - 1][name][0] === a[0]) ? ks[i - 1] : k1;
+    const k3 = (i + 2 < ks.length && ks[i + 2][name][0] === a[0]) ? ks[i + 2] : k2;
+    const s = (u - k1.t) / Math.max(1e-5, k2.t - k1.t);
     handSample[0] = a[0];
-    for (let i = 1; i < 4; i++) handSample[i] = a[i] + (b[i] - a[i]) * f;
+    for (let c = 1; c < 4; c++) {
+      handSample[c] = catmull(k0[name][c] || 0, a[c] || 0, b[c] || 0, k3[name][c] || 0, s);
+    }
     return handSample;
   }
   const handSample = ['grip', 0, 0, 0];
@@ -727,16 +767,32 @@ SKY.Arms = (() => {
   const qGunL = new THREE.Quaternion(), qRootW = new THREE.Quaternion();
   const wPos = new THREE.Vector3(), wQuat = new THREE.Quaternion();
 
-  /* resolve a socket id + offset to a position in vm.ROOT-local space.
-     Hand targets are tracked and damped in root space — damping them in
-     WORLD space made the hands trail the camera on every fast mouse turn
-     (looked broken in play; invisible in static-camera tests) */
-  function socketLocal(vm, r, s, out) {
-    if (s[0] === 'cam') return out.set(s[1], s[2], s[3]);   // authored in root space
+  /* hand targets are tracked in the LOCAL SPACE of whatever the hand is
+     holding (gun/hook/cannon, or the vm root for free 'cam' poses): any
+     motion of that object — fire kick, contact jolts, wobble — transfers
+     to the hand 1:1 and instantly, and camera turns can never induce lag.
+     Damping only ever smooths timeline/socket transitions. */
+  const mSpace = new THREE.Matrix4(), mOld = new THREE.Matrix4(), mInv = new THREE.Matrix4();
+  const qSpace = new THREE.Quaternion(), qOld = new THREE.Quaternion();
+  function spaceObj(vm, space) {
+    return space === 'gun' ? vm.group : space === 'hook' ? vm.hook :
+      space === 'cannon' ? vm.cannon : null;
+  }
+  function spaceMatrix(vm, space, out) {
+    const o = spaceObj(vm, space);
+    if (!o) return out.identity();
+    o.updateMatrix();
+    return out.copy(o.matrix);
+  }
+  function qSpaceOf(vm, space, out) {
+    const o = spaceObj(vm, space);
+    if (!o) return out.identity();
+    return out.copy(o.quaternion);
+  }
+  function socketGun(r, s, out) {
     const base = (s[0] === 'mag' && anim.magSocket) ? anim.magSocket
       : (r[s[0]] || r.grip);
-    out.set(base[0] + s[1], base[1] + s[2], base[2] + s[3]);
-    return out.applyMatrix4(vm.group.matrix);
+    return out.set(base[0] + s[1], base[1] + s[2], base[2] + s[3]);
   }
 
   /* spring jolts fired by timeline events — the "thud" that sells contact */
@@ -861,60 +917,73 @@ SKY.Arms = (() => {
     vm.group.position.z += anim.jz;
     vm.group.position.y -= Math.abs(anim.jrx) * 0.05;
 
-    /* -------- hand targets in ROOT-LOCAL space -------- */
+    /* -------- hand targets, each in its holder's space -------- */
     vm.group.updateMatrix();
-    // right hand: the grip (plus timeline offset if authored)
-    const rhKey = keys ? sampleHand(keys, u, 'rh') : null;
-    socketLocal(vm, r, rhKey || ['grip', 0, 0, 0], tgtR);
-    qGunL.copy(vm.group.quaternion);
+    const rhKey = (keys ? sampleHand(keys, u, 'rh') : null) || ['grip', 0, 0, 0];
+    const spaceR = rhKey[0] === 'cam' ? 'cam' : 'gun';
+    if (spaceR === 'cam') tgtR.set(rhKey[1], rhKey[2], rhKey[3]);
+    else socketGun(r, rhKey, tgtR);
     fistEulR.set(CFG.fistRotR[0], CFG.fistRotR[1], CFG.fistRotR[2]);
-    quatR.copy(qGunL).multiply(qB.setFromEuler(fistEulR));
+    quatR.setFromEuler(fistEulR);
 
-    // left hand: cannon > hook > timeline > class idle
-    let lhKey = keys ? sampleHand(keys, u, 'lh') : null;
-    if (!lhKey) lhKey = ['fore', 0, 0, 0];
-    let lhOnHook = 0;
+    // left hand: cannon > hook > timeline socket > class idle
+    let lhKey = (keys ? sampleHand(keys, u, 'lh') : null) || ['fore', 0, 0, 0];
+    let spaceL = 'gun';
     if (vm.cannonT > 0 && vm.cannon && vm.cannon.visible) {
-      vm.cannon.updateMatrix();
-      tgtL.set(0, -0.05, 0.05).applyMatrix4(vm.cannon.matrix);
-      qGunL.copy(vm.cannon.quaternion);
-      lhOnHook = 1;
-    } else if (vm.hookBlend > 0.05 && vm.hook) {
-      vm.hook.updateMatrix();
-      tgtL.set(0, -0.05, 0.06).applyMatrix4(vm.hook.matrix);
-      qGunL.copy(vm.hook.quaternion);
-      lhOnHook = vm.hookBlend;
-    }
-    if (lhOnHook < 1) {
-      socketLocal(vm, r, lhKey, vC);
+      spaceL = 'cannon';
+      tgtL.set(0, -0.05, 0.05);
+    } else if (vm.hookBlend > 0.5 && vm.hook) {
+      spaceL = 'hook';
+      tgtL.set(0, -0.05, 0.06);
+    } else if (lhKey[0] === 'cam') {
+      spaceL = 'cam';
+      tgtL.set(lhKey[1], lhKey[2], lhKey[3]);
+    } else {
+      socketGun(r, lhKey, tgtL);
       // hand tremor while working — tiny, but kills the robotic glide
       if (act > 0) {
-        vC.x += Math.sin(anim.wt * 10.7 + s0) * 0.005 * act;
-        vC.y += Math.sin(anim.wt * 13.9 + s0 * 2) * 0.004 * act;
+        tgtL.x += Math.sin(anim.wt * 10.7 + s0) * 0.005 * act;
+        tgtL.y += Math.sin(anim.wt * 13.9 + s0 * 2) * 0.004 * act;
       }
-      if (lhOnHook > 0) tgtL.lerp(vC, 1 - lhOnHook);
-      else tgtL.copy(vC);
-      if (lhOnHook <= 0.5) qGunL.copy(vm.group.quaternion);
     }
     fistEulR.set(CFG.fistRotL[0], CFG.fistRotL[1], CFG.fistRotL[2]);
-    quatL.copy(qGunL).multiply(qB.setFromEuler(fistEulR));
+    quatL.setFromEuler(fistEulR);
+    // support-hand cant (pistols: the off hand cups the grip at an angle)
+    if (spaceL === 'gun' && lhKey[0] === 'fore' && r.foreRot) {
+      quatL.multiply(qB.setFromEuler(eA.set(r.foreRot[0], r.foreRot[1], r.foreRot[2])));
+    }
 
-    /* -------- damp in root space, solve in world -------- */
+    /* -------- damp in holder space, solve in world -------- */
     camera.updateMatrixWorld(true);
     vm.root.getWorldQuaternion(qRootW);
     for (const side of ['R', 'L']) {
       const H = rig.hand[side];
+      const space = side === 'R' ? spaceR : spaceL;
       const tgt = side === 'R' ? tgtR : tgtL;
       const tq = side === 'R' ? quatR : quatL;
-      if (!H.has) { H.pos.copy(tgt); H.quat.copy(tq); H.has = true; }
-      else {
-        const k = 1 - Math.exp(-CFG.handDamp * dt);
-        H.pos.lerp(tgt, k);
-        H.quat.slerp(tq, k);
+      spaceMatrix(vm, space, mSpace);
+      qSpaceOf(vm, space, qSpace);
+      if (!H.has || H.space !== space) {
+        if (H.has && H.space) {
+          // carry the damped state into the new space so nothing pops
+          spaceMatrix(vm, H.space, mOld);
+          qSpaceOf(vm, H.space, qOld);
+          vA.copy(H.pos).applyMatrix4(mOld);
+          H.pos.copy(vA).applyMatrix4(mInv.copy(mSpace).invert());
+          qC.copy(qOld).multiply(H.quat);
+          H.quat.copy(qSpace).invert().multiply(qC);
+        } else { H.pos.copy(tgt); H.quat.copy(tq); }
+        H.space = space;
+        H.has = true;
       }
-      wPos.copy(H.pos);
+      const k = 1 - Math.exp(-CFG.handDamp * dt);
+      H.pos.lerp(tgt, k);
+      H.quat.slerp(tq, k);
+      // holder-local → root-local → world
+      wPos.copy(H.pos).applyMatrix4(mSpace);
       vm.root.localToWorld(wPos);
-      wQuat.copy(qRootW).multiply(H.quat);
+      qSpaceOf(vm, space, qSpace);
+      wQuat.copy(qRootW).multiply(qSpace).multiply(H.quat);
       solveArm(side, wPos, wQuat);
     }
   }
