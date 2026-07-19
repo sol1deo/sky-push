@@ -1550,27 +1550,29 @@ SKY.Effects = (function () {
     viewmodelMotion(dt, speed, grounded, velY, sliding, reloadFrac) {
       if (!vm.group || !vm.root) return;
       const d = SKY.Input.takeFrameDelta();
-      vm.sway.x = SKY.U.damp(vm.sway.x, SKY.U.clamp(-d.dx * 0.0022, -0.09, 0.09), 9, dt);
-      vm.sway.y = SKY.U.damp(vm.sway.y, SKY.U.clamp(d.dy * 0.0022, -0.07, 0.07), 9, dt);
-      // shared root: everything below moves gun + hands + hook together
-      const R = vm.root;
-      R.rotation.y = vm.sway.x;
-      R.rotation.x = vm.sway.y + SKY.U.clamp(velY * 0.004, -0.08, 0.08);
-      vm.rz = SKY.U.damp(vm.rz || 0, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
-      R.rotation.z = vm.rz;
-      // base (rest/bob) position is tracked SEPARATELY from the anim offsets:
-      // damping the final position would fight the dip/holster offsets and
-      // blow them up ~16x while airborne (the old jump-mid-reload glitch)
-      if (grounded && speed > 1) {
-        vm.bobT += dt * speed * 1.4;
-        vm.baseY = -0.27 + Math.sin(vm.bobT) * 0.006 * Math.min(speed, 12);
-        vm.baseX = 0.3 + Math.cos(vm.bobT * 0.5) * 0.004 * Math.min(speed, 12);
-      } else {
-        vm.baseY = SKY.U.damp(vm.baseY, -0.27, 8, dt);
-        vm.baseX = SKY.U.damp(vm.baseX, 0.3, 8, dt);
+      // PROCEDURAL SWAY: the whole viewmodel hangs on SKY.Arms' spring rig —
+      // look speed, strafe, landings and the reload choreography all excite
+      // it, so the weapon waves and settles instead of tracking the camera
+      // rigidly. Tune everything live with ?armlab.
+      let strafe = 0;
+      const pl = SKY.Game && SKY.Game.player;
+      if (pl && pl.vel && !(SKY.Replay && SKY.Replay.active)) {
+        const yaw = SKY.Input.yaw;
+        strafe = pl.vel.x * Math.cos(yaw) - pl.vel.z * Math.sin(yaw);
       }
-      R.position.x = vm.baseX - 0.3;
-      R.position.y = vm.baseY + 0.27;
+      let landed = 0;
+      if (grounded && !vm.wasGrounded) {
+        landed = Math.min(2.2, Math.max(0, -(vm.prevVelY || 0)) * 0.14);
+      }
+      vm.wasGrounded = grounded;
+      vm.prevVelY = velY;
+      const R = vm.root;
+      const o = SKY.Arms.swayTick(dt, {
+        dx: d.dx, dy: d.dy, strafe, velY, grounded, speed, landed,
+      });
+      vm.rz = SKY.U.damp(vm.rz || 0, sliding ? 0.18 : 0, 8, dt);
+      R.rotation.set(o.rx, o.ry, o.rz + vm.rz);
+      R.position.set(o.px, o.py, o.pz);
       // gun-local: rest pose + fire kick (gun rears up + slides back IN the
       // hands — the IK arms chase it, which is what sells the recoil);
       // holstering / grappling pulls the weapon down out of frame

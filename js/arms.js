@@ -33,8 +33,85 @@ SKY.Arms = (() => {
     fistRotR: [-1.5708, 0, -0.6],   // knuckles up, fingers forward, rolled out
     fistRotL: [-1.5708, 0, 0.6],
     magGrip: [0, -0.03, 0.02],   // hand-mag offset in WORLD units (fist space)
-    handDamp: 24,                // hand target chase speed
+    handDamp: 34,                // hand target chase speed
+    joltScale: 1,                // global contact-jolt strength
   };
+
+  /* ---------------- procedural sway (spring-damper inertia) ----------------
+   * The whole viewmodel (gun + arms, via vm.root) hangs on underdamped
+   * springs excited by look input, movement, landings, fire kick jolts and
+   * the reload choreography itself — the weapon WAVES and settles instead
+   * of being bolted to the camera. All params live-tunable in ?armlab. */
+  const SWAY = {
+    freq: 5.0,        // spring stiffness (higher = tighter)
+    zeta: 0.32,       // damping ratio (<1 overshoots = the wave)
+    lookRot: 0.055,   // look speed -> rotation lag
+    lookPos: 0.009,   // look speed -> position lag
+    lookRoll: 0.030,  // look speed -> roll
+    movePos: 0.020,   // strafe/vertical velocity -> position drift
+    moveRoll: 0.016,  // strafe -> lean
+    fallTilt: 0.065,  // vertical velocity -> muzzle tilt
+    riseFloat: 0.014, // vertical velocity -> float down/up
+    bobAmp: 0.012,    // run bob amplitude (scales with speed)
+    bobFreq: 7.2,
+    bobRoll: 3.4,     // how much bob leaks into roll
+    landKick: 0.045,  // landing impact -> dip impulse
+    animFeed: 3.4,    // reload/draw gun motion -> body sway excitation
+    joltFeed: 1.2,    // contact jolts -> body sway excitation
+    maxRot: 0.17, maxPos: 0.055,
+  };
+  const swayState = {
+    rx: { p: 0, v: 0 }, ry: { p: 0, v: 0 }, rz: { p: 0, v: 0 },
+    px: { p: 0, v: 0 }, py: { p: 0, v: 0 }, pz: { p: 0, v: 0 },
+  };
+  /* ?armlab overrides persist here and load in EVERY session */
+  const LAB_KEY = 'skypush-armlab';
+  const RIG_OVR = {};
+  try {
+    const s = JSON.parse(localStorage.getItem(LAB_KEY) || '{}');
+    if (s.CFG) Object.assign(CFG, s.CFG);
+    if (s.SWAY) Object.assign(SWAY, s.SWAY);
+    if (s.RIG) Object.assign(RIG_OVR, s.RIG);
+  } catch (e) {}
+  let bobPhase = 0;
+  const swayOut = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
+  function spring(s, target, dt) {
+    const w = SWAY.freq * Math.PI * 2;
+    s.v += ((target - s.p) * w * w - 2 * SWAY.zeta * w * s.v) * dt;
+    s.p += s.v * dt;
+    // one NaN would poison the whole viewmodel forever — never let it in
+    if (!isFinite(s.p) || !isFinite(s.v)) { s.p = 0; s.v = 0; }
+  }
+  const clampS = (v, m) => v > m ? m : v < -m ? -m : v;
+  /* ctx: {dx, dy (look pixels this frame), strafe, velY, grounded, speed,
+     landed (impact speed, one frame)} — returns root pos/rot offsets */
+  function swayTick(dt, ctx) {
+    dt = Math.min(dt, 0.05);
+    if (dt <= 0) return swayOut;
+    const S = SWAY, st = swayState;
+    const lvx = clampS(ctx.dx / dt, 4000, 4000) * 0.001;
+    const lvy = clampS(ctx.dy / dt, 4000, 4000) * 0.001;
+    spring(st.ry, clampS(-lvx * S.lookRot, S.maxRot), dt);
+    spring(st.rx, clampS(lvy * S.lookRot * 0.8 + ctx.velY * S.fallTilt * 0.06, S.maxRot), dt);
+    spring(st.rz, clampS(-ctx.strafe * S.moveRoll * 0.055 - lvx * S.lookRoll, S.maxRot), dt);
+    spring(st.px, clampS(-ctx.strafe * S.movePos * 0.05 - lvx * S.lookPos, S.maxPos), dt);
+    spring(st.py, clampS(-ctx.velY * S.riseFloat * 0.05, S.maxPos), dt);
+    spring(st.pz, 0, dt);
+    if (ctx.landed > 0) {
+      st.py.v -= ctx.landed * S.landKick;
+      st.rx.v += ctx.landed * S.landKick * 2.2;
+    }
+    const sp = ctx.speed || 0;
+    if (ctx.grounded && sp > 1) bobPhase += dt * S.bobFreq * (0.55 + sp * 0.055);
+    const amp = S.bobAmp * Math.min(1.9, sp / 7) * (ctx.grounded ? 1 : 0.22);
+    swayOut.px = st.px.p + Math.cos(bobPhase) * amp * 0.8;
+    swayOut.py = st.py.p + Math.sin(bobPhase * 2) * amp;
+    swayOut.pz = st.pz.p;
+    swayOut.rx = st.rx.p + Math.sin(bobPhase * 2 + 1.3) * amp * 0.8;
+    swayOut.ry = st.ry.p;
+    swayOut.rz = st.rz.p + Math.sin(bobPhase) * amp * S.bobRoll;
+    return swayOut;
+  }
 
   /* per-weapon rig: class + socket overrides. Sockets are WEAPON-LOCAL
      (guns are normalized: barrel -Z, bbox-centered, len = WEAPON_FIT.len).
@@ -68,14 +145,21 @@ SKY.Arms = (() => {
       port:  [0.0, -0.045, -L * 0.12],
     };
     if (cls === 'pistol' || cls === 'revolver') {
-      r.grip = [0.012, -0.035, L * 0.22];
+      r.grip = [0.012, -0.045, L * 0.24];
+      r.gripRot = [-0.35, 0.05, 0.2];      // raked pistol-grip wrist
       // support hand cups the grip from the LEFT-below at a cant — both
       // fists on the same spot read as interpenetrating mitts
-      r.fore = [-0.045, -0.062, L * 0.15];
+      r.fore = [-0.045, -0.068, L * 0.16];
       r.foreRot = [0.25, 0.45, 0.55];
       r.mag = [0, -0.08, L * 0.22];        // mag lives IN the grip
       r.bolt = [0, 0.03, L * 0.05];        // slide top
     }
+    if (cls === 'sniper') {
+      r.grip = [0, -0.06, L * 0.20];       // pistol-grip stock behind the mag
+      r.gripRot = [-0.2, 0, 0.1];
+      r.fore = [0, -0.045, -L * 0.22];
+    }
+    if (RIG_OVR[kind]) Object.assign(r, RIG_OVR[kind]);   // armlab overrides
     if (cls === 'minigun') { r.fore = [0, 0.0, -L * 0.18]; r.mag = [0, -0.12, L * 0.12]; }
     if (cls === 'flamer') { r.mag = [0, 0.11, L * 0.16]; }   // tank valve on top
     if (cls === 'launcher') { r.mag = [0, -0.02, -L * 0.30]; }  // breech at front
@@ -306,7 +390,8 @@ SKY.Arms = (() => {
     magProcKind: null,
     reloading: false,
     jrx: 0, jz: 0, jrz: 0,   // event jolt springs (decay in update)
-    wt: 0, seed: 0,          // wobble clock + per-reload variance
+    wt: 0, seed: 0,          // clock + per-reload variance
+    po1: 0, po3: 0, po4: 0, po5: 0,   // prev gun-channel (sway excitation)
   };
   const drops = [];       // falling dropped mags in the world
 
@@ -360,6 +445,9 @@ SKY.Arms = (() => {
       if (!o.isMesh || !o.material) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       for (const m of mats) {
+        // DoubleSide: the arm cut edges are open — single-sided you could
+        // SEE INSIDE the hollow arms at some angles
+        m.side = THREE.DoubleSide;
         if (m.name === inst.tint) {
           m.color.copy(col).multiplyScalar(0.92);
           m.emissive = col.clone().multiplyScalar(0.1);
@@ -806,7 +894,12 @@ SKY.Arms = (() => {
   function applyJolt(ev) {
     const j = JOLTS[ev];
     if (!j) return;
-    anim.jrx += j.rx; anim.jz += j.z; anim.jrz += j.rz;
+    const k = CFG.joltScale === undefined ? 1 : CFG.joltScale;
+    anim.jrx += j.rx * k; anim.jz += j.z * k; anim.jrz += j.rz * k;
+    // contacts also thump the whole assembly through the sway springs
+    swayState.rx.v += j.rx * k * SWAY.joltFeed * 2.2;
+    swayState.rz.v += j.rz * k * SWAY.joltFeed * 2.2;
+    swayState.py.v -= Math.abs(j.rx) * k * SWAY.joltFeed * 0.5;
   }
 
   function startDraw(kind) {
@@ -899,23 +992,25 @@ SKY.Arms = (() => {
       vm.group.rotation.z += gunOff[5];
     }
 
-    /* -------- jolts + organic wobble (the anti-stiffness layer) -------- */
+    /* -------- contact jolts (gun-local thud + body-sway excitation) ------ */
     anim.jrx *= Math.exp(-11 * dt);
     anim.jz *= Math.exp(-11 * dt);
     anim.jrz *= Math.exp(-11 * dt);
     anim.wt += dt;
     const act = isReload ? 1 : (anim.draw ? 0.55 : 0);
-    const s0 = anim.seed;
-    if (act > 0) {
-      vm.group.rotation.z += (Math.sin(anim.wt * 9.1 + s0) +
-        0.6 * Math.sin(anim.wt * 15.7 + s0 * 2)) * 0.014 * act;
-      vm.group.rotation.x += Math.sin(anim.wt * 11.3 + s0 * 3) * 0.010 * act;
-      vm.group.position.y += Math.sin(anim.wt * 7.9 + s0) * 0.0035 * act;
-    }
-    vm.group.rotation.x += anim.jrx;
-    vm.group.rotation.z += anim.jrz;
-    vm.group.position.z += anim.jz;
-    vm.group.position.y -= Math.abs(anim.jrx) * 0.05;
+    vm.group.rotation.x += anim.jrx * 0.5;
+    vm.group.rotation.z += anim.jrz * 0.5;
+    vm.group.position.z += anim.jz * 0.5;
+    vm.group.position.y -= Math.abs(anim.jrx) * 0.03;
+    /* the choreography itself excites the body springs — the assembly sways
+       in reaction to every yank and slam instead of being bolted in place */
+    if (keys) {
+      swayState.rx.v += (gunOff[3] - anim.po3) * SWAY.animFeed;
+      swayState.ry.v += (gunOff[4] - anim.po4) * SWAY.animFeed;
+      swayState.rz.v += (gunOff[5] - anim.po5) * SWAY.animFeed;
+      swayState.py.v += (gunOff[1] - anim.po1) * SWAY.animFeed * 0.6;
+      anim.po1 = gunOff[1]; anim.po3 = gunOff[3]; anim.po4 = gunOff[4]; anim.po5 = gunOff[5];
+    } else { anim.po1 = anim.po3 = anim.po4 = anim.po5 = 0; }
 
     /* -------- hand targets, each in its holder's space -------- */
     vm.group.updateMatrix();
@@ -925,6 +1020,10 @@ SKY.Arms = (() => {
     else socketGun(r, rhKey, tgtR);
     fistEulR.set(CFG.fistRotR[0], CFG.fistRotR[1], CFG.fistRotR[2]);
     quatR.setFromEuler(fistEulR);
+    // per-class grip rake (a pistol grip is not a rifle grip)
+    if (spaceR === 'gun' && r.gripRot) {
+      quatR.multiply(qB.setFromEuler(eA.set(r.gripRot[0], r.gripRot[1], r.gripRot[2])));
+    }
 
     // left hand: cannon > hook > timeline socket > class idle
     let lhKey = (keys ? sampleHand(keys, u, 'lh') : null) || ['fore', 0, 0, 0];
@@ -940,11 +1039,6 @@ SKY.Arms = (() => {
       tgtL.set(lhKey[1], lhKey[2], lhKey[3]);
     } else {
       socketGun(r, lhKey, tgtL);
-      // hand tremor while working — tiny, but kills the robotic glide
-      if (act > 0) {
-        tgtL.x += Math.sin(anim.wt * 10.7 + s0) * 0.005 * act;
-        tgtL.y += Math.sin(anim.wt * 13.9 + s0 * 2) * 0.004 * act;
-      }
     }
     fistEulR.set(CFG.fistRotL[0], CFG.fistRotL[1], CFG.fistRotL[2]);
     quatL.setFromEuler(fistEulR);
@@ -989,8 +1083,8 @@ SKY.Arms = (() => {
   }
 
   return {
-    init, update, refresh, startDraw, applyCfg,
-    CFG, RIG, TL, DRAW_DUR, CLS_OF, rigOf,
-    _rig: rig, _anim: anim,   // exposed for the CDP tuning harness
+    init, update, refresh, startDraw, applyCfg, swayTick,
+    CFG, SWAY, RIG, RIG_OVR, TL, DRAW_DUR, CLS_OF, rigOf, LAB_KEY,
+    _rig: rig, _anim: anim, _sway: swayState,   // for CDP + armlab tuning
   };
 })();
