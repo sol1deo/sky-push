@@ -1479,14 +1479,9 @@ SKY.Effects = (function () {
       const a = shakeAmp * 0.05;
       shakeOff.set(SKY.U.rand(-a, a), SKY.U.rand(-a, a), SKY.U.rand(-a, a));
       fovKick = Math.max(0, fovKick - fovKick * 9 * dt);
-      // viewmodel kick recover (sway/bob handled in viewmodelMotion) —
-      // heavies slide back further AND rear up like the gun wants out.
-      // Kick rides the shared ROOT so the arms recoil with the gun.
-      if (vm.root) {
-        vm.kick = Math.max(0, vm.kick - vm.kick * 8 * dt);
-        vm.root.position.z = vm.kick * 0.19;
-        vm.root.rotation.x = vm.kick * 0.09;
-      }
+      // viewmodel kick recover (applied gun-local in viewmodelMotion — the
+      // gun rears up in the hands and the IK arms absorb the recoil)
+      vm.kick = Math.max(0, vm.kick - vm.kick * 8 * dt);
       // air-cannon left-arm pop: raise fast, blast, stow
       if (vm.cannonT > 0 && vm.cannon) {
         vm.cannonT += dt;
@@ -1557,25 +1552,10 @@ SKY.Effects = (function () {
       const d = SKY.Input.takeFrameDelta();
       vm.sway.x = SKY.U.damp(vm.sway.x, SKY.U.clamp(-d.dx * 0.0022, -0.09, 0.09), 9, dt);
       vm.sway.y = SKY.U.damp(vm.sway.y, SKY.U.clamp(d.dy * 0.0022, -0.07, 0.07), 9, dt);
-      let spin = 0, dip = 0, roll = 0;
-      if (reloadFrac !== undefined && reloadFrac >= 0 && vm.finReload) {
-        const k = reloadFrac * reloadFrac * (3 - 2 * reloadFrac);   // smoothstep
-        if (vm.finReload === 'spin') {
-          // mythic flourish: sideways BARREL ROLL instead of the mag choreography
-          roll = -Math.PI * 2 * k;
-          dip = Math.sin(Math.PI * reloadFrac) * 0.05;
-        } else if (vm.finReload === 'toss') {
-          // BLOOD MOON: the gun is TOSSED — flies up double-flipping, drops
-          // back into the hand right as the mag clicks home
-          spin = -Math.PI * 4 * k;
-          dip = -Math.sin(Math.PI * reloadFrac) * 0.34 * 0.35;   // gun RISES
-        }
-      }
       // shared root: everything below moves gun + hands + hook together
       const R = vm.root;
       R.rotation.y = vm.sway.x;
-      R.rotation.x = vm.kick * 0.5 + vm.sway.y +
-        SKY.U.clamp(velY * 0.004, -0.08, 0.08);
+      R.rotation.x = vm.sway.y + SKY.U.clamp(velY * 0.004, -0.08, 0.08);
       vm.rz = SKY.U.damp(vm.rz || 0, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
       R.rotation.z = vm.rz;
       // base (rest/bob) position is tracked SEPARATELY from the anim offsets:
@@ -1591,12 +1571,13 @@ SKY.Effects = (function () {
       }
       R.position.x = vm.baseX - 0.3;
       R.position.y = vm.baseY + 0.27;
-      // gun-local: rest pose + mythic flourish; holstering / grappling pulls
-      // the weapon down out of frame (the right hand follows it via IK)
+      // gun-local: rest pose + fire kick (gun rears up + slides back IN the
+      // hands — the IK arms chase it, which is what sells the recoil);
+      // holstering / grappling pulls the weapon down out of frame
       const lower = (1 - vm.swapBlend) * 0.55 + vm.hookBlend * 0.62;
-      vm.group.position.set(0.3, -0.27 - dip - lower, -0.52);
+      vm.group.position.set(0.3, -0.27 - lower, -0.52 + vm.kick * 0.19);
       vm.group.rotation.set(
-        spin + (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, roll);
+        vm.kick * 0.5 + (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, 0);
       // the left hook arm pops up while grappling (root already sways/bobs)
       if (vm.hook) {
         const hb = vm.hookBlend;

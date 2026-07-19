@@ -23,9 +23,11 @@ SKY.Arms = (() => {
 
   /* ---------------- tunables (public — poked live while tuning) -------- */
   const CFG = {
-    scale: 0.42,                 // arm size vs a 1.9u body (post-normalize)
-    shoulderR: [0.42, -0.62, 0.12],
-    shoulderL: [-0.42, -0.62, 0.12],
+    scale: 0.46,                 // arm size vs a 1.9u body (post-normalize)
+    lenMul: 2.1,                 // STRETCH the bone chain (longer, not fatter —
+                                 // stock UACP arms can't reach the gun at all)
+    shoulderR: [0.36, -0.54, -0.06],
+    shoulderL: [-0.36, -0.54, -0.06],
     elbowHintR: [1.6, -1, -0.25],   // camera-space, normalized at use
     elbowHintL: [-1.6, -1, -0.25],
     fistRotR: [-1.5708, 0, -0.6],   // knuckles up, fingers forward, rolled out
@@ -85,57 +87,65 @@ SKY.Arms = (() => {
    * Channels hold; positions ease (smoothstep) between keys. Events fire
    * once when playback crosses their key time. */
   const TL = {
+    /* beats, not poses: the tilt SPIKES around each hand action and relaxes
+       between them (a held 45° rotation read as "stiff and bad"); events add
+       spring jolts + the whole timeline gets low-amp wobble in update() */
     reload_rifle: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.10, gun: [0.02, -0.01, 0.02, 0.10, -0.06, 0.30], lh: ['mag', 0, -0.02, 0.01] },
-      { t: 0.20, lh: ['mag', 0, -0.01, 0], ev: 'magout', mag: 'hand' },
-      { t: 0.34, lh: ['mag', 0.02, -0.24, 0.10], ev: 'drop', mag: 'off' },
-      { t: 0.46, lh: ['mag', 0.01, -0.20, 0.08], mag: 'hand' },
-      { t: 0.58, lh: ['mag', 0, -0.015, 0.005] },
-      { t: 0.64, gun: [0.02, 0.008, 0.02, 0.06, -0.06, 0.26], lh: ['mag', 0, 0, 0], ev: 'magin', mag: 'on' },
-      { t: 0.74, gun: [0.01, 0, 0.01, 0.05, -0.03, 0.12], lh: ['bolt', 0, 0.01, 0] },
-      { t: 0.82, gun: [0.01, 0, 0.03, 0.12, -0.02, 0.10], lh: ['bolt', 0, 0.005, 0.09], ev: 'rack' },
-      { t: 0.90, lh: ['fore', 0, 0, 0] },
-      { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
+      { t: 0.08, gun: [0.01, -0.01, 0.01, 0.05, 0.05, -0.16], lh: ['mag', 0, -0.03, 0.02] },
+      { t: 0.16, gun: [0.015, -0.012, 0.012, 0.07, 0.07, -0.24], lh: ['mag', 0, -0.005, 0] },
+      { t: 0.22, lh: ['mag', 0.01, -0.07, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.34, gun: [0.01, -0.005, 0.005, 0.03, 0.03, -0.10], lh: ['mag', 0.05, -0.30, 0.15], ev: 'drop', mag: 'off' },
+      { t: 0.46, gun: [0.008, -0.01, 0.008, 0.05, 0.05, -0.20], lh: ['mag', 0.02, -0.22, 0.10], mag: 'hand' },
+      { t: 0.58, lh: ['mag', 0, -0.045, 0.01] },
+      { t: 0.64, gun: [0.012, 0.01, 0.012, 0.02, 0.04, -0.16], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.72, gun: [0.008, 0, 0.01, 0.03, -0.02, -0.06], lh: ['bolt', 0, 0.01, -0.02] },
+      { t: 0.80, gun: [0.008, 0, 0.03, 0.09, -0.02, -0.04], lh: ['bolt', 0, 0.005, 0.10], ev: 'rack' },
+      { t: 0.88, lh: ['fore', 0, 0, -0.02] },
+      { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     reload_pistol: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.12, gun: [0.015, -0.01, 0.01, 0.12, 0.10, -0.22], lh: ['mag', 0, -0.03, 0.02] },
-      { t: 0.22, lh: ['mag', 0, -0.01, 0.01], ev: 'magout', mag: 'hand' },
-      { t: 0.36, lh: ['mag', 0, -0.26, 0.10], ev: 'drop', mag: 'off' },
-      { t: 0.50, lh: ['mag', 0, -0.20, 0.08], mag: 'hand' },
-      { t: 0.62, lh: ['mag', 0, -0.02, 0.01] },
-      { t: 0.68, gun: [0.01, 0.012, 0, 0.10, 0.06, -0.16], lh: ['mag', 0, 0, 0], ev: 'magin', mag: 'on' },
-      { t: 0.78, gun: [0.01, 0, 0.01, 0.06, 0.02, -0.06], lh: ['bolt', 0, 0.01, -0.02] },
-      { t: 0.86, gun: [0.01, 0, 0.025, 0.14, 0, -0.03], lh: ['bolt', 0, 0.012, 0.07], ev: 'rack' },
+      { t: 0.10, gun: [0.012, -0.01, 0.008, 0.09, 0.09, -0.20], lh: ['mag', 0, -0.04, 0.02] },
+      { t: 0.18, gun: [0.015, -0.012, 0.01, 0.12, 0.11, -0.26], lh: ['mag', 0, -0.01, 0.01] },
+      { t: 0.24, lh: ['mag', 0, -0.08, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.36, gun: [0.01, -0.005, 0.005, 0.06, 0.05, -0.10], lh: ['mag', 0.02, -0.28, 0.12], ev: 'drop', mag: 'off' },
+      { t: 0.50, gun: [0.012, -0.01, 0.008, 0.09, 0.08, -0.20], lh: ['mag', 0.01, -0.20, 0.08], mag: 'hand' },
+      { t: 0.62, lh: ['mag', 0, -0.05, 0.02] },
+      { t: 0.68, gun: [0.01, 0.012, 0.008, 0.05, 0.05, -0.14], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.78, gun: [0.008, 0, 0.008, 0.04, 0.02, -0.05], lh: ['bolt', 0, 0.015, -0.03] },
+      { t: 0.86, gun: [0.008, 0, 0.025, 0.11, 0, -0.03], lh: ['bolt', 0, 0.015, 0.08], ev: 'rack' },
       { t: 0.94, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     reload_shotgun: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.10, gun: [0.02, -0.02, 0.01, 0.16, -0.10, 0.34], lh: ['port', 0, -0.16, 0.06], mag: 'hand' },
-      { t: 0.24, lh: ['port', 0, -0.01, 0.01] },
-      { t: 0.30, lh: ['port', 0, -0.005, 0], ev: 'shell' },
-      { t: 0.40, lh: ['port', 0, -0.14, 0.05] },
-      { t: 0.52, lh: ['port', 0, -0.01, 0.01] },
-      { t: 0.58, lh: ['port', 0, -0.005, 0], ev: 'shell' },
-      { t: 0.66, gun: [0.01, -0.01, 0, 0.08, -0.05, 0.16], lh: ['fore', 0, 0, 0], mag: 'off' },
-      { t: 0.78, gun: [0.01, 0, 0.02, 0.10, -0.03, 0.08], lh: ['fore', 0, -0.01, 0.10], ev: 'rack' },
-      { t: 0.88, lh: ['fore', 0, 0, 0] },
+      { t: 0.10, gun: [0.01, -0.015, 0.01, 0.10, 0.06, -0.24], lh: ['port', 0, -0.18, 0.08], mag: 'hand' },
+      { t: 0.22, lh: ['port', 0, -0.02, 0.01] },
+      { t: 0.28, lh: ['port', 0, 0.005, 0], ev: 'shell' },
+      { t: 0.38, gun: [0.008, -0.008, 0.006, 0.06, 0.04, -0.14], lh: ['port', 0, -0.16, 0.06] },
+      { t: 0.50, gun: [0.01, -0.012, 0.008, 0.09, 0.05, -0.22], lh: ['port', 0, -0.02, 0.01] },
+      { t: 0.56, lh: ['port', 0, 0.005, 0], ev: 'shell' },
+      { t: 0.66, gun: [0.008, -0.008, 0.005, 0.05, 0.03, -0.10], lh: ['fore', 0, -0.01, 0.02], mag: 'off' },
+      { t: 0.76, lh: ['fore', 0, 0, 0.11] },
+      { t: 0.82, gun: [0.008, 0, 0.02, 0.08, 0.02, -0.06], lh: ['fore', 0, 0, -0.02], ev: 'rack' },
+      { t: 0.90, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     reload_sniper: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.10, gun: [0.02, -0.015, 0.02, 0.12, -0.08, 0.30], lh: ['mag', 0, -0.02, 0.01] },
-      { t: 0.20, lh: ['mag', 0, -0.01, 0], ev: 'magout', mag: 'hand' },
-      { t: 0.32, lh: ['mag', 0.02, -0.24, 0.10], ev: 'drop', mag: 'off' },
-      { t: 0.44, lh: ['mag', 0.01, -0.20, 0.08], mag: 'hand' },
-      { t: 0.56, lh: ['mag', 0, -0.015, 0.005] },
-      { t: 0.62, gun: [0.02, 0.008, 0.02, 0.08, -0.06, 0.24], lh: ['mag', 0, 0, 0], ev: 'magin', mag: 'on' },
-      { t: 0.72, gun: [0.01, 0, 0.01, 0.04, -0.02, 0.10], lh: ['bolt', 0, 0.02, -0.01] },
-      { t: 0.80, gun: [0.015, 0.005, 0.03, 0.10, -0.02, 0.14], lh: ['bolt', 0, 0.03, 0.10], ev: 'rack' },
-      { t: 0.88, lh: ['bolt', 0, 0.02, -0.01] },
-      { t: 0.94, lh: ['fore', 0, 0, 0] },
+      { t: 0.07, gun: [0.01, -0.01, 0.01, 0.06, 0.06, -0.20], lh: ['mag', 0, -0.03, 0.02] },
+      { t: 0.14, lh: ['mag', 0, -0.005, 0] },
+      { t: 0.20, lh: ['mag', 0.01, -0.07, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.30, gun: [0.008, -0.005, 0.005, 0.03, 0.03, -0.08], lh: ['mag', 0.04, -0.28, 0.14], ev: 'drop', mag: 'off' },
+      { t: 0.42, gun: [0.008, -0.01, 0.008, 0.05, 0.05, -0.18], lh: ['mag', 0.02, -0.20, 0.10], mag: 'hand' },
+      { t: 0.54, lh: ['mag', 0, -0.045, 0.01] },
+      { t: 0.60, gun: [0.012, 0.008, 0.012, 0.02, 0.04, -0.14], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.68, gun: [0.008, 0, 0.008, 0.03, -0.01, -0.05], lh: ['bolt', 0, 0.03, -0.02] },
+      { t: 0.76, lh: ['bolt', 0, 0.05, 0.02] },
+      { t: 0.83, gun: [0.01, 0.005, 0.03, 0.08, -0.01, -0.06], lh: ['bolt', 0, 0.045, 0.12], ev: 'rack' },
+      { t: 0.90, lh: ['bolt', 0, 0.02, -0.01] },
+      { t: 0.96, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     reload_revolver: [
@@ -151,46 +161,83 @@ SKY.Arms = (() => {
     ],
     reload_launcher: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.12, gun: [0.02, -0.03, 0.02, 0.30, -0.10, 0.20], lh: ['mag', 0, -0.18, 0.08], mag: 'hand' },
-      { t: 0.30, lh: ['mag', 0, -0.02, 0.02] },
-      { t: 0.42, lh: ['mag', 0, 0, -0.02], ev: 'magin' },
-      { t: 0.52, lh: ['mag', 0, -0.01, -0.04], mag: 'off', ev: 'shell' },
-      { t: 0.66, gun: [0.01, -0.01, 0.01, 0.12, -0.05, 0.10], lh: ['fore', 0, 0, 0] },
-      { t: 0.80, gun: [0.01, 0, 0.02, 0.06, 0, 0.04], ev: 'rack' },
-      { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
+      { t: 0.12, gun: [0.015, -0.02, 0.01, 0.22, 0.08, -0.16], lh: ['mag', 0, -0.20, 0.10], mag: 'hand' },
+      { t: 0.28, lh: ['mag', 0, -0.03, 0.02] },
+      { t: 0.40, lh: ['mag', 0, 0, -0.02], ev: 'magin' },
+      { t: 0.50, lh: ['mag', 0, -0.02, -0.05], mag: 'off', ev: 'shell' },
+      { t: 0.64, gun: [0.008, -0.008, 0.005, 0.08, 0.03, -0.06], lh: ['fore', 0, 0, 0.02] },
+      { t: 0.78, gun: [0.008, 0, 0.015, 0.05, 0, -0.03], ev: 'rack', lh: ['fore', 0, 0, -0.01] },
+      { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     reload_minigun: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.12, gun: [0.02, -0.02, 0.02, 0.14, -0.08, 0.24], lh: ['mag', 0, -0.03, 0.02] },
-      { t: 0.24, lh: ['mag', 0, -0.01, 0], ev: 'magout', mag: 'hand' },
-      { t: 0.38, lh: ['mag', 0.03, -0.28, 0.12], ev: 'drop', mag: 'off' },
-      { t: 0.52, lh: ['mag', 0.02, -0.22, 0.10], mag: 'hand' },
-      { t: 0.68, lh: ['mag', 0, -0.02, 0.01] },
-      { t: 0.76, gun: [0.02, 0.01, 0.02, 0.08, -0.05, 0.20], lh: ['mag', 0, 0, 0], ev: 'magin', mag: 'on' },
-      { t: 0.86, gun: [0.01, 0, 0.01, 0.04, -0.02, 0.08], lh: ['mag', 0, 0.03, -0.02], ev: 'rack' },
+      { t: 0.08, gun: [0.012, -0.015, 0.01, 0.08, 0.05, -0.18], lh: ['mag', 0, -0.04, 0.02] },
+      { t: 0.18, lh: ['mag', 0, -0.005, 0] },
+      { t: 0.24, lh: ['mag', 0.01, -0.08, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.38, gun: [0.008, -0.008, 0.005, 0.04, 0.02, -0.08], lh: ['mag', 0.05, -0.32, 0.15], ev: 'drop', mag: 'off' },
+      { t: 0.52, gun: [0.01, -0.012, 0.008, 0.06, 0.04, -0.16], lh: ['mag', 0.02, -0.24, 0.11], mag: 'hand' },
+      { t: 0.68, lh: ['mag', 0, -0.05, 0.01] },
+      { t: 0.76, gun: [0.015, 0.01, 0.012, 0.03, 0.03, -0.14], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.86, gun: [0.008, 0, 0.01, 0.02, -0.01, -0.05], lh: ['mag', 0, 0.04, -0.02], ev: 'rack' },
       { t: 0.94, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     reload_flamer: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.14, gun: [0.02, -0.02, 0.02, 0.10, -0.08, 0.26], lh: ['mag', 0, -0.02, 0.02] },
-      { t: 0.28, lh: ['mag', 0, 0.01, 0], ev: 'magout' },
-      { t: 0.42, lh: ['mag', 0.02, 0.02, 0.03], ev: 'rack' },
-      { t: 0.56, lh: ['mag', 0, 0.01, 0], ev: 'rack' },
-      { t: 0.72, gun: [0.01, 0, 0.01, 0.05, -0.04, 0.12], lh: ['mag', 0, -0.02, 0.04], ev: 'magin' },
+      { t: 0.12, gun: [0.01, -0.012, 0.008, 0.06, 0.05, -0.18], lh: ['mag', 0, -0.04, 0.03] },
+      { t: 0.24, lh: ['mag', 0, 0.01, 0] },
+      { t: 0.31, lh: ['mag', 0.02, 0.03, 0.02], ev: 'magout' },
+      { t: 0.42, lh: ['mag', -0.01, 0, 0.01] },
+      { t: 0.52, lh: ['mag', 0.02, 0.03, 0.02], ev: 'rack' },
+      { t: 0.64, lh: ['mag', 0, 0.01, 0] },
+      { t: 0.72, gun: [0.008, 0, 0.008, 0.03, 0.03, -0.10], lh: ['mag', 0, -0.02, 0.04], ev: 'magin' },
       { t: 0.86, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
     reload_cell: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
-      { t: 0.12, gun: [0.02, -0.01, 0.02, 0.12, -0.10, 0.30], lh: ['mag', 0, -0.02, 0.01] },
-      { t: 0.24, lh: ['mag', 0, -0.01, 0], ev: 'magout', mag: 'hand' },
-      { t: 0.38, lh: ['mag', 0.02, -0.24, 0.10], ev: 'drop', mag: 'off' },
-      { t: 0.52, lh: ['mag', 0.01, -0.20, 0.08], mag: 'hand' },
-      { t: 0.66, lh: ['mag', 0, -0.02, 0.005] },
-      { t: 0.74, gun: [0.02, 0.008, 0.02, 0.08, -0.07, 0.24], lh: ['mag', 0, 0, 0], ev: 'magin', mag: 'on' },
-      { t: 0.86, gun: [0.01, 0, 0.015, 0.05, -0.03, 0.10], lh: ['fore', 0, 0, 0], ev: 'rack' },
+      { t: 0.10, gun: [0.012, -0.01, 0.01, 0.07, 0.07, -0.22], lh: ['mag', 0, -0.03, 0.01] },
+      { t: 0.18, lh: ['mag', 0, -0.005, 0] },
+      { t: 0.24, lh: ['mag', 0.01, -0.07, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.38, gun: [0.008, -0.005, 0.005, 0.04, 0.04, -0.10], lh: ['mag', 0.03, -0.28, 0.12], ev: 'drop', mag: 'off' },
+      { t: 0.52, gun: [0.01, -0.01, 0.008, 0.06, 0.06, -0.18], lh: ['mag', 0.01, -0.20, 0.08], mag: 'hand' },
+      { t: 0.66, lh: ['mag', 0, -0.045, 0.005] },
+      { t: 0.74, gun: [0.012, 0.008, 0.01, 0.03, 0.04, -0.15], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.86, gun: [0.008, 0, 0.012, 0.03, -0.01, -0.05], lh: ['fore', 0, 0, 0], ev: 'rack' },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
+    ],
+    /* mythic signature reloads — full arm choreography, not just gun spins.
+       'toss' (BLOOD MOON): mag ripped out, gun FLIPPED into the air, caught
+       right onto the fresh mag. 'spin': quick swap, then a barrel twirl. */
+    reload_toss: [
+      { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
+      { t: 0.08, gun: [0.01, -0.01, 0.005, 0.05, 0.04, -0.14], lh: ['mag', 0, -0.03, 0.02] },
+      { t: 0.16, lh: ['mag', 0, -0.005, 0] },
+      { t: 0.21, lh: ['mag', 0.01, -0.07, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.32, lh: ['mag', 0.05, -0.30, 0.15], ev: 'drop', mag: 'off' },
+      { t: 0.40, gun: [0, -0.03, 0.01, 0.10, 0, 0], rh: ['grip', 0, 0, 0] },
+      { t: 0.44, gun: [0, 0.02, 0, -0.6, 0, 0], rh: ['cam', 0.30, -0.34, -0.46] },
+      { t: 0.58, gun: [0, 0.30, -0.04, -3.4, 0, 0.1] },
+      { t: 0.70, gun: [0, 0.03, 0, -6.0, 0, 0], lh: ['cam', -0.02, -0.30, -0.44], mag: 'hand' },
+      { t: 0.76, gun: [0, 0, 0, -6.283, 0, 0], rh: ['grip', 0, 0, 0], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.85, gun: [0.008, 0, 0.02, -6.24, 0, -0.03], lh: ['bolt', 0, 0.01, 0.08], ev: 'rack' },
+      { t: 0.93, lh: ['fore', 0, 0, 0] },
+      { t: 1.00, gun: [0, 0, 0, -6.283, 0, 0] },
+    ],
+    reload_spin: [
+      { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
+      { t: 0.07, gun: [0.01, -0.01, 0.008, 0.05, 0.05, -0.18], lh: ['mag', 0, -0.03, 0.02] },
+      { t: 0.14, lh: ['mag', 0, -0.005, 0] },
+      { t: 0.19, lh: ['mag', 0.01, -0.07, 0.03], ev: 'magout', mag: 'hand' },
+      { t: 0.29, lh: ['mag', 0.05, -0.30, 0.14], ev: 'drop', mag: 'off' },
+      { t: 0.40, gun: [0.008, -0.01, 0.008, 0.05, 0.05, -0.16], lh: ['mag', 0.02, -0.22, 0.10], mag: 'hand' },
+      { t: 0.50, lh: ['mag', 0, -0.045, 0.01] },
+      { t: 0.56, gun: [0.012, 0.01, 0.01, 0.02, 0.03, -0.12], lh: ['mag', 0, 0.005, 0], ev: 'magin', mag: 'on' },
+      { t: 0.64, gun: [0.005, 0, 0.005, 0, 0, -0.4], rh: ['cam', 0.30, -0.32, -0.48], lh: ['cam', -0.06, -0.34, -0.40] },
+      { t: 0.78, gun: [0, 0.01, 0, 0, 0, -4.4] },
+      { t: 0.88, gun: [0, 0, 0, 0, 0, -6.283], rh: ['grip', 0, 0, 0], ev: 'rack' },
+      { t: 0.95, lh: ['fore', 0, 0, 0] },
+      { t: 1.00, gun: [0, 0, 0, 0, 0, -6.283] },
     ],
     /* draw: gun starts LOW + rotated (coming off the back), raise, then a
        class-flavored ready gesture. u runs over DRAW_DUR real seconds. */
@@ -253,6 +300,8 @@ SKY.Arms = (() => {
     magNode: null,        // the gun's own magazine node (or proc prop)
     magProcKind: null,
     reloading: false,
+    jrx: 0, jz: 0, jrz: 0,   // event jolt springs (decay in update)
+    wt: 0, seed: 0,          // wobble clock + per-reload variance
   };
   const drops = [];       // falling dropped mags in the world
 
@@ -391,6 +440,10 @@ SKY.Arms = (() => {
       group.add(anchor);
       anchor.add(sh);
       sh.position.set(0, 0, 0);
+      // stretch the chain: longer bone offsets = longer arms; the skinned
+      // mesh stretches between joints without getting thicker
+      lo.position.multiplyScalar(CFG.lenMul);
+      fi.position.multiplyScalar(CFG.lenMul);
       rig.arms[side] = {
         anchor, sh, up, lo, fi,
         bindSh: sh.quaternion.clone(), bindUp: up.quaternion.clone(),
@@ -671,25 +724,33 @@ SKY.Arms = (() => {
   const fistEulR = new THREE.Euler(0, 0, 0, 'YXZ');
   const tgtR = new THREE.Vector3(), tgtL = new THREE.Vector3();
   const quatR = new THREE.Quaternion(), quatL = new THREE.Quaternion();
+  const qGunL = new THREE.Quaternion(), qRootW = new THREE.Quaternion();
+  const wPos = new THREE.Vector3(), wQuat = new THREE.Quaternion();
 
-  let socketRest = false;   // mythic toss/spin: anchor hands to the REST pose
-  function socketWorld(vm, r, s, out) {
-    // resolve a socket id + offset to a world position
-    if (s[0] === 'cam') {
-      out.set(s[1], s[2], s[3]);
-      return camera.localToWorld(out);
-    }
+  /* resolve a socket id + offset to a position in vm.ROOT-local space.
+     Hand targets are tracked and damped in root space — damping them in
+     WORLD space made the hands trail the camera on every fast mouse turn
+     (looked broken in play; invisible in static-camera tests) */
+  function socketLocal(vm, r, s, out) {
+    if (s[0] === 'cam') return out.set(s[1], s[2], s[3]);   // authored in root space
     const base = (s[0] === 'mag' && anim.magSocket) ? anim.magSocket
       : (r[s[0]] || r.grip);
     out.set(base[0] + s[1], base[1] + s[2], base[2] + s[3]);
-    if (socketRest) {
-      // the finish's own flourish is flipping the gun — hands hold the
-      // catch position instead of chasing the spin
-      out.multiplyScalar(0.85).add(vB.set(0.3, -0.27, -0.52));
-      const parent = vm.group.parent || camera;
-      return parent.localToWorld(out);
-    }
-    return vm.group.localToWorld(out);
+    return out.applyMatrix4(vm.group.matrix);
+  }
+
+  /* spring jolts fired by timeline events — the "thud" that sells contact */
+  const JOLTS = {
+    magout: { rx: 0.09, z: 0.01, rz: -0.04 },
+    magin: { rx: -0.15, z: 0.025, rz: 0.05 },
+    rack: { rx: 0.11, z: 0.045, rz: 0.02 },
+    shell: { rx: -0.07, z: 0.015, rz: 0.03 },
+    drop: { rx: 0.03, z: 0, rz: -0.02 },
+  };
+  function applyJolt(ev) {
+    const j = JOLTS[ev];
+    if (!j) return;
+    anim.jrx += j.rx; anim.jz += j.z; anim.jrz += j.rz;
   }
 
   function startDraw(kind) {
@@ -724,10 +785,16 @@ SKY.Arms = (() => {
     /* -------- pick the active timeline -------- */
     let keys = null, u = 0, isReload = false;
     if (reloadFrac !== undefined && reloadFrac >= 0) {
-      keys = TL['reload_' + r.cls] || TL.reload_rifle;
+      // mythic finishes get their own signature timeline (toss/spin)
+      keys = (vm.finReload && TL['reload_' + vm.finReload]) ||
+        TL['reload_' + r.cls] || TL.reload_rifle;
       u = Math.min(1, reloadFrac);
       isReload = true;
       anim.draw = null;
+      if (anim.lastU === -1) {          // reload just started
+        anim.seed = Math.random() * 20; // per-reload variance
+        anim.wt = 0;
+      }
     } else if (anim.draw) {
       anim.draw.t += dt;
       u = Math.min(1, anim.draw.t / anim.draw.dur);
@@ -740,6 +807,7 @@ SKY.Arms = (() => {
       fireEvents(keys, anim.lastU, u, (ev) => {
         if (ev === 'drop') dropMag(vm, r);
         else playStage(ev);
+        applyJolt(ev);
       });
       anim.lastU = u;
       const magWant = holdChan(keys, u, 'mag', 'on');
@@ -760,13 +828,12 @@ SKY.Arms = (() => {
       if (anim.magNode) { anim.magNode.visible = true; if (r.cls === 'revolver') anim.magNode.rotation.z = 0; }
       killHandMag();
     } else if (anim.draw) {
-      fireEvents(keys, anim.lastDrawU, u, playStage);
+      fireEvents(keys, anim.lastDrawU, u, (ev) => { playStage(ev); applyJolt(ev); });
       anim.lastDrawU = u;
     }
 
-    /* -------- gun offset channel (skipped for mythic flourishes — the
-       finish's own spin/toss in viewmodelMotion owns the gun there) -------- */
-    if (keys && !(isReload && vm.finReload)) {
+    /* -------- gun offset channel (mythic timelines own the gun too) ------ */
+    if (keys) {
       sampleChan(keys, u, 'gun', gunOff);
       vm.group.position.x += gunOff[0];
       vm.group.position.y += gunOff[1];
@@ -776,44 +843,65 @@ SKY.Arms = (() => {
       vm.group.rotation.z += gunOff[5];
     }
 
-    /* -------- hand targets -------- */
-    camera.updateMatrixWorld(true);
-    socketRest = !!(isReload && vm.finReload);
-    // right hand: always the grip (plus timeline offset if authored)
+    /* -------- jolts + organic wobble (the anti-stiffness layer) -------- */
+    anim.jrx *= Math.exp(-11 * dt);
+    anim.jz *= Math.exp(-11 * dt);
+    anim.jrz *= Math.exp(-11 * dt);
+    anim.wt += dt;
+    const act = isReload ? 1 : (anim.draw ? 0.55 : 0);
+    const s0 = anim.seed;
+    if (act > 0) {
+      vm.group.rotation.z += (Math.sin(anim.wt * 9.1 + s0) +
+        0.6 * Math.sin(anim.wt * 15.7 + s0 * 2)) * 0.014 * act;
+      vm.group.rotation.x += Math.sin(anim.wt * 11.3 + s0 * 3) * 0.010 * act;
+      vm.group.position.y += Math.sin(anim.wt * 7.9 + s0) * 0.0035 * act;
+    }
+    vm.group.rotation.x += anim.jrx;
+    vm.group.rotation.z += anim.jrz;
+    vm.group.position.z += anim.jz;
+    vm.group.position.y -= Math.abs(anim.jrx) * 0.05;
+
+    /* -------- hand targets in ROOT-LOCAL space -------- */
+    vm.group.updateMatrix();
+    // right hand: the grip (plus timeline offset if authored)
     const rhKey = keys ? sampleHand(keys, u, 'rh') : null;
-    socketWorld(vm, r, rhKey || ['grip', 0, 0, 0], tgtR);
-    if (socketRest) (vm.group.parent || camera).getWorldQuaternion(qA);
-    else vm.group.getWorldQuaternion(qA);
+    socketLocal(vm, r, rhKey || ['grip', 0, 0, 0], tgtR);
+    qGunL.copy(vm.group.quaternion);
     fistEulR.set(CFG.fistRotR[0], CFG.fistRotR[1], CFG.fistRotR[2]);
-    quatR.copy(qA).multiply(qB.setFromEuler(fistEulR));
+    quatR.copy(qGunL).multiply(qB.setFromEuler(fistEulR));
 
     // left hand: cannon > hook > timeline > class idle
     let lhKey = keys ? sampleHand(keys, u, 'lh') : null;
     if (!lhKey) lhKey = ['fore', 0, 0, 0];
     let lhOnHook = 0;
     if (vm.cannonT > 0 && vm.cannon && vm.cannon.visible) {
-      vm.cannon.updateWorldMatrix(true, false);
-      tgtL.set(0, -0.05, 0.05);
-      vm.cannon.localToWorld(tgtL);
-      vm.cannon.getWorldQuaternion(qA);
+      vm.cannon.updateMatrix();
+      tgtL.set(0, -0.05, 0.05).applyMatrix4(vm.cannon.matrix);
+      qGunL.copy(vm.cannon.quaternion);
       lhOnHook = 1;
     } else if (vm.hookBlend > 0.05 && vm.hook) {
-      vm.hook.updateWorldMatrix(true, false);
-      tgtL.set(0, -0.05, 0.06);
-      vm.hook.localToWorld(tgtL);
-      vm.hook.getWorldQuaternion(qA);
+      vm.hook.updateMatrix();
+      tgtL.set(0, -0.05, 0.06).applyMatrix4(vm.hook.matrix);
+      qGunL.copy(vm.hook.quaternion);
       lhOnHook = vm.hookBlend;
     }
     if (lhOnHook < 1) {
-      socketWorld(vm, r, lhKey, vC);
+      socketLocal(vm, r, lhKey, vC);
+      // hand tremor while working — tiny, but kills the robotic glide
+      if (act > 0) {
+        vC.x += Math.sin(anim.wt * 10.7 + s0) * 0.005 * act;
+        vC.y += Math.sin(anim.wt * 13.9 + s0 * 2) * 0.004 * act;
+      }
       if (lhOnHook > 0) tgtL.lerp(vC, 1 - lhOnHook);
       else tgtL.copy(vC);
-      if (lhOnHook <= 0.5) vm.group.getWorldQuaternion(qA);
+      if (lhOnHook <= 0.5) qGunL.copy(vm.group.quaternion);
     }
     fistEulR.set(CFG.fistRotL[0], CFG.fistRotL[1], CFG.fistRotL[2]);
-    quatL.copy(qA).multiply(qB.setFromEuler(fistEulR));
+    quatL.copy(qGunL).multiply(qB.setFromEuler(fistEulR));
 
-    /* -------- damp + solve -------- */
+    /* -------- damp in root space, solve in world -------- */
+    camera.updateMatrixWorld(true);
+    vm.root.getWorldQuaternion(qRootW);
     for (const side of ['R', 'L']) {
       const H = rig.hand[side];
       const tgt = side === 'R' ? tgtR : tgtL;
@@ -824,7 +912,10 @@ SKY.Arms = (() => {
         H.pos.lerp(tgt, k);
         H.quat.slerp(tq, k);
       }
-      solveArm(side, H.pos, H.quat);
+      wPos.copy(H.pos);
+      vm.root.localToWorld(wPos);
+      wQuat.copy(qRootW).multiply(H.quat);
+      solveArm(side, wPos, wQuat);
     }
   }
 
