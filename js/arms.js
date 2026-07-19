@@ -42,22 +42,23 @@ SKY.Arms = (() => {
    * springs excited by look input, movement, landings, fire kick jolts and
    * the reload choreography itself — the weapon WAVES and settles instead
    * of being bolted to the camera. All params live-tunable in ?armlab. */
+  /* defaults = the user's first ?armlab tuning pass (2026-07-19) */
   const SWAY = {
-    freq: 5.0,        // spring stiffness (higher = tighter)
-    zeta: 0.32,       // damping ratio (<1 overshoots = the wave)
-    lookRot: 0.055,   // look speed -> rotation lag
+    freq: 3.6,        // spring stiffness (higher = tighter)
+    zeta: 0.57,       // damping ratio (<1 overshoots = the wave)
+    lookRot: 0.054,   // look speed -> rotation lag
     lookPos: 0.009,   // look speed -> position lag
-    lookRoll: 0.030,  // look speed -> roll
-    movePos: 0.020,   // strafe/vertical velocity -> position drift
-    moveRoll: 0.016,  // strafe -> lean
+    lookRoll: 0.02,   // look speed -> roll
+    movePos: 0.024,   // strafe/vertical velocity -> position drift
+    moveRoll: 0.012,  // strafe -> lean
     fallTilt: 0.065,  // vertical velocity -> muzzle tilt
     riseFloat: 0.014, // vertical velocity -> float down/up
     bobAmp: 0.012,    // run bob amplitude (scales with speed)
     bobFreq: 7.2,
     bobRoll: 3.4,     // how much bob leaks into roll
     landKick: 0.045,  // landing impact -> dip impulse
-    animFeed: 3.4,    // reload/draw gun motion -> body sway excitation
-    joltFeed: 1.2,    // contact jolts -> body sway excitation
+    animFeed: 4.6,    // reload/draw gun motion -> body sway excitation
+    joltFeed: 1,      // contact jolts -> body sway excitation
     maxRot: 0.17, maxPos: 0.055,
   };
   const swayState = {
@@ -131,6 +132,27 @@ SKY.Arms = (() => {
   };
   const RIG = {};   // filled by rigOf(), overridable per gun
 
+  /* per-weapon hand placements tuned in ?armlab by the user (first pass,
+     2026-07-19) — shipped as defaults; live RIG_OVR still wins over these */
+  const BAKED = {
+    blaster: { grip: [0.13, -0.075, 0.0832], fore: [0.05, -0.025, -0.195],
+      gripRot: [1.215, 0, 0], foreRot: [-0.765, 0.355, -0.58] },
+    pistol: { grip: [0.13, -0.135, 0.08], fore: [0.285, -0.32, -0.225],
+      gripRot: [-0.17, 0.395, 0.2], foreRot: [0.395, 0.17, 0.02] },
+    mega: { grip: [0.28, -0.175, 0.095], fore: [0.35, -0.18, -0.35],
+      gripRot: [-0.02, 0, 0], foreRot: [0.73, -1.665, -0.205] },
+    magnum: { grip: [0.095, -0.045, 0.0864], fore: [0.065, -0.1, 0.0576],
+      gripRot: [-0.35, 0.05, 0.2], foreRot: [0.055, 2.64, 0.55] },
+    scatter: { grip: [0.205, -0.245, 0.14], fore: [0.05, -0.005, -0.095],
+      gripRot: [0, 0, 0], foreRot: [0, 0, 0] },
+    burst: { grip: [0.155, -0.13, 0.155], fore: [0.03, -0.015, -0.055],
+      gripRot: [0, 0, 0], foreRot: [0, 0, 0] },
+    longshot: { grip: [0.075, -0.235, 0.144], fore: [0.085, -0.105, -0.1584],
+      gripRot: [-0.2, 0.02, 0.1], foreRot: [-0.095, 0.395, -0.205] },
+    minigun: { grip: [0.3, -0.105, 0.1024], fore: [0.025, 0.135, -0.15],
+      gripRot: [0, 0, 0], foreRot: [-0.13, 0.095, 0] },
+  };
+
   function rigOf(kind) {
     if (RIG[kind]) return RIG[kind];
     const cls = CLS_OF[kind] || 'rifle';
@@ -159,10 +181,12 @@ SKY.Arms = (() => {
       r.gripRot = [-0.2, 0, 0.1];
       r.fore = [0, -0.045, -L * 0.22];
     }
-    if (RIG_OVR[kind]) Object.assign(r, RIG_OVR[kind]);   // armlab overrides
     if (cls === 'minigun') { r.fore = [0, 0.0, -L * 0.18]; r.mag = [0, -0.12, L * 0.12]; }
     if (cls === 'flamer') { r.mag = [0, 0.11, L * 0.16]; }   // tank valve on top
     if (cls === 'launcher') { r.mag = [0, -0.02, -L * 0.30]; }  // breech at front
+    // overrides go LAST or class branches clobber them (minigun fore bug)
+    if (BAKED[kind]) Object.assign(r, BAKED[kind]);       // shipped hand-tune
+    if (RIG_OVR[kind]) Object.assign(r, RIG_OVR[kind]);   // armlab overrides
     RIG[kind] = r;
     return r;
   }
