@@ -819,6 +819,7 @@ SKY.Effects = (function () {
    * (drops off-screen, new gun snaps up). Left hand: the grapple hook-gun
    * that pops up while the rope is out (and the weapon dips away). */
   const vm = {
+    root: null,                 // camera child carrying the WHOLE viewmodel
     group: null, kind: null, kick: 0, bobT: 0, sway: { x: 0, y: 0 },
     baseX: 0.3, baseY: -0.27,   // rest/bob position BEFORE anim offsets
     tipWorld: new THREE.Vector3(),
@@ -836,8 +837,18 @@ SKY.Effects = (function () {
     grp.traverse((o) => o.layers.set(VM_LAYER));
   }
 
-  function mountWeapon(kind) {
-    if (vm.group) camera.remove(vm.group);
+  /* sway/bob/kick land on this shared root so the gun AND the arms move as
+     one body; per-item offsets (rest pose, reload, holster) stay local */
+  function ensureRoot() {
+    if (vm.root || !camera) return vm.root;
+    vm.root = new THREE.Group();
+    camera.add(vm.root);
+    return vm.root;
+  }
+
+  function mountWeapon(kind, draw) {
+    if (vm.group) vm.root.remove(vm.group);
+    ensureRoot();
     vm.kind = kind;
     const fin = SKY.Profile && SKY.Profile.finishFor(kind);
     vm.group = buildWeaponMesh(kind, fin);
@@ -847,24 +858,26 @@ SKY.Effects = (function () {
     vm.group.position.set(0.3, -0.27, -0.52);
     vm.group.visible = vm.visible;
     toVmLayer(vm.group);
-    camera.add(vm.group);
+    vm.root.add(vm.group);
+    if (draw && SKY.Arms) SKY.Arms.startDraw(kind);
   }
 
   function ensureWeapon(kind) {
     if (!camera || vm.kind === kind || vm.swapNext === kind) return;
-    if (!vm.group) { mountWeapon(kind); return; }   // first equip: instant
+    if (!vm.group) { mountWeapon(kind, true); return; }   // first equip
     vm.swapNext = kind;                              // animated holster→draw
     vm.swapPhase = 'down';
   }
 
   function ensureHook() {
     if (vm.hook || !camera) return;
+    ensureRoot();
     vm.hook = buildWeaponMesh('hookgun', SKY.Profile && SKY.Profile.finishFor('hookgun'));
     vm.hook.scale.setScalar(0.85);
     vm.hook.position.set(-0.32, -0.9, -0.5);
     vm.hook.visible = vm.visible;
     toVmLayer(vm.hook);
-    camera.add(vm.hook);
+    vm.root.add(vm.hook);
   }
 
   /* grapple active? left arm up, weapon away — snappy both ways */
@@ -877,11 +890,12 @@ SKY.Effects = (function () {
   function cannonPop() {
     if (!camera) return;
     if (!vm.cannon) {
+      ensureRoot();
       vm.cannon = buildWeaponMesh('cannon', SKY.Profile && SKY.Profile.finishFor('cannon'));
       vm.cannon.scale.setScalar(0.85);
       vm.cannon.visible = false;
       toVmLayer(vm.cannon);
-      camera.add(vm.cannon);
+      vm.root.add(vm.cannon);
     }
     vm.cannonT = 0.0001;
   }
@@ -892,8 +906,9 @@ SKY.Effects = (function () {
   function refreshSkins() {
     if (!camera) return;
     if (vm.kind) mountWeapon(vm.kind);            // remove+rebuild in place
-    if (vm.hook) { camera.remove(vm.hook); vm.hook = null; }     // lazy rebuild
-    if (vm.cannon) { camera.remove(vm.cannon); vm.cannon = null; }
+    if (vm.hook) { vm.root.remove(vm.hook); vm.hook = null; }    // lazy rebuild
+    if (vm.cannon) { vm.root.remove(vm.cannon); vm.cannon = null; }
+    if (SKY.Arms) SKY.Arms.refresh();             // arms follow the character
   }
 
   function hookTip() {
@@ -1465,11 +1480,12 @@ SKY.Effects = (function () {
       shakeOff.set(SKY.U.rand(-a, a), SKY.U.rand(-a, a), SKY.U.rand(-a, a));
       fovKick = Math.max(0, fovKick - fovKick * 9 * dt);
       // viewmodel kick recover (sway/bob handled in viewmodelMotion) —
-      // heavies slide back further AND rear up like the gun wants out
-      if (vm.group) {
+      // heavies slide back further AND rear up like the gun wants out.
+      // Kick rides the shared ROOT so the arms recoil with the gun.
+      if (vm.root) {
         vm.kick = Math.max(0, vm.kick - vm.kick * 8 * dt);
-        vm.group.position.z = -0.5 + vm.kick * 0.19;
-        vm.group.rotation.x = vm.kick * 0.09;
+        vm.root.position.z = vm.kick * 0.19;
+        vm.root.rotation.x = vm.kick * 0.09;
       }
       // air-cannon left-arm pop: raise fast, blast, stow
       if (vm.cannonT > 0 && vm.cannon) {
@@ -1482,11 +1498,11 @@ SKY.Effects = (function () {
         vm.cannon.rotation.x = kickb * 1.1 - (1 - raise) * 0.6;
         if (t > 0.85) { vm.cannonT = 0; vm.cannon.visible = false; }
       }
-      // holster→draw swap: drop fast, raise snappy
+      // holster→draw swap: drop fast, raise snappy (+ arms draw gesture)
       if (vm.swapPhase === 'down') {
         vm.swapBlend = Math.max(0, vm.swapBlend - dt / 0.09);
         if (vm.swapBlend === 0 && vm.swapNext) {
-          mountWeapon(vm.swapNext);
+          mountWeapon(vm.swapNext, true);
           vm.swapNext = null;
           vm.swapPhase = 'up';
         }
@@ -1526,40 +1542,42 @@ SKY.Effects = (function () {
 
     setViewmodelVisible(v) {
       vm.visible = v;
+      if (vm.root) vm.root.visible = v;   // covers the arms rig too
       if (vm.group) vm.group.visible = v && vm.hookBlend < 0.96;
       if (vm.hook) vm.hook.visible = v && vm.hookBlend > 0.04;
     },
 
-    /* weapon feel: mouse-lag sway, run bob, fall tilt, slide roll, fire kick,
-       and a full backflip spin while reloading (reloadFrac 0..1, or -1) */
+    /* weapon feel: mouse-lag sway, run bob, fall tilt, slide roll, fire kick.
+       Sway/bob/tilt ride the shared ROOT so the gun and the arms move as one
+       body; reload/draw choreography (mag out, bolt racks…) is sampled by
+       SKY.Arms from per-class timelines. Mythic finishes keep their gun
+       flourish (barrel roll / BLOOD MOON toss) on the gun-local transform. */
     viewmodelMotion(dt, speed, grounded, velY, sliding, reloadFrac) {
-      if (!vm.group) return;
+      if (!vm.group || !vm.root) return;
       const d = SKY.Input.takeFrameDelta();
       vm.sway.x = SKY.U.damp(vm.sway.x, SKY.U.clamp(-d.dx * 0.0022, -0.09, 0.09), 9, dt);
       vm.sway.y = SKY.U.damp(vm.sway.y, SKY.U.clamp(d.dy * 0.0022, -0.07, 0.07), 9, dt);
-      let spin = 0, dip = 0, roll = 0, toss = 0;
-      if (reloadFrac !== undefined && reloadFrac >= 0) {
+      let spin = 0, dip = 0, roll = 0;
+      if (reloadFrac !== undefined && reloadFrac >= 0 && vm.finReload) {
         const k = reloadFrac * reloadFrac * (3 - 2 * reloadFrac);   // smoothstep
         if (vm.finReload === 'spin') {
-          // mythic flourish: sideways BARREL ROLL instead of the stock backflip
+          // mythic flourish: sideways BARREL ROLL instead of the mag choreography
           roll = -Math.PI * 2 * k;
           dip = Math.sin(Math.PI * reloadFrac) * 0.05;
         } else if (vm.finReload === 'toss') {
           // BLOOD MOON: the gun is TOSSED — flies up double-flipping, drops
           // back into the hand right as the mag clicks home
           spin = -Math.PI * 4 * k;
-          toss = Math.sin(Math.PI * reloadFrac) * 0.34;
-          dip = -toss * 0.35;              // negative dip = the gun RISES
-        } else {
-          spin = -Math.PI * 2 * k;
-          dip = Math.sin(Math.PI * reloadFrac) * 0.07;
+          dip = -Math.sin(Math.PI * reloadFrac) * 0.34 * 0.35;   // gun RISES
         }
       }
-      vm.group.rotation.y = vm.sway.x;
-      vm.group.rotation.x = vm.kick * 0.5 + vm.sway.y + spin +
+      // shared root: everything below moves gun + hands + hook together
+      const R = vm.root;
+      R.rotation.y = vm.sway.x;
+      R.rotation.x = vm.kick * 0.5 + vm.sway.y +
         SKY.U.clamp(velY * 0.004, -0.08, 0.08);
       vm.rz = SKY.U.damp(vm.rz || 0, sliding ? 0.18 : vm.sway.x * 0.5, 8, dt);
-      vm.group.rotation.z = vm.rz + roll;
+      R.rotation.z = vm.rz;
       // base (rest/bob) position is tracked SEPARATELY from the anim offsets:
       // damping the final position would fight the dip/holster offsets and
       // blow them up ~16x while airborne (the old jump-mid-reload glitch)
@@ -1571,20 +1589,22 @@ SKY.Effects = (function () {
         vm.baseY = SKY.U.damp(vm.baseY, -0.27, 8, dt);
         vm.baseX = SKY.U.damp(vm.baseX, 0.3, 8, dt);
       }
-      // holstering / grappling pulls the weapon down out of frame
+      R.position.x = vm.baseX - 0.3;
+      R.position.y = vm.baseY + 0.27;
+      // gun-local: rest pose + mythic flourish; holstering / grappling pulls
+      // the weapon down out of frame (the right hand follows it via IK)
       const lower = (1 - vm.swapBlend) * 0.55 + vm.hookBlend * 0.62;
-      vm.group.position.y = vm.baseY - dip - lower;
-      vm.group.position.x = vm.baseX;
-      vm.group.rotation.x += (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8;
-      // the left hook arm mirrors the sway and pops up while grappling
+      vm.group.position.set(0.3, -0.27 - dip - lower, -0.52);
+      vm.group.rotation.set(
+        spin + (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, roll);
+      // the left hook arm pops up while grappling (root already sways/bobs)
       if (vm.hook) {
         const hb = vm.hookBlend;
-        vm.hook.position.set(
-          -0.32 - vm.sway.x * 0.4,
-          -0.28 - (1 - hb) * 0.62 + Math.sin(vm.bobT) * 0.004 * Math.min(speed, 12),
-          -0.5);
-        vm.hook.rotation.set((1 - hb) * 0.9 + vm.sway.y, -vm.sway.x * 0.6, -0.08);
+        vm.hook.position.set(-0.32, -0.28 - (1 - hb) * 0.62, -0.5);
+        vm.hook.rotation.set((1 - hb) * 0.9, 0, -0.08);
       }
+      // arms: sample the reload/draw timeline, aim hand IK targets, pose
+      if (SKY.Arms) SKY.Arms.update(dt, vm, reloadFrac);
     },
     ensureWeapon, setHands, hookTip,
     speedLines: speedLinesTick,
@@ -1604,7 +1624,11 @@ SKY.Effects = (function () {
       return camera.localToWorld(out.set(0.26, -0.22, -0.45));
     },
     /* the camera-mounted first-person groups (replay greenscreen layers) */
-    vmGroups() { return [vm.group, vm.hook].filter(Boolean); },
+    vmGroups() { return [vm.root].filter(Boolean); },
+    _vm: vm,   // debug/test access (CDP tuning harness)
+    /* the shared viewmodel root — SKY.Arms parents its rig here so hide /
+       sway / kick cover the arms without extra bookkeeping */
+    vmRoot() { return ensureRoot(); },
 
     shake(amp) { shakeAmp = Math.min(shakeAmp + amp, 3); },
     cannonPop,

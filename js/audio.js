@@ -408,6 +408,16 @@ SKY.SFX = (function () {
                 noise(0.05, 1800, 0.16, 'highpass'); noise(0.05, 1200, 0.14, 'highpass', 0.16); },
     reloadDone(){ if (sample('reload_done', 0.55, 1.15)) return;
                 noise(0.05, 2200, 0.18, 'highpass'); tone(520, 380, 0.05, 'square', 0.1); },
+    /* arms reload choreography (SKY.Arms timeline events): short mechanical
+       ticks layered over the base reload foley — mag falls free, mag seats,
+       bolt/pump racks. Reuses existing short-click banks at shifted rates. */
+    magOut()  { if (sample('dry', 0.4, 0.85)) return;
+                tone(260, 190, 0.04, 'square', 0.1); },
+    magIn()   { if (sample('dry', 0.5, 1.3)) return;
+                tone(340, 250, 0.04, 'square', 0.12); },
+    rack()    { if (sample('grapmiss', 0.45, 1.4)) return;
+                if (sample('dry', 0.4, 1.6)) return;
+                tone(420, 300, 0.05, 'square', 0.12); },
     dry()     { if (sample('dry', 0.3, 1.2)) return;
                 tone(300, 240, 0.04, 'square', 0.12); },
     /* dash / ground-pound windup: a soft AIR puff (the old sample was a

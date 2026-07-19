@@ -356,7 +356,8 @@ SKY.GFX = (function () {
       const g = new THREE.Group();
       partPut(g, 'sil-s', 0.62, 0.62, 1.05, 0, 0.05, -0.155);        // barrel
       partPut(g, 'scope-a', 0.42, 0.36, 0.52, 0, 0.088, -0.06);      // top strap
-      partPut(g, 'sil-l', 1.0, 1.0, 0.45, 0, 0.04, 0.02);            // cylinder drum
+      // named: the arms reload swings the cylinder out (SKY.Arms `cyl`)
+      partPut(g, 'sil-l', 1.0, 1.0, 0.45, 0, 0.04, 0.02).name = 'cyl';
       partPut(g, 'sil-s', 0.3, 0.3, 0.35, 0, 0.07, 0.105, -0.6);     // hammer
       partPut(g, 'clip-l', 0.75, 0.7, 0.8, 0, -0.04, 0.075, 0.5);    // grip
       return g;
@@ -372,7 +373,8 @@ SKY.GFX = (function () {
           Math.cos(a) * 0.05, 0.115 + Math.sin(a) * 0.05, -0.42);    // barrels
       }
       partPut(g, 'sil-s', 0.28, 0.28, 2.1, 0, 0.115, -0.43);         // center shaft
-      partPut(g, 'clip-l', 1.2, 1.05, 1.35, 0, -0.145, 0.16);        // ammo box
+      // named: the arms reload swaps this box (SKY.Arms `ammobox`)
+      partPut(g, 'clip-l', 1.2, 1.05, 1.35, 0, -0.145, 0.16).name = 'ammobox';
       return g;
     },
     /* flamethrower: 'c' body + fat nozzle + propane tank riding on top */

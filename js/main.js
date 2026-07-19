@@ -95,6 +95,7 @@
   SKY.Characters.init();
   SKY.Map.load(scene, 'sky');
   SKY.Effects.init(scene, camera);
+  SKY.Arms.init(scene, camera);
   SKY.Weapons.init(scene);
   SKY.Grenades.init(scene);
   SKY.Grapple.init(scene);
