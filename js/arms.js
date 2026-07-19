@@ -44,8 +44,8 @@ SKY.Arms = (() => {
    * of being bolted to the camera. All params live-tunable in ?armlab. */
   /* defaults = the user's first ?armlab tuning pass (2026-07-19) */
   const SWAY = {
-    freq: 3.6,        // spring stiffness (higher = tighter)
-    zeta: 0.57,       // damping ratio (<1 overshoots = the wave)
+    freq: 3.4,        // spring stiffness (higher = tighter)
+    zeta: 0.78,       // damping ratio (<1 overshoots = the wave)
     lookRot: 0.054,   // look speed -> rotation lag
     lookPos: 0.009,   // look speed -> position lag
     lookRoll: 0.02,   // look speed -> roll
