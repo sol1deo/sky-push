@@ -73,6 +73,11 @@ SKY.Arms = (() => {
     if (s.CFG) Object.assign(CFG, s.CFG);
     if (s.SWAY) Object.assign(SWAY, s.SWAY);
     if (s.RIG) Object.assign(RIG_OVR, s.RIG);
+    // migration: the pistol shrank (len 0.32→0.26, sockets rescaled) — a
+    // stored override matching the OLD baked pose would misplace the hands
+    const p0 = RIG_OVR.pistol;
+    if (p0 && p0.grip && Math.abs(p0.grip[0] - 0.13) < 1e-6 &&
+        Math.abs(p0.grip[1] + 0.135) < 1e-6) delete RIG_OVR.pistol;
   } catch (e) {}
   let bobPhase = 0;
   const swayOut = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
@@ -125,7 +130,7 @@ SKY.Arms = (() => {
     flamer: 'flamer', piston: 'cell', hookgun: 'hook', cannon: 'hook',
   };
   const LEN = {
-    pistol: 0.32, blaster: 0.52, scatter: 0.50, seeker: 0.55, smg: 0.38,
+    pistol: 0.26, blaster: 0.52, scatter: 0.50, seeker: 0.55, smg: 0.38,
     longshot: 0.72, magnum: 0.36, minigun: 0.64, flamer: 0.52, mega: 0.60,
     lobber: 0.46, hookgun: 0.38, burst: 0.54, boomstick: 0.50, bouncer: 0.40,
     quad: 0.36, piston: 0.46, cannon: 0.44,
@@ -137,7 +142,8 @@ SKY.Arms = (() => {
   const BAKED = {
     blaster: { grip: [0.13, -0.075, 0.0832], fore: [0.05, -0.025, -0.195],
       gripRot: [1.215, 0, 0], foreRot: [-0.765, 0.355, -0.58] },
-    pistol: { grip: [0.13, -0.135, 0.08], fore: [0.285, -0.32, -0.225],
+    // sockets rescaled ×0.8125 with the len 0.32→0.26 shrink (gun-space)
+    pistol: { grip: [0.106, -0.11, 0.065], fore: [0.232, -0.26, -0.183],
       gripRot: [-0.17, 0.395, 0.2], foreRot: [0.395, 0.17, 0.02] },
     mega: { grip: [0.28, -0.175, 0.095], fore: [0.35, -0.18, -0.35],
       gripRot: [-0.02, 0, 0], foreRot: [0.73, -1.665, -0.205] },
@@ -362,12 +368,17 @@ SKY.Arms = (() => {
       { t: 0.85, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
+    /* pistol: whipped up from the HIP with a wrist-roll overshoot — the old
+       raise-and-rack was the rifle draw sped up, which read as weird at
+       pistol tempo. The support hand starts LOW off-frame and slides onto
+       the grip only as the gun settles (short vertical travel — a far-side
+       'cam' start sweeps across the whole screen). */
     draw_pistol: [
-      { t: 0.00, gun: [0.05, -0.26, 0.08, 0.8, 0.2, -0.15], lh: ['fore', 0, -0.02, 0.02] },
-      { t: 0.40, gun: [0.01, -0.02, 0.01, 0.10, 0.03, -0.02], lh: ['bolt', 0, 0.02, -0.02] },
-      { t: 0.58, gun: [0.01, 0, 0.02, 0.12, 0, -0.02], lh: ['bolt', 0, 0.015, 0.07], ev: 'rack' },
-      { t: 0.80, lh: ['fore', 0, 0, 0] },
-      { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
+      { t: 0.00, gun: [0.05, -0.34, 0.06, 1.25, 0.15, 0.55], lh: ['cam', -0.14, -0.50, -0.40] },
+      { t: 0.34, gun: [0.015, -0.07, 0.02, 0.32, 0.05, 0.24], lh: ['cam', -0.10, -0.42, -0.40] },
+      { t: 0.52, gun: [0, 0.02, -0.004, -0.12, 0, -0.10], ev: 'rack' },
+      { t: 0.68, gun: [0, -0.006, 0, 0.04, 0, 0.03], lh: ['fore', 0, -0.03, 0.02] },
+      { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     draw_shotgun: [
       { t: 0.00, gun: [0.06, -0.30, 0.10, 0.9, -0.3, 0.25], lh: ['fore', 0, -0.02, 0.02] },
@@ -585,6 +596,7 @@ SKY.Arms = (() => {
       up.add(tube);
       rig.arms[side] = {
         anchor, sh, up, lo, fi,
+        baseLo: lo.position.clone(), baseFi: fi.position.clone(),
         bindSh: sh.quaternion.clone(), bindUp: up.quaternion.clone(),
         bindLo: lo.quaternion.clone(), bindFi: fi.quaternion.clone(),
       };
@@ -835,13 +847,28 @@ SKY.Arms = (() => {
     A.up.quaternion.copy(A.bindUp);
     A.lo.quaternion.copy(A.bindLo);
     A.fi.quaternion.copy(A.bindFi);
+    A.lo.position.copy(A.baseLo);
+    A.fi.position.copy(A.baseFi);
     A.anchor.updateWorldMatrix(true, true);
     A.up.getWorldPosition(vS);
     A.lo.getWorldPosition(vE);
     A.fi.getWorldPosition(vW);
-    const L1 = vS.distanceTo(vE), L2 = vE.distanceTo(vW);
+    let L1 = vS.distanceTo(vE), L2 = vE.distanceTo(vW);
     vD.subVectors(targetPos, vS);
     let d = vD.length();
+    // DYNAMIC REACH: a far socket (support hand under a long barrel) used to
+    // clamp at full extension — the fist floated short of the gun, so armlab
+    // placements on big rifles were physically impossible. Stretch the bone
+    // chain just enough to reach (skinned mesh stretches between joints,
+    // same trick as lenMul). s is continuous in d — no pop. Cap 2.3: the
+    // baked mega foregrip is a cross-body left-hand reach needing ~2.1×.
+    const s = Math.min(d / Math.max(1e-4, L1 + L2 - 0.004), 2.3);
+    if (s > 1) {
+      A.lo.position.multiplyScalar(s);
+      A.fi.position.multiplyScalar(s);
+      A.anchor.updateWorldMatrix(true, true);
+      L1 *= s; L2 *= s;
+    }
     d = Math.min(L1 + L2 - 0.004, Math.max(Math.abs(L1 - L2) + 0.01, d));
     if (vD.lengthSq() < 1e-8) vD.set(0, 0, -1); else vD.normalize();
     vT.copy(vS).addScaledVector(vD, d);
@@ -958,9 +985,9 @@ SKY.Arms = (() => {
     /* -------- pick the active timeline -------- */
     let keys = null, u = 0, isReload = false;
     if (reloadFrac !== undefined && reloadFrac >= 0) {
-      // mythic finishes get their own signature timeline (toss/spin)
-      keys = (vm.finReload && TL['reload_' + vm.finReload]) ||
-        TL['reload_' + r.cls] || TL.reload_rifle;
+      // mythic signature timelines (toss/spin) DISABLED — they'll be redone
+      // from scratch once the default per-class sets are locked
+      keys = TL['reload_' + r.cls] || TL.reload_rifle;
       u = Math.min(1, reloadFrac);
       isReload = true;
       anim.draw = null;

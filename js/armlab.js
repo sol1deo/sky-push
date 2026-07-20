@@ -248,11 +248,13 @@ SKY.ArmLab = (function () {
       if (!cur[key]) cur[key] = [0, 0, 0];
       for (let i = 0; i < 3; i++) row(rigBox, r, key, i, lb + ' ' + 'XYZ'[i], mn, mx, 0.005, ovr);
     };
-    vec('grip', 'grip', -0.3, 0.3);
+    // ranges must cover LONG guns (mega len 0.6, longshot 0.72: an under-
+    // barrel support hand needs z past -0.35) — the IK now stretches to reach
+    vec('grip', 'grip', -0.5, 0.5);
     vec('gripRot', 'grip rot', -3.2, 3.2);
-    vec('fore', 'support', -0.35, 0.35);
+    vec('fore', 'support', -0.65, 0.65);
     vec('foreRot', 'support rot', -3.2, 3.2);
-    vec('bolt', 'bolt', -0.3, 0.3);
+    vec('bolt', 'bolt', -0.5, 0.5);
   }
   buildRigRows();
   // follow live weapon switches

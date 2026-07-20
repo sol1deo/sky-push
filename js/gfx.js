@@ -18,7 +18,8 @@ SKY.GFX = (function () {
      len = target length in units; flip = muzzle points +Z natively
      (measured per model — see the calibration grid workflow). */
   const WEAPON_FIT = {
-    pistol:    { file: 'b', len: 0.32 },
+    // 'b' is a chunky model — at 0.32 it read BIGGER than the 0.36 magnum
+    pistol:    { file: 'b', len: 0.26 },
     // 'd' = classic carbine silhouette; native muzzle already at -Z.
     // (A sign error in the old calibration page had this flipped — the
     // user-facing symptom was "the rifle points at me".)

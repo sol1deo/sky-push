@@ -1489,8 +1489,10 @@ SKY.Effects = (function () {
         const raise = SKY.U.clamp01(t / 0.1) - SKY.U.clamp01((t - 0.55) / 0.25);
         const kickb = t > 0.16 ? Math.exp(-(t - 0.16) * 9) * 0.34 : 0;
         vm.cannon.visible = raise > 0.02;
-        vm.cannon.position.set(-0.3, -0.95 + raise * 0.7, -0.52 + kickb);
-        vm.cannon.rotation.x = kickb * 1.1 - (1 - raise) * 0.6;
+        // kick mostly ROTATES (surging 0.34 toward the camera shoved the
+        // glued left hand into the lens — same heavy-recoil issue as guns)
+        vm.cannon.position.set(-0.3, -0.95 + raise * 0.7, -0.52 + kickb * 0.45);
+        vm.cannon.rotation.x = kickb * 1.3 - (1 - raise) * 0.6;
         if (t > 0.85) { vm.cannonT = 0; vm.cannon.visible = false; }
       }
       // holster→draw swap: drop fast, raise snappy (+ arms draw gesture)
@@ -1577,9 +1579,15 @@ SKY.Effects = (function () {
       // hands — the IK arms chase it, which is what sells the recoil);
       // holstering / grappling pulls the weapon down out of frame
       const lower = (1 - vm.swapBlend) * 0.55 + vm.hookBlend * 0.62;
-      vm.group.position.set(0.3, -0.27 - lower, -0.52 + vm.kick * 0.19);
+      // visual kick SATURATES: heavy guns (sniper/quad/boom/piston/magnum…)
+      // push vm.kick to 4.2, and raw 4.2*0.19 slid the gun PAST the camera
+      // plane — the glued hands filled half the screen for a few frames.
+      // Soft knee above 1.35 keeps light guns identical; the clipped punch
+      // still reads through fovKick + screen shake.
+      const kv = vm.kick < 1.35 ? vm.kick : 1.35 + (vm.kick - 1.35) * 0.25;
+      vm.group.position.set(0.3, -0.27 - lower, -0.52 + Math.min(kv, 1.25) * 0.19);
       vm.group.rotation.set(
-        vm.kick * 0.5 + (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, 0);
+        kv * 0.5 + (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, 0);
       // the left hook arm pops up while grappling (root already sways/bobs)
       if (vm.hook) {
         const hb = vm.hookBlend;
