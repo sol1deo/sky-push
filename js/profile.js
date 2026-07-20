@@ -13,6 +13,7 @@ SKY.Profile = (function () {
   const KEY = 'skypush-profile';
   const KEY_ACCT = 'skypush-profile-acct';
   let storeKey = KEY;
+  let acctUid = null;          // whose account the acct mirror belongs to
 
   /* character catalog: price 0 = starter (always owned) */
   const CHARS = [
@@ -143,6 +144,10 @@ SKY.Profile = (function () {
     } catch (e) { return JSON.parse(JSON.stringify(DEFAULTS)); }
   }
   function save() {
+    // stamp writes so accountMode can tell which copy is newer — the cloud
+    // pull used to blind-replace local data and revert fresh equips
+    data._t = Date.now();
+    if (storeKey === KEY_ACCT && acctUid) data._uid = acctUid;
     try { localStorage.setItem(storeKey, JSON.stringify(data)); } catch (e) {}
     // logged-in players carry their cosmetics on the account (debounced push)
     if (SKY.Account && SKY.Account.pushCosmetics) SKY.Account.pushCosmetics();
@@ -657,19 +662,32 @@ SKY.Profile = (function () {
      * cloud bundle REPLACES the working data; an empty one (first login)
      * adopts the current guest bag as the account's starting wardrobe.
      * guestMode(): sign-out — reload the untouched guest wallet. */
-    accountMode(cloud) {
+    accountMode(cloud, uid) {
       const adopt = !(cloud && Object.keys(cloud).length);
       const guestBag = adopt ? JSON.parse(JSON.stringify(data)) : null;
       storeKey = KEY_ACCT;
-      data = adopt
-        ? guestBag
-        : { ...JSON.parse(JSON.stringify(DEFAULTS)), ...cloud };
+      acctUid = uid || null;
+      if (adopt) {
+        data = guestBag;
+      } else {
+        // NEWEST copy wins: the local acct mirror is stamped on every save —
+        // if the debounced cloud push never fired before the last reload,
+        // the cloud is STALE and blindly adopting it reverted fresh equips
+        const mirror = load();
+        const sameUser = !mirror._uid || !uid || mirror._uid === uid;
+        if (sameUser && mirror._t && (!cloud._t || mirror._t > cloud._t)) {
+          data = mirror;
+        } else {
+          data = { ...JSON.parse(JSON.stringify(DEFAULTS)), ...cloud };
+        }
+      }
       save();                      // mirror locally + push (covers adoption)
       refreshAfterSwap();
     },
     guestMode() {
       if (storeKey === KEY) return;
       storeKey = KEY;
+      acctUid = null;
       data = load();
       refreshAfterSwap();
     },

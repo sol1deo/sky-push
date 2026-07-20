@@ -53,6 +53,7 @@ SKY.Account = (function () {
   let presenceState = {};      // user_id -> { username, av, lobby, pub, inGame }
   let lastTracked = '';
   let pushTimer = null;
+  let lastUid = null;          // afterLogin ran for this user already
 
   const api = {
     enabled: false,
@@ -94,11 +95,16 @@ SKY.Account = (function () {
           // sign-out: the account wallet leaves with the account — the
           // device falls back to its own guest coins/skins
           if (wasIn && SKY.Profile && SKY.Profile.guestMode) SKY.Profile.guestMode();
-          wasIn = false;
+          wasIn = false; lastUid = null;
           changed();
         } else {
-          wasIn = true;
-          afterLogin();
+          // supabase re-fires SIGNED_IN on every tab refocus / token refresh
+          // — re-running afterLogin STOMPED freshly-equipped cosmetics with
+          // the (stale) cloud copy each alt-tab. Pull once per user.
+          const uid = s.user && s.user.id;
+          const again = wasIn && uid === lastUid;
+          wasIn = true; lastUid = uid;
+          if (!again) afterLogin();
         }
       });
       if (session) await afterLogin();
@@ -232,15 +238,30 @@ SKY.Account = (function () {
     pushCosmetics() {
       if (!api.isLoggedIn() || !SKY.Profile) return;
       clearTimeout(pushTimer);
-      pushTimer = setTimeout(() => {
-        const d = SKY.Profile.data;
-        sb.from('profiles')
-          .update({ cosmetics: d, coins: d.coins })
-          .eq('id', session.user.id)
-          .then(() => {}, () => {});
-      }, 1200);
+      pushTimer = setTimeout(() => { pushTimer = null; pushNow(); }, 1200);
+    },
+    /* a pending debounced push is forced out the moment the tab hides —
+       otherwise an equip made <1.2s before alt-tab/reload never reached the
+       cloud and the next pull reverted it */
+    flushCosmetics() {
+      if (!pushTimer) return;
+      clearTimeout(pushTimer); pushTimer = null;
+      pushNow();
     },
   };
+
+  function pushNow() {
+    if (!api.isLoggedIn() || !SKY.Profile) return;
+    const d = SKY.Profile.data;
+    sb.from('profiles')
+      .update({ cosmetics: d, coins: d.coins })
+      .eq('id', session.user.id)
+      .then(() => {}, () => {});
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) api.flushCosmetics();
+  });
+  window.addEventListener('pagehide', () => api.flushCosmetics());
 
   function changed() { if (api.onChange) { try { api.onChange(); } catch (e) {} } }
 
@@ -254,7 +275,7 @@ SKY.Account = (function () {
     // the account wallet takes over (cloud = truth; empty cloud on a first
     // login adopts the guest bag). Guest storage stays untouched underneath.
     if (SKY.Profile && SKY.Profile.accountMode) {
-      SKY.Profile.accountMode(profile.cosmetics || null);
+      SKY.Profile.accountMode(profile.cosmetics || null, profile.id);
     }
     // the account username IS the nickname
     if (SKY.Settings) {

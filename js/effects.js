@@ -1575,6 +1575,7 @@ SKY.Effects = (function () {
       const R = vm.root;
       const o = SKY.Arms.swayTick(dt, {
         dx: d.dx, dy: d.dy, strafe, velY, grounded, speed, landed,
+        sliding: !!sliding,
       });
       vm.rz = SKY.U.damp(vm.rz || 0, sliding ? 0.18 : 0, 8, dt);
       R.rotation.set(o.rx, o.ry, o.rz + vm.rz);

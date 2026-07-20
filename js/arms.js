@@ -26,8 +26,10 @@ SKY.Arms = (() => {
     scale: 0.46,                 // arm size vs a 1.9u body (post-normalize)
     lenMul: 2.1,                 // STRETCH the bone chain (longer, not fatter —
                                  // stock UACP arms can't reach the gun at all)
-    shoulderR: [0.38, -0.60, -0.02],
-    shoulderL: [-0.38, -0.60, -0.02],
+    // shoulder z -0.10: at -0.02 the anchor sat ON the camera plane and the
+    // sleeve/arm cut got near-plane sliced — you saw inside the hollow arms
+    shoulderR: [0.38, -0.60, -0.10],
+    shoulderL: [-0.38, -0.60, -0.10],
     elbowHintR: [1.6, -1, -0.25],   // camera-space, normalized at use
     elbowHintL: [-1.6, -1, -0.25],
     fistRotR: [-1.5708, 0, -0.6],   // knuckles up, fingers forward, rolled out
@@ -79,8 +81,14 @@ SKY.Arms = (() => {
     const p0 = RIG_OVR.pistol;
     if (p0 && p0.grip && Math.abs(p0.grip[0] - 0.13) < 1e-6 &&
         Math.abs(p0.grip[1] + 0.135) < 1e-6) delete RIG_OVR.pistol;
+    // migration: shoulders moved off the camera plane (z -0.02 → -0.10) —
+    // stored CFG still carrying the untouched old default follows along
+    if (CFG.shoulderR[2] === -0.02 && CFG.shoulderL[2] === -0.02) {
+      CFG.shoulderR[2] = -0.10; CFG.shoulderL[2] = -0.10;
+    }
   } catch (e) {}
   let bobPhase = 0;
+  let slideBlend = 0;   // damped 0..1 — kills the run bob while sliding
   const swayOut = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
   function spring(s, target, dt) {
     const w = SWAY.freq * Math.PI * 2;
@@ -109,8 +117,13 @@ SKY.Arms = (() => {
       st.rx.v += ctx.landed * S.landKick * 2.2;
     }
     const sp = ctx.speed || 0;
-    if (ctx.grounded && sp > 1) bobPhase += dt * S.bobFreq * (0.55 + sp * 0.055);
-    const amp = S.bobAmp * Math.min(1.9, sp / 7) * (ctx.grounded ? 1 : 0.22);
+    // sliding is not running — the footstep bob dies out (damped, no pop)
+    slideBlend += ((ctx.sliding ? 1 : 0) - slideBlend) * Math.min(1, 10 * dt);
+    if (ctx.grounded && sp > 1) {
+      bobPhase += dt * S.bobFreq * (0.55 + sp * 0.055) * (1 - slideBlend * 0.7);
+    }
+    const amp = S.bobAmp * Math.min(1.9, sp / 7) * (ctx.grounded ? 1 : 0.22) *
+      (1 - slideBlend * 0.88);
     swayOut.px = st.px.p + Math.cos(bobPhase) * amp * 0.8;
     swayOut.py = st.py.p + Math.sin(bobPhase * 2) * amp;
     swayOut.pz = st.pz.p;
@@ -597,11 +610,13 @@ SKY.Arms = (() => {
       const upLen = lo.position.length();
       const upDir = lo.position.clone().normalize();
       const tubeR = (inst.height || 1.9) * 0.052;
+      // 1.05×upLen (was 1.5) — the long shoulder-ward overhang reached the
+      // camera and got near-plane sliced open (visible arm interiors)
       const tube = new THREE.Mesh(
-        new THREE.CylinderGeometry(tubeR, tubeR * 0.9, upLen * 1.5, 8),
+        new THREE.CylinderGeometry(tubeR, tubeR * 0.9, upLen * 1.05, 8),
         tintMat || skinMat || new THREE.MeshLambertMaterial({ color: 0x666e7c }));
       tube.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), upDir);
-      tube.position.copy(upDir).multiplyScalar(-upLen * 0.5);
+      tube.position.copy(upDir).multiplyScalar(-upLen * 0.27);
       tube.layers.set(VM_LAYER);
       up.add(tube);
       rig.arms[side] = {
@@ -1056,9 +1071,16 @@ SKY.Arms = (() => {
     /* -------- gun offset channel (mythic timelines own the gun too) ------ */
     if (keys) {
       sampleChan(keys, u, 'gun', gunOff);
-      vm.group.position.x += gunOff[0];
-      vm.group.position.y += gunOff[1];
-      vm.group.position.z += gunOff[2];
+      // pivot the choreography rotation about the RIGHT-HAND GRIP: rotating
+      // about the model center swept the receiver THROUGH the (correctly
+      // glued but position-stable) trigger arm — the gun must tilt IN the
+      // hand, with the grip as the fixed point
+      eA.set(gunOff[3], gunOff[4], gunOff[5]);
+      vA.set(r.grip[0], r.grip[1], r.grip[2]);
+      vB.copy(vA).applyEuler(eA);
+      vm.group.position.x += gunOff[0] + (vA.x - vB.x);
+      vm.group.position.y += gunOff[1] + (vA.y - vB.y);
+      vm.group.position.z += gunOff[2] + (vA.z - vB.z);
       vm.group.rotation.x += gunOff[3];
       vm.group.rotation.y += gunOff[4];
       vm.group.rotation.z += gunOff[5];
