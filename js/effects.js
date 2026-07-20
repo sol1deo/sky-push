@@ -1606,7 +1606,22 @@ SKY.Effects = (function () {
       if (vm.hook) {
         const hb = vm.hookBlend;
         vm.hook.position.set(-0.32, -0.28 - (1 - hb) * 0.62, -0.5);
-        vm.hook.rotation.set((1 - hb) * 0.9, 0, -0.08);
+        // PARTIAL rope aim (0.6×, clamped): the hook leans toward the
+        // anchor as you swing — full facing would wrench the glued arm
+        let ax = 0, ay = 0;
+        const gp = SKY.Game && SKY.Game.player;
+        const gr = gp && gp.grapple;
+        if (gr && gr.point && hb > 0.3) {
+          const hv = (vm.hookAimV = vm.hookAimV || new THREE.Vector3());
+          hv.copy(gr.point);
+          camera.worldToLocal(hv).normalize();
+          const cl = (v, m) => (v > m ? m : v < -m ? -m : v);
+          ay = cl(Math.atan2(-hv.x, -hv.z) * 0.6, 0.6);
+          ax = cl(Math.asin(cl(hv.y, 1)) * 0.6, 0.5);
+        }
+        vm.hookAimX = SKY.U.damp(vm.hookAimX || 0, ax, 10, dt);
+        vm.hookAimY = SKY.U.damp(vm.hookAimY || 0, ay, 10, dt);
+        vm.hook.rotation.set((1 - hb) * 0.9 + vm.hookAimX, vm.hookAimY, -0.08);
       }
       // arms: sample the reload/draw timeline, aim hand IK targets, pose
       if (SKY.Arms) SKY.Arms.update(dt, vm, reloadFrac);

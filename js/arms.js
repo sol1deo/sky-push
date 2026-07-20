@@ -89,13 +89,25 @@ SKY.Arms = (() => {
   } catch (e) {}
   let bobPhase = 0;
   let slideBlend = 0;   // damped 0..1 — kills the run bob while sliding
+  let landCd = 0;       // min gap between landing thumps (ramp flicker)
   const swayOut = { px: 0, py: 0, pz: 0, rx: 0, ry: 0, rz: 0 };
   function spring(s, target, dt) {
     const w = SWAY.freq * Math.PI * 2;
-    s.v += ((target - s.p) * w * w - 2 * SWAY.zeta * w * s.v) * dt;
-    s.p += s.v * dt;
+    // SUBSTEP the integration: in one explicit step the damping term
+    // 2ζw·dt crosses 1 below ~35fps (shipped tuning) — velocity flips sign
+    // every frame and the springs oscillate violently ("weird shakes" the
+    // moment fps dips). Sub-8ms steps are unconditionally well-behaved.
+    const n = dt > 0.008 ? Math.ceil(dt / 0.008) : 1;
+    const h = dt / n;
+    for (let i = 0; i < n; i++) {
+      s.v += ((target - s.p) * w * w - 2 * SWAY.zeta * w * s.v) * h;
+      s.p += s.v * h;
+    }
     // one NaN would poison the whole viewmodel forever — never let it in
     if (!isFinite(s.p) || !isFinite(s.v)) { s.p = 0; s.v = 0; }
+    // belt-and-braces: no state may ever leave sane viewmodel range
+    if (s.p > 0.9) s.p = 0.9; else if (s.p < -0.9) s.p = -0.9;
+    if (s.v > 40) s.v = 40; else if (s.v < -40) s.v = -40;
   }
   const clampS = (v, m) => v > m ? m : v < -m ? -m : v;
   /* ctx: {dx, dy (look pixels this frame), strafe, velY, grounded, speed,
@@ -112,13 +124,21 @@ SKY.Arms = (() => {
     spring(st.px, clampS(-ctx.strafe * S.movePos * 0.05 - lvx * S.lookPos, S.maxPos), dt);
     spring(st.py, clampS(-ctx.velY * S.riseFloat * 0.05, S.maxPos), dt);
     spring(st.pz, 0, dt);
-    if (ctx.landed > 0) {
+    // land thump: threshold + cooldown — ramps/uneven ground flicker the
+    // grounded flag and the repeated micro-impulses read as jitter
+    landCd = Math.max(0, landCd - dt);
+    if (ctx.landed > 0.12 && landCd <= 0) {
       st.py.v -= ctx.landed * S.landKick;
       st.rx.v += ctx.landed * S.landKick * 2.2;
+      landCd = 0.22;
     }
     const sp = ctx.speed || 0;
-    // sliding is not running — the footstep bob dies out (damped, no pop)
-    slideBlend += ((ctx.sliding ? 1 : 0) - slideBlend) * Math.min(1, 10 * dt);
+    // sliding is not running — the footstep bob dies out. SLOW attack, fast
+    // release: bhop chains flicker the slide state on every crouch-landing,
+    // and a symmetric blend pumped the bob on/off (laggy, shaky jumps)
+    const slTgt = ctx.sliding && ctx.grounded ? 1 : 0;
+    slideBlend += (slTgt - slideBlend) *
+      Math.min(1, (slTgt > slideBlend ? 3.5 : 12) * dt);
     if (ctx.grounded && sp > 1) {
       bobPhase += dt * S.bobFreq * (0.55 + sp * 0.055) * (1 - slideBlend * 0.7);
     }
@@ -610,13 +630,14 @@ SKY.Arms = (() => {
       const upLen = lo.position.length();
       const upDir = lo.position.clone().normalize();
       const tubeR = (inst.height || 1.9) * 0.052;
-      // 1.05×upLen (was 1.5) — the long shoulder-ward overhang reached the
-      // camera and got near-plane sliced open (visible arm interiors)
+      // 1.3×upLen: long enough that the sleeve exits the frame even at high
+      // FOV (with the FOV-scaled shoulders below), short enough to stay off
+      // the near plane (1.5 reached the camera and got sliced open)
       const tube = new THREE.Mesh(
-        new THREE.CylinderGeometry(tubeR, tubeR * 0.9, upLen * 1.05, 8),
+        new THREE.CylinderGeometry(tubeR, tubeR * 0.9, upLen * 1.3, 8),
         tintMat || skinMat || new THREE.MeshLambertMaterial({ color: 0x666e7c }));
       tube.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), upDir);
-      tube.position.copy(upDir).multiplyScalar(-upLen * 0.27);
+      tube.position.copy(upDir).multiplyScalar(-upLen * 0.38);
       tube.layers.set(VM_LAYER);
       up.add(tube);
       rig.arms[side] = {
@@ -1011,6 +1032,19 @@ SKY.Arms = (() => {
 
     const kind = vm.kind;
     const r = rigOf(kind);
+    // FOV compensation: at fov 90+ the frustum reaches further down and the
+    // arm ends/cut showed at the bottom of the frame. The shoulders (and
+    // the sleeve cut with them) ride lower and wider as fov grows — hands
+    // are IK-glued to the gun sockets, so weapon placement is untouched.
+    const fovK = Math.min(1.75,
+      Math.tan((camera.fov || 75) * Math.PI / 360) / 0.7673);
+    for (const side of ['R', 'L']) {
+      const AS = rig.arms[side];
+      if (!AS) continue;
+      const c = side === 'R' ? CFG.shoulderR : CFG.shoulderL;
+      AS.anchor.position.set(
+        c[0] * (1 + (fovK - 1) * 0.35), c[1] * fovK, c[2]);
+    }
     // re-resolve mag refs on weapon change AND on remounts of the same kind
     // (a locker skin equip rebuilds vm.group — old node refs go stale)
     if (anim.rigKind !== kind || anim.rigGroup !== vm.group) {
@@ -1071,12 +1105,21 @@ SKY.Arms = (() => {
     /* -------- gun offset channel (mythic timelines own the gun too) ------ */
     if (keys) {
       sampleChan(keys, u, 'gun', gunOff);
-      // pivot the choreography rotation about the RIGHT-HAND GRIP: rotating
-      // about the model center swept the receiver THROUGH the (correctly
-      // glued but position-stable) trigger arm — the gun must tilt IN the
-      // hand, with the grip as the fixed point
+      // pivot the choreography rotation about the PALM CONTACT (~6cm past
+      // the wrist along the fist bone). Pivoting at the grip socket kept
+      // the WRIST world-static (the fist bone origin IS the wrist), so the
+      // forearm never swung with the gun and the receiver swept through it
+      // — with the palm as the fixed point the wrist ORBITS it and the IK
+      // arm follows every tilt
       eA.set(gunOff[3], gunOff[4], gunOff[5]);
-      vA.set(r.grip[0], r.grip[1], r.grip[2]);
+      fistEulR.set(CFG.fistRotR[0], CFG.fistRotR[1], CFG.fistRotR[2]);
+      qA.setFromEuler(fistEulR);
+      if (r.gripRot) {
+        qA.multiply(qB.setFromEuler(
+          fistEulR.set(r.gripRot[0], r.gripRot[1], r.gripRot[2])));
+      }
+      vC.set(0, 0.06, 0).applyQuaternion(qA);   // wrist -> palm, bone axis
+      vA.set(r.grip[0] + vC.x, r.grip[1] + vC.y, r.grip[2] + vC.z);
       vB.copy(vA).applyEuler(eA);
       vm.group.position.x += gunOff[0] + (vA.x - vB.x);
       vm.group.position.y += gunOff[1] + (vA.y - vB.y);
