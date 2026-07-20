@@ -1415,6 +1415,14 @@ SKY.Effects = (function () {
 
     init(sc, cam) {
       scene = sc; camera = cam;
+      // muzzle light created at INIT, not lazily on the first shot — adding
+      // a light later changes the light count and stalls the whole scene on
+      // a shader recompile (same class of hitch as the molly pool light)
+      if (!muzzleLightObj) {
+        muzzleLightObj = new THREE.PointLight(0xffd9a0, 0, 9, 2);
+        muzzleLightObj.layers.enableAll();
+      }
+      scene.add(muzzleLightObj);   // re-parents if init ran with a new scene
       for (let i = 0; i < POOL; i++) {
         const mat = new THREE.SpriteMaterial({
           map: SKY.U.blobTexture(), transparent: true, depthWrite: false,

@@ -13,6 +13,7 @@ SKY.Grenades = (function () {
   let scene = null;
   const nades = [];      // in flight / cooking
   const pools = [];      // molly fire pools
+  const mollyLights = [];   // fixed pool — see init() for why
   const vortices = [];
   const _dir = new THREE.Vector3();
   const _eye = new THREE.Vector3();
@@ -256,9 +257,15 @@ SKY.Grenades = (function () {
       }));
     glow.rotation.x = -Math.PI / 2;
     glow.position.set(n.pos.x, groundY + 0.05, n.pos.z);
-    const light = new THREE.PointLight(0xff7a30, 2.1, N.radius * 4.5, 2);
-    light.position.set(n.pos.x, groundY + 1.2, n.pos.z);
-    scene.add(glow, light);
+    // grab a pooled light (a 4th simultaneous pool steals the oldest)
+    const light = mollyLights.find(l => !l.userData.busy) || mollyLights[0];
+    if (light) {
+      light.userData.busy = true;
+      light.intensity = 2.1;
+      light.distance = N.radius * 4.5;
+      light.position.set(n.pos.x, groundY + 1.2, n.pos.z);
+    }
+    scene.add(glow);
     pools.push({ pos: n.pos.clone(), t: N.duration, tickT: 0, owner: n.owner, auth: n.auth,
       glow, light });
     SKY.Effects.ring(n.pos.clone(), '#ff7a3a', N.radius * 1.6, 0.5);
@@ -273,7 +280,8 @@ SKY.Grenades = (function () {
   function removePool(i) {
     const pl = pools[i];
     if (pl.glow) scene.remove(pl.glow);
-    if (pl.light) scene.remove(pl.light);
+    // pooled light: zero it, never remove (light count must stay constant)
+    if (pl.light) { pl.light.intensity = 0; pl.light.userData.busy = false; }
     pools.splice(i, 1);
   }
 
@@ -291,6 +299,20 @@ SKY.Grenades = (function () {
   return {
     throwNade, tick, clear,
     spawnRemote(pawn, data) { throwNade(pawn, data); },
-    init(sc) { scene = sc; },
+    init(sc) {
+      scene = sc;
+      // molly lights live in the scene from INIT, intensity-toggled — adding
+      // or removing a light mid-match changes the light COUNT and three.js
+      // recompiles every visible material's shader program: on big maps that
+      // was the "everyone freezes for a second when a molly pops" hitch
+      // (each client spawns the pool locally)
+      mollyLights.length = 0;
+      for (let i = 0; i < 3; i++) {
+        const l = new THREE.PointLight(0xff7a30, 0, 18, 2);
+        l.position.set(0, -999, 0);
+        scene.add(l);
+        mollyLights.push(l);
+      }
+    },
   };
 })();

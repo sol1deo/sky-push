@@ -27,9 +27,10 @@ SKY.Arms = (() => {
     lenMul: 2.1,                 // STRETCH the bone chain (longer, not fatter —
                                  // stock UACP arms can't reach the gun at all)
     // shoulder z -0.10: at -0.02 the anchor sat ON the camera plane and the
-    // sleeve/arm cut got near-plane sliced — you saw inside the hollow arms
-    shoulderR: [0.38, -0.60, -0.10],
-    shoulderL: [-0.38, -0.60, -0.10],
+    // sleeve/arm cut got near-plane sliced — you saw inside the hollow arms.
+    // y -0.5 = the user's armlab pass 3 (2026-07-20)
+    shoulderR: [0.38, -0.5, -0.10],
+    shoulderL: [-0.38, -0.5, -0.10],
     elbowHintR: [1.6, -1, -0.25],   // camera-space, normalized at use
     elbowHintL: [-1.6, -1, -0.25],
     elbowFollow: 0.65,           // elbow chases the hand's rotation (0..1)
@@ -175,15 +176,18 @@ SKY.Arms = (() => {
   /* per-weapon hand placements tuned in ?armlab by the user (first pass,
      2026-07-19) — shipped as defaults; live RIG_OVR still wins over these */
   const BAKED = {
-    blaster: { grip: [0.13, -0.075, 0.0832], fore: [0.05, -0.025, -0.195],
-      gripRot: [1.215, 0, 0], foreRot: [-0.765, 0.355, -0.58] },
-    // sockets rescaled ×0.8125 with the len 0.32→0.26 shrink (gun-space)
-    pistol: { grip: [0.106, -0.11, 0.065], fore: [0.232, -0.26, -0.183],
-      gripRot: [-0.17, 0.395, 0.2], foreRot: [0.395, 0.17, 0.02] },
+    // blaster/pistol/magnum re-tuned in the user's armlab pass 3
+    // (2026-07-20, post elbow-follow — poses lean on the arm coupling)
+    blaster: { grip: [0.13, -0.08, 0.09], fore: [-0.005, -0.11, -0.295],
+      gripRot: [0.02, 0.915, 0.32], foreRot: [1.33, 0.205, -0.765],
+      bolt: [-0.1, 0.02, -0.08], boltRot: [1.255, -0.13, 0.055] },
+    pistol: { grip: [0.075, -0.095, 0.125], fore: [-0.01, -0.085, 0.14],
+      gripRot: [-0.13, 1.215, 0.02], foreRot: [-0.17, 0.095, -0.545],
+      bolt: [-0.075, 0.03, 0.013], boltRot: [1.925, 0, 0] },
     mega: { grip: [0.28, -0.175, 0.095], fore: [0.35, -0.18, -0.35],
       gripRot: [-0.02, 0, 0], foreRot: [0.73, -1.665, -0.205] },
-    magnum: { grip: [0.095, -0.045, 0.0864], fore: [0.065, -0.1, 0.0576],
-      gripRot: [-0.35, 0.05, 0.2], foreRot: [0.055, 2.64, 0.55] },
+    magnum: { grip: [0.18, -0.065, -0.015], fore: [-0.11, -0.1, 0.0576],
+      gripRot: [-0.17, 2.64, -1.405], foreRot: [2.49, 1.665, 0.55] },
     scatter: { grip: [0.205, -0.245, 0.14], fore: [0.05, -0.005, -0.095],
       gripRot: [0, 0, 0], foreRot: [0, 0, 0] },
     burst: { grip: [0.155, -0.13, 0.155], fore: [0.03, -0.015, -0.055],
