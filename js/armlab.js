@@ -132,12 +132,17 @@ SKY.ArmLab = (function () {
   const wsel = document.createElement('select');
   selRow.appendChild(wsel);
   body.appendChild(selRow);
+  /* hookgun/cannon aren't equippable weapons — selecting them edits their
+     left-hand hold rig directly (preview: grapple / hold Q in-game) */
+  const PSEUDO = { hookgun: 1, cannon: 1 };
   const fillWeapons = () => {
     const ks = SKY.TUNING && SKY.TUNING.weapons ? Object.keys(SKY.TUNING.weapons) : [];
+    for (const k of ['hookgun', 'cannon']) if (!ks.includes(k)) ks.push(k);
     wsel.innerHTML = ks.map((k) => `<option value="${k}">${k.toUpperCase()}</option>`).join('');
   };
   fillWeapons();
   wsel.onchange = () => {
+    if (PSEUDO[wsel.value]) { buildRigRows(); return; }
     const p = SKY.Game.player;
     if (!p || !p.alive) return;
     p.slots[1] = wsel.value;
@@ -196,6 +201,7 @@ SKY.ArmLab = (function () {
     ['bobRoll', 'bob roll', 0, 9, 0.1],
     ['landKick', 'land thud', 0, 0.25, 0.005],
     ['animFeed', 'reload sway feed', 0, 8, 0.1], ['joltFeed', 'contact sway feed', 0, 4, 0.05],
+    ['fireFeed', 'fire body feed', 0, 3, 0.05],
     ['maxRot', 'rot cap', 0.02, 0.45, 0.01], ['maxPos', 'pos cap', 0.01, 0.16, 0.005],
   ];
   for (const [k, lb, mn, mx, st] of swayRows) row(body, S, k, null, lb, mn, mx, st);
@@ -230,12 +236,14 @@ SKY.ArmLab = (function () {
   body.appendChild(rigBox);
   let rigKind = null;
   function buildRigRows() {
-    const kind = (SKY.Effects._vm && SKY.Effects._vm.kind) || wsel.value || 'pistol';
+    const kind = PSEUDO[wsel.value] ? wsel.value :
+      ((SKY.Effects._vm && SKY.Effects._vm.kind) || wsel.value || 'pistol');
     rigKind = kind;
     rigBox.innerHTML = '';
     const t = document.createElement('div');
     t.className = 'hint';
-    t.textContent = 'editing: ' + kind.toUpperCase();
+    t.textContent = 'editing: ' + kind.toUpperCase() +
+      (PSEUDO[kind] ? ' (left-hand hold: grip + grip rot; preview by grappling / Q)' : '');
     rigBox.appendChild(t);
     const r = () => A().rigOf(kind);
     const ovr = () => {
@@ -252,13 +260,26 @@ SKY.ArmLab = (function () {
     // barrel support hand needs z past -0.35) — the IK now stretches to reach
     vec('grip', 'grip', -0.5, 0.5);
     vec('gripRot', 'grip rot', -3.2, 3.2);
-    vec('fore', 'support', -0.65, 0.65);
-    vec('foreRot', 'support rot', -3.2, 3.2);
-    vec('bolt', 'bolt', -0.5, 0.5);
+    if (!PSEUDO[kind]) {
+      vec('fore', 'support', -0.65, 0.65);
+      vec('foreRot', 'support rot', -3.2, 3.2);
+      vec('bolt', 'bolt', -0.5, 0.5);
+      vec('boltRot', 'bolt rot', -3.2, 3.2);
+      // per-weapon recoil (gun-local rear / back-slide / body-spring thump)
+      const sc = (key, lb) => {
+        const cur = r();
+        if (cur[key] === undefined) cur[key] = 1;
+        row(rigBox, r, key, null, lb, 0, 3, 0.05, ovr);
+      };
+      sc('kickRot', 'recoil rear');
+      sc('kickZ', 'recoil slide');
+      sc('kickBody', 'recoil body');
+    }
   }
   buildRigRows();
   // follow live weapon switches
   setInterval(() => {
+    if (PSEUDO[wsel.value]) return;   // don't clobber hook/cannon editing
     const k = SKY.Effects._vm && SKY.Effects._vm.kind;
     if (k && k !== rigKind) { buildRigRows(); if (wsel.value !== k) wsel.value = k; }
     if (!wsel.options.length) fillWeapons();

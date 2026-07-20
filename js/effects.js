@@ -1480,8 +1480,12 @@ SKY.Effects = (function () {
       shakeOff.set(SKY.U.rand(-a, a), SKY.U.rand(-a, a), SKY.U.rand(-a, a));
       fovKick = Math.max(0, fovKick - fovKick * 9 * dt);
       // viewmodel kick recover (applied gun-local in viewmodelMotion — the
-      // gun rears up in the hands and the IK arms absorb the recoil)
-      vm.kick = Math.max(0, vm.kick - vm.kick * 8 * dt);
+      // gun rears up in the hands and the IK arms absorb the recoil).
+      // Heavy kicks decay FASTER: a capped visual holding at the cap while
+      // a big impulse drains at light-gun rate read as "goes back and stays
+      // there" — the extra rate turns it into a sharp thump + quick return.
+      vm.kick = Math.max(0,
+        vm.kick - vm.kick * (8 + Math.max(0, vm.kick - 1.5) * 4) * dt);
       // air-cannon left-arm pop: raise fast, blast, stow
       if (vm.cannonT > 0 && vm.cannon) {
         vm.cannonT += dt;
@@ -1578,16 +1582,25 @@ SKY.Effects = (function () {
       // gun-local: rest pose + fire kick (gun rears up + slides back IN the
       // hands — the IK arms chase it, which is what sells the recoil);
       // holstering / grappling pulls the weapon down out of frame
-      const lower = (1 - vm.swapBlend) * 0.55 + vm.hookBlend * 0.62;
-      // visual kick SATURATES: heavy guns (sniper/quad/boom/piston/magnum…)
-      // push vm.kick to 4.2, and raw 4.2*0.19 slid the gun PAST the camera
-      // plane — the glued hands filled half the screen for a few frames.
-      // Soft knee above 1.35 keeps light guns identical; the clipped punch
-      // still reads through fovKick + screen shake.
-      const kv = vm.kick < 1.35 ? vm.kick : 1.35 + (vm.kick - 1.35) * 0.25;
-      vm.group.position.set(0.3, -0.27 - lower, -0.52 + Math.min(kv, 1.25) * 0.19);
+      const rr = vm.kind && SKY.Arms ? SKY.Arms.rigOf(vm.kind) : null;
+      // holster/hook lower scales with weapon LENGTH — the flat 0.62 left a
+      // sniper barrel lingering on screen mid-grapple
+      const wlen = (rr && rr.len) || 0.5;
+      const lower = (1 - vm.swapBlend) * (0.38 + wlen * 0.35) +
+        vm.hookBlend * (0.40 + wlen * 0.52);
+      // fire kick: LINEAR response (full-speed snap = the impulse feel) that
+      // hard-caps instead of soft-saturating — heavy guns pin the caps for a
+      // couple of frames then release fast (accelerated decay in the ticker).
+      // Raw 4.2*0.19 used to slide the gun PAST the camera plane with the
+      // glued hands filling the screen. Per-weapon kickRot/kickZ/kickBody
+      // multipliers live on the rig (armlab-tunable); the body-spring thump
+      // fired in muzzle() carries the rest of the punch.
+      const kR = rr ? rr.kickRot : 1, kZ = rr ? rr.kickZ : 1;
+      vm.group.position.set(0.3, -0.27 - lower,
+        -0.52 + Math.min(vm.kick * 0.19 * (kZ === undefined ? 1 : kZ), 0.24));
       vm.group.rotation.set(
-        kv * 0.5 + (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, 0);
+        Math.min(vm.kick * 0.5 * (kR === undefined ? 1 : kR), 1.15) +
+        (1 - vm.swapBlend) * 0.9 + vm.hookBlend * 0.8, 0, 0);
       // the left hook arm pops up while grappling (root already sways/bobs)
       if (vm.hook) {
         const hb = vm.hookBlend;
@@ -1645,6 +1658,12 @@ SKY.Effects = (function () {
       }
       if (isLocal) {
         if (vm.group) vm.kick = Math.min(k * (k >= 1.4 ? 1.8 : 1.3), 4.2);
+        // whole-body spring impulse — the arms+gun assembly whips and
+        // recovers; scaled per weapon by the rig's kickBody (armlab)
+        if (SKY.Arms && SKY.Arms.fireKick) {
+          const rk = vm.kind ? SKY.Arms.rigOf(vm.kind) : null;
+          SKY.Arms.fireKick(k * (rk && rk.kickBody !== undefined ? rk.kickBody : 1));
+        }
         fovKick = (k >= 1.4 ? 2.6 : 1.5) * Math.min(k, 2.2);
         if (k >= 1.4) shakeAmp = Math.min(shakeAmp + k * 0.35, 3);
       }

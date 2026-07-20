@@ -59,6 +59,7 @@ SKY.Arms = (() => {
     landKick: 0.045,  // landing impact -> dip impulse
     animFeed: 4.6,    // reload/draw gun motion -> body sway excitation
     joltFeed: 1,      // contact jolts -> body sway excitation
+    fireFeed: 1,      // fire impulse -> body sway excitation (heavy thump)
     maxRot: 0.17, maxPos: 0.055,
   };
   const swayState = {
@@ -169,9 +170,17 @@ SKY.Arms = (() => {
       grip:  [0.0, -0.055, L * 0.16],
       fore:  [0.0, -0.035, -L * 0.26],
       mag:   [0.0, -0.075, -L * 0.03],
-      bolt:  [0.03, 0.035, L * 0.05],
+      bolt:  [0.03, 0.06, L * 0.05],   // ABOVE the receiver (0.035 sat inside)
       port:  [0.0, -0.045, -L * 0.12],
+      // per-weapon recoil multipliers (armlab-tunable): gun-local rear,
+      // gun-local back-slide, body-spring impulse
+      kickRot: 1, kickZ: 1, kickBody: 1,
     };
+    if (cls === 'hook') {
+      // the grapple hook / Q-cannon left-hand hold (grip + gripRot only)
+      r.grip = kind === 'cannon' ? [0, -0.05, 0.05] : [0, -0.05, 0.06];
+      r.gripRot = [0, 0, 0];
+    }
     if (cls === 'pistol' || cls === 'revolver') {
       r.grip = [0.012, -0.045, L * 0.24];
       r.gripRot = [-0.35, 0.05, 0.2];      // raked pistol-grip wrist
@@ -370,14 +379,15 @@ SKY.Arms = (() => {
     ],
     /* pistol: whipped up from the HIP with a wrist-roll overshoot — the old
        raise-and-rack was the rifle draw sped up, which read as weird at
-       pistol tempo. The support hand starts LOW off-frame and slides onto
-       the grip only as the gun settles (short vertical travel — a far-side
-       'cam' start sweeps across the whole screen). */
+       pistol tempo. The support hand RIDES the support socket the whole way
+       up with the gun — the free 'cam' start pose materialised mid-screen
+       (damp state carry-over from the holster made it drift in from
+       nowhere). */
     draw_pistol: [
-      { t: 0.00, gun: [0.05, -0.34, 0.06, 1.25, 0.15, 0.55], lh: ['cam', -0.14, -0.50, -0.40] },
-      { t: 0.34, gun: [0.015, -0.07, 0.02, 0.32, 0.05, 0.24], lh: ['cam', -0.10, -0.42, -0.40] },
+      { t: 0.00, gun: [0.05, -0.34, 0.06, 1.25, 0.15, 0.55], lh: ['fore', 0, -0.04, 0.02] },
+      { t: 0.34, gun: [0.015, -0.07, 0.02, 0.32, 0.05, 0.24], lh: ['fore', 0, -0.02, 0.01] },
       { t: 0.52, gun: [0, 0.02, -0.004, -0.12, 0, -0.10], ev: 'rack' },
-      { t: 0.68, gun: [0, -0.006, 0, 0.04, 0, 0.03], lh: ['fore', 0, -0.03, 0.02] },
+      { t: 0.68, gun: [0, -0.006, 0, 0.04, 0, 0.03], lh: ['fore', 0, -0.01, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     draw_shotgun: [
@@ -942,6 +952,17 @@ SKY.Arms = (() => {
     shell: { rx: -0.07, z: 0.015, rz: 0.03 },
     drop: { rx: 0.03, z: 0, rz: -0.02 },
   };
+  /* fire impulse -> body springs: the whole assembly (gun + arms) whips
+     back/up and recovers on the spring wave. This is where heavy-gun IMPACT
+     lives now that the gun-local kick is capped at the camera plane —
+     velocity sells the punch, not sustained displacement. */
+  function fireKick(f) {
+    const s = f * (SWAY.fireFeed === undefined ? 1 : SWAY.fireFeed);
+    swayState.rx.v += s * 0.9;
+    swayState.pz.v += s * 0.4;
+    swayState.py.v -= s * 0.16;
+    swayState.rz.v += (Math.random() - 0.5) * s * 0.5;
+  }
   function applyJolt(ev) {
     const j = JOLTS[ev];
     if (!j) return;
@@ -1078,24 +1099,34 @@ SKY.Arms = (() => {
 
     // left hand: cannon > hook > timeline socket > class idle
     let lhKey = (keys ? sampleHand(keys, u, 'lh') : null) || ['fore', 0, 0, 0];
-    let spaceL = 'gun';
+    let spaceL = 'gun', lhRot = null;
     if (vm.cannonT > 0 && vm.cannon && vm.cannon.visible) {
       spaceL = 'cannon';
-      tgtL.set(0, -0.05, 0.05);
-    } else if (vm.hookBlend > 0.5 && vm.hook) {
+      const rc = rigOf('cannon');
+      tgtL.set(rc.grip[0], rc.grip[1], rc.grip[2]);
+      lhRot = rc.gripRot;
+    } else if (vm.hookBlend > 0.04 && vm.hook) {
+      // grab EARLY (was 0.5): the hand leaves the gun as the hook starts
+      // rising and rides it up — waiting for half-blend made the hand track
+      // the holstering gun first, then slide across the screen to the hook
       spaceL = 'hook';
-      tgtL.set(0, -0.05, 0.06);
+      const rk = rigOf('hookgun');
+      tgtL.set(rk.grip[0], rk.grip[1], rk.grip[2]);
+      lhRot = rk.gripRot;
     } else if (lhKey[0] === 'cam') {
       spaceL = 'cam';
       tgtL.set(lhKey[1], lhKey[2], lhKey[3]);
     } else {
       socketGun(r, lhKey, tgtL);
+      // support-hand cant on the foregrip, bolt-grab pose on the bolt —
+      // without boltRot the rack gesture reused the tuned foregrip cant
+      if (lhKey[0] === 'fore') lhRot = r.foreRot;
+      else if (lhKey[0] === 'bolt') lhRot = r.boltRot;
     }
     fistEulR.set(CFG.fistRotL[0], CFG.fistRotL[1], CFG.fistRotL[2]);
     quatL.setFromEuler(fistEulR);
-    // support-hand cant (pistols: the off hand cups the grip at an angle)
-    if (spaceL === 'gun' && lhKey[0] === 'fore' && r.foreRot) {
-      quatL.multiply(qB.setFromEuler(eA.set(r.foreRot[0], r.foreRot[1], r.foreRot[2])));
+    if (lhRot && (lhRot[0] || lhRot[1] || lhRot[2])) {
+      quatL.multiply(qB.setFromEuler(eA.set(lhRot[0], lhRot[1], lhRot[2])));
     }
 
     /* -------- damp in holder space, solve in world -------- */
@@ -1134,7 +1165,7 @@ SKY.Arms = (() => {
   }
 
   return {
-    init, update, refresh, startDraw, applyCfg, swayTick,
+    init, update, refresh, startDraw, applyCfg, swayTick, fireKick,
     CFG, SWAY, RIG, RIG_OVR, TL, DRAW_DUR, CLS_OF, rigOf, LAB_KEY,
     _rig: rig, _anim: anim, _sway: swayState,   // for CDP + armlab tuning
   };

@@ -364,28 +364,33 @@ SKY.GFX = (function () {
       return g;
     },
     /* rotary cannon: chunky 'k' receiver + 5-barrel cluster + ammo box */
+    /* the old slot coords left AIR between the receiver and the barrel
+       group (hub floated 0.11 ahead + above the receiver top) — every part
+       must butt into its neighbor, bbox-recentring included */
     minigun() {
       const g = new THREE.Group();
       partPut(g, 'k', 1, 1, 0.95, 0, 0, 0.10);                       // receiver
-      partPut(g, 'sil-l', 0.95, 0.95, 0.55, 0, 0.115, -0.20);        // hub
+      partPut(g, 'sil-l', 0.95, 0.95, 0.55, 0, 0.055, -0.045);       // hub (half-sunk)
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2 + 0.3;
         partPut(g, 'sil-s', 0.42, 0.42, 1.9,
-          Math.cos(a) * 0.05, 0.115 + Math.sin(a) * 0.05, -0.42);    // barrels
+          Math.cos(a) * 0.05, 0.055 + Math.sin(a) * 0.05, -0.245);   // barrels
       }
-      partPut(g, 'sil-s', 0.28, 0.28, 2.1, 0, 0.115, -0.43);         // center shaft
+      partPut(g, 'sil-s', 0.28, 0.28, 2.1, 0, 0.055, -0.255);        // center shaft
       // named: the arms reload swaps this box (SKY.Arms `ammobox`)
       partPut(g, 'clip-l', 1.2, 1.05, 1.35, 0, -0.145, 0.16).name = 'ammobox';
       return g;
     },
-    /* flamethrower: 'c' body + fat nozzle + propane tank riding on top */
+    /* flamethrower: 'c' body + fat nozzle + propane tank riding on top —
+       nozzle/tip pulled back to butt into the body's snout, tank lowered
+       to actually SIT on the body (both used to float) */
     flamer() {
       const g = new THREE.Group();
       partPut(g, 'c', 1, 1, 1, 0, 0, 0.05);                          // body
-      partPut(g, 'sil-l', 0.85, 0.85, 0.85, 0, 0.075, -0.30);        // nozzle
-      partPut(g, 'sil-s', 0.48, 0.48, 0.55, 0, 0.075, -0.425);       // tip
-      partPut(g, 'sil-l', 1.35, 1.35, 0.75, 0, 0.235, 0.13);         // tank
-      partPut(g, 'sil-s', 0.5, 0.5, 0.4, 0, 0.235, 0.255);           // tank valve
+      partPut(g, 'sil-l', 0.85, 0.85, 0.85, 0, 0.045, -0.185);       // nozzle
+      partPut(g, 'sil-s', 0.48, 0.48, 0.55, 0, 0.045, -0.31);        // tip
+      partPut(g, 'sil-l', 1.35, 1.35, 0.75, 0, 0.165, 0.13);         // tank
+      partPut(g, 'sil-s', 0.5, 0.5, 0.4, 0, 0.165, 0.245);           // tank valve
       return g;
     },
   };
