@@ -229,6 +229,17 @@ SKY.ArmLab = (function () {
   });
   for (let i = 0; i < 3; i++) row(body, C, 'fistRotR', i, 'R fist rot ' + 'XYZ'[i], -3.2, 3.2, 0.02);
   for (let i = 0; i < 3; i++) row(body, C, 'fistRotL', i, 'L fist rot ' + 'XYZ'[i], -3.2, 3.2, 0.02);
+  // elbow: follow = arm chases the hand's rotation; hints = resting pose
+  row(body, C, 'elbowFollow', null, 'elbow follows hand', 0, 1, 0.02);
+  row(body, C, 'elbowHintR', 0, 'elbow out', 0.2, 3, 0.02, () => {
+    C().elbowHintL[0] = -C().elbowHintR[0];
+  });
+  row(body, C, 'elbowHintR', 1, 'elbow down', -3, 1, 0.02, () => {
+    C().elbowHintL[1] = C().elbowHintR[1];
+  });
+  row(body, C, 'elbowHintR', 2, 'elbow back', -2, 1, 0.02, () => {
+    C().elbowHintL[2] = C().elbowHintR[2];
+  });
 
   /* ---------------- PER-WEAPON RIG ---------------- */
   grp(body, 'WEAPON GRIP (current weapon)');

@@ -32,6 +32,7 @@ SKY.Arms = (() => {
     shoulderL: [-0.38, -0.60, -0.10],
     elbowHintR: [1.6, -1, -0.25],   // camera-space, normalized at use
     elbowHintL: [-1.6, -1, -0.25],
+    elbowFollow: 0.65,           // elbow chases the hand's rotation (0..1)
     fistRotR: [-1.5708, 0, -0.6],   // knuckles up, fingers forward, rolled out
     fistRotL: [-1.5708, 0, 0.6],
     magGrip: [0, -0.03, 0.02],   // hand-mag offset in WORLD units (fist space)
@@ -923,6 +924,16 @@ SKY.Arms = (() => {
     const h = Math.sqrt(Math.max(0.0001, L1 * L1 - a * a));
     camera.getWorldQuaternion(qA);
     vH.fromArray(side === 'R' ? CFG.elbowHintR : CFG.elbowHintL).applyQuaternion(qA);
+    // the elbow FOLLOWS the hand: the forearm enters the wrist from the
+    // fist's local -Y (bone axis), so a raked/rolled grip swings the whole
+    // arm around instead of twisting the wrist against a fixed forearm
+    // (hint-only elbows made rotated hands read as broken wrists)
+    const ef = CFG.elbowFollow === undefined ? 0.65 : CFG.elbowFollow;
+    if (ef > 0) {
+      vC.set(0, -1, 0).applyQuaternion(targetQuat);
+      vH.normalize().lerp(vC, ef);
+      if (vH.lengthSq() < 1e-4) vH.copy(vC);
+    }
     vH.addScaledVector(vD, -vH.dot(vD));
     if (vH.lengthSq() < 1e-6) vH.set(0, -1, 0).applyQuaternion(qA).addScaledVector(vD, -vD.dot(vH));
     vH.normalize();
