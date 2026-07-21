@@ -911,18 +911,38 @@
     letter-spacing:.24em; text-indent:.24em; padding:2px 7px;
     border-radius:4px; color:#0b0e14; }
 
-  /* ---------- locker: emote wheel management ---------- */
-  .lk-eslots { display:flex; gap:8px; margin:6px 0 14px; flex-wrap:wrap; }
-  .lk-eslot { display:flex; align-items:center; gap:7px; padding:8px 12px;
-    border:1px solid var(--line); border-radius:9px; cursor:pointer;
-    background:rgba(13,17,26,.6); }
-  .lk-eslot.sel { border-color:#ffd34d; box-shadow:0 0 14px rgba(255,211,77,.18); }
-  .lk-esl-n { font-size:10px; color:var(--dim); border:1px solid var(--line);
-    border-radius:4px; width:16px; height:16px; line-height:14px; text-align:center; }
-  .lk-esl-name { font-size:11px; font-weight:800; letter-spacing:.08em; }
-  .lk-esl-x { color:var(--dim); font-size:13px; padding:0 3px; }
+  /* ---------- locker: emote wheel + live preview ---------- */
+  .lk-erow { display:flex; gap:18px; align-items:stretch; margin:6px 0 16px;
+    flex-wrap:wrap; }
+  .lk-ewheel { position:relative; width:400px; height:320px; flex:0 0 auto;
+    border:1px solid var(--line); border-radius:14px;
+    background:radial-gradient(circle at 50% 50%, rgba(24,30,44,.9) 20%, rgba(13,17,26,.6) 70%); }
+  .lk-eslot { position:absolute; transform:translate(-50%,-50%);
+    display:flex; align-items:center; gap:6px; padding:6px 10px;
+    border:1px solid rgba(159,178,200,.35); border-radius:16px; cursor:pointer;
+    background:rgba(13,17,26,.92); white-space:nowrap; }
+  .lk-eslot:hover { border-color:#ffd34d; }
+  .lk-eslot.r-rare { border-color:rgba(64,200,255,.6); }
+  .lk-eslot.r-epic { border-color:rgba(255,93,177,.65); }
+  .lk-eslot.r-legendary { border-color:rgba(255,167,51,.8); }
+  .lk-eslot.r-mythic { border-color:rgba(255,90,46,.85); }
+  .lk-eslot.r-none { opacity:.55; }
+  .lk-esl-n { font-size:9px; color:var(--dim); border:1px solid var(--line);
+    border-radius:4px; width:14px; height:14px; line-height:12px; text-align:center; }
+  .lk-esl-name { font-size:10px; font-weight:800; letter-spacing:.07em; }
+  .lk-esl-x { color:var(--dim); font-size:13px; padding:0 2px; }
   .lk-esl-x:hover { color:#ff6a5e; }
-  .lk-emote { text-align:left; padding:12px; min-height:104px; }
+  .lk-ewc { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    text-align:center; pointer-events:none; }
+  .lk-ewc b { display:block; font-size:12px; letter-spacing:.12em; }
+  .lk-ewc small { display:block; font-size:9px; color:var(--dim);
+    letter-spacing:.12em; text-transform:uppercase; margin-top:4px; }
+  .lk-epv { flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
+  #lk-epv-wrap { width:260px; height:260px; border:1px solid var(--line);
+    border-radius:14px; overflow:hidden; background:rgba(13,17,26,.6); }
+  .lk-epv-cap { font-size:9.5px; color:var(--dim); letter-spacing:.14em;
+    text-transform:uppercase; text-align:center; }
+  .lk-emote { text-align:left; padding:12px; min-height:104px; cursor:pointer; }
   .lk-emote .lk-ename { font-size:13px; font-weight:800; letter-spacing:.05em;
     margin-top:10px; }
   .lk-emote .lk-edesc { font-size:10.5px; color:var(--dim); line-height:1.4;
@@ -1793,7 +1813,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 86</div>
+  <div id="build-foot" class="rail-foot">prototype · build 87</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -2152,45 +2172,45 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=86"></script>
-<script src="js/profile.js?v=86"></script>
-<script src="js/account.js?v=86"></script>
-<script src="js/accountui.js?v=86"></script>
-<script src="js/utils.js?v=86"></script>
-<script src="js/gfx.js?v=86"></script>
-<script src="js/mapdata.js?v=86"></script>
-<script src="js/audio.js?v=86"></script>
-<script src="js/sfxlab.js?v=86"></script>
-<script src="js/voice.js?v=86"></script>
-<script src="js/settings.js?v=86"></script>
-<script src="js/input.js?v=86"></script>
-<script src="js/world.js?v=86"></script>
-<script src="js/effects.js?v=86"></script>
-<script src="js/arms.js?v=86"></script>
-<script src="js/armlab.js?v=86"></script>
-<script src="js/map.js?v=86"></script>
-<script src="js/characters.js?v=86"></script>
-<script src="js/pawn.js?v=86"></script>
-<script src="js/weapons.js?v=86"></script>
-<script src="js/loot.js?v=86"></script>
-<script src="js/pickups.js?v=86"></script>
-<script src="js/sparks.js?v=86"></script>
-<script src="js/grenades.js?v=86"></script>
-<script src="js/grapple.js?v=86"></script>
-<script src="js/bots.js?v=86"></script>
-<script src="js/hud.js?v=86"></script>
-<script src="js/game.js?v=86"></script>
-<script src="js/attract.js?v=86"></script>
-<script src="js/net.js?v=86"></script>
-<script src="js/dof.js?v=86"></script>
+<script src="js/config.js?v=87"></script>
+<script src="js/profile.js?v=87"></script>
+<script src="js/account.js?v=87"></script>
+<script src="js/accountui.js?v=87"></script>
+<script src="js/utils.js?v=87"></script>
+<script src="js/gfx.js?v=87"></script>
+<script src="js/mapdata.js?v=87"></script>
+<script src="js/audio.js?v=87"></script>
+<script src="js/sfxlab.js?v=87"></script>
+<script src="js/voice.js?v=87"></script>
+<script src="js/settings.js?v=87"></script>
+<script src="js/input.js?v=87"></script>
+<script src="js/world.js?v=87"></script>
+<script src="js/effects.js?v=87"></script>
+<script src="js/arms.js?v=87"></script>
+<script src="js/armlab.js?v=87"></script>
+<script src="js/map.js?v=87"></script>
+<script src="js/characters.js?v=87"></script>
+<script src="js/pawn.js?v=87"></script>
+<script src="js/weapons.js?v=87"></script>
+<script src="js/loot.js?v=87"></script>
+<script src="js/pickups.js?v=87"></script>
+<script src="js/sparks.js?v=87"></script>
+<script src="js/grenades.js?v=87"></script>
+<script src="js/grapple.js?v=87"></script>
+<script src="js/bots.js?v=87"></script>
+<script src="js/hud.js?v=87"></script>
+<script src="js/game.js?v=87"></script>
+<script src="js/attract.js?v=87"></script>
+<script src="js/net.js?v=87"></script>
+<script src="js/dof.js?v=87"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=86"></script>
-<script src="js/vidrender.js?v=86"></script>
-<script src="js/demos.js?v=86"></script>
-<script src="js/locker.js?v=86"></script>
-<script src="js/store.js?v=86"></script>
-<script src="js/assets.js?v=86"></script>
-<script src="js/editor.js?v=86"></script>
-<script src="js/main.js?v=86"></script>
+<script src="js/replay.js?v=87"></script>
+<script src="js/vidrender.js?v=87"></script>
+<script src="js/demos.js?v=87"></script>
+<script src="js/locker.js?v=87"></script>
+<script src="js/store.js?v=87"></script>
+<script src="js/assets.js?v=87"></script>
+<script src="js/editor.js?v=87"></script>
+<script src="js/main.js?v=87"></script>
 </body>
 </html>

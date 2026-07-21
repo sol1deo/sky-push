@@ -301,6 +301,9 @@ SKY.ArmLab = (function () {
       vec('foreRot', 'support rot', -3.2, 3.2);
       vec('bolt', 'bolt', -0.5, 0.5);
       vec('boltRot', 'bolt rot', -3.2, 3.2);
+      // reload hand target: mag well / revolver drum (auto-detected from the
+      // model until you move these — then your values win)
+      vec('mag', 'mag / drum', -0.5, 0.5);
       // per-weapon recoil (gun-local rear / back-slide / body-spring thump)
       const sc = (key, lb) => {
         const cur = r();

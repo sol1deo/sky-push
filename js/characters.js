@@ -30,6 +30,75 @@ SKY.Characters = (function () {
     return Math.abs(h);
   }
 
+  /* ==================== shared emote choreography ====================
+   * WORLD-SPACE arm posing (measure the segment's current world direction,
+   * rotate it onto a target) — the only rig-agnostic way to pose UACP
+   * bones; raw local rotations point anywhere the bind pose likes.
+   * Used by live avatars AND the locker preview (emotePoser factory). */
+  const _epA = new THREE.Vector3(), _epB = new THREE.Vector3();
+  const _epD = new THREE.Vector3(), _epF = new THREE.Vector3();
+  const _epQ = new THREE.Quaternion(), _epP = new THREE.Quaternion();
+  const _epC = new THREE.Quaternion();
+  function epCorr(bone, corrQ) {
+    bone.parent.getWorldQuaternion(_epP);
+    _epC.copy(_epP).invert().multiply(corrQ).multiply(_epP);
+    bone.quaternion.premultiply(_epC);
+    bone.updateMatrixWorld(true);
+  }
+  function epAlign(bone, child, dir) {
+    if (!bone || !child) return;
+    child.getWorldPosition(_epB);
+    bone.getWorldPosition(_epA);
+    _epB.sub(_epA);
+    if (_epB.lengthSq() < 1e-8) return;
+    _epQ.setFromUnitVectors(_epB.normalize(), dir);
+    epCorr(bone, _epQ);
+  }
+  /* bn = {upL, loL, haL, upR, loR, haR, torso, head, hips} */
+  function emotePose(bn, root, id, t, yaw) {
+    root.updateMatrixWorld(true);
+    SKY.U.dirFromYawPitch(yaw, 0, _epF);          // facing forward
+    const fx = _epF.x, fz = _epF.z;
+    const rx2 = -fz, rz2 = fx;                    // facing right
+    const dir = (fw, rt, up) =>
+      _epD.set(fx * fw + rx2 * rt, up, fz * fw + rz2 * rt).normalize();
+    if (id === 'tpose') {
+      epAlign(bn.upL, bn.loL, dir(0, -1, 0.03));
+      epAlign(bn.loL, bn.haL, dir(0, -1, 0));
+      epAlign(bn.upR, bn.loR, dir(0, 1, 0.03));
+      epAlign(bn.loR, bn.haR, dir(0, 1, 0));
+    } else if (id === 'clap') {
+      // slow, condescending: hands beat together in front of the chest
+      const k = 0.5 + Math.sin(t * 7.5) * 0.5;    // 0 apart .. 1 together
+      epAlign(bn.upL, bn.loL, dir(0.55, -0.4, -0.45));
+      epAlign(bn.loL, bn.haL, dir(0.8, -(0.5 - k * 0.42), 0.12));
+      epAlign(bn.upR, bn.loR, dir(0.55, 0.4, -0.45));
+      epAlign(bn.loR, bn.haR, dir(0.8, 0.5 - k * 0.42, 0.12));
+    } else if (id === 'floss') {
+      // both arms straight, swinging side-to-side; hips counter-sway
+      const sw = Math.sin(t * 8.5) * 0.8;
+      epAlign(bn.upL, bn.loL, dir(0.2, sw, -0.72));
+      epAlign(bn.loL, bn.haL, dir(0.2, sw, -0.72));
+      epAlign(bn.upR, bn.loR, dir(0.2, sw, -0.72));
+      epAlign(bn.loR, bn.haR, dir(0.2, sw, -0.72));
+      if (bn.hips) bn.hips.rotation.z += -sw * 0.1;
+      if (bn.torso) bn.torso.rotation.z += sw * 0.16;
+      if (bn.head) bn.head.rotation.z += -sw * 0.1;
+    } else {
+      // 'wave': left arm up high, forearm swinging hello
+      const sw = Math.sin(t * 8) * 0.4;
+      epAlign(bn.upL, bn.loL, dir(0.18, -0.4, 0.75));
+      epAlign(bn.loL, bn.haL, dir(0.1, -0.15 + sw, 0.9));
+    }
+  }
+  function emotePoser(root) {
+    const b = (n) => root.getObjectByName(n) || root.getObjectByName(n.replace(/\./g, ''));
+    const bn = { upL: b('UpperArm.L'), loL: b('LowerArm.L'), haL: b('Fist.L'),
+      upR: b('UpperArm.R'), loR: b('LowerArm.R'), haR: b('Fist.R'),
+      torso: b('Torso'), head: b('Head'), hips: b('Hips') };
+    return { pose(id, t, yaw) { emotePose(bn, root, id, t, yaw || 0); } };
+  }
+
   function lam(c) { return new THREE.MeshLambertMaterial({ color: c }); }
 
   const _hw = new THREE.Vector3(), _hr = new THREE.Vector3();  // headHitPos temps
@@ -402,13 +471,11 @@ SKY.Characters = (function () {
       this._armAim(dt);
     }
 
-    /* procedural emote choreography — drives bones AFTER the mixer, same
-       layering trick as _armAim. Each is a loop over wall-clock time. */
+    /* procedural emote choreography — drives bones AFTER the mixer via the
+       shared WORLD-SPACE poser (setting raw bone rotations broke every rig:
+       GLTF bind axes differ per bone, arms twisted backwards). */
     _procEmote(dt) {
       const ed = this.emoteDef || {};
-      const t = performance.now() * 0.001;
-      const aL = { sh: this.bUpArmL, elb: this.bLoArmL };
-      const aR = { sh: this.bUpArmR, elb: this.bLoArmR };
       // emote FX: mythic despair sets the ground on fire around the pawn
       if (ed.fx === 'flame' && Math.random() < dt * 8 && SKY.Effects.flame) {
         const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.9;
@@ -417,39 +484,13 @@ SKY.Characters = (function () {
         SKY.Effects.flame(_ad, 0.9);
       }
       if (ed.kind !== 'proc') return;
-      if (ed.id === 'clap') {
-        // slow condescending clap: forearms meet in front, small beat
-        const k = Math.sin(t * 7) * 0.5 + 0.5;
-        if (aL.sh) { aL.sh.rotation.x = 1.5; aL.sh.rotation.z = 0.55 - k * 0.28; }
-        if (aR.sh) { aR.sh.rotation.x = 1.5; aR.sh.rotation.z = -0.55 + k * 0.28; }
-        if (aL.elb) aL.elb.rotation.x = 0.5;
-        if (aR.elb) aR.elb.rotation.x = 0.5;
-      } else if (ed.id === 'tpose') {
-        // rigid, unblinking, perfectly still. peak disrespect
-        if (aL.sh) { aL.sh.rotation.set(0, 0, 1.5708); }
-        if (aR.sh) { aR.sh.rotation.set(0, 0, -1.5708); }
-        if (aL.elb) aL.elb.rotation.set(0, 0, 0);
-        if (aR.elb) aR.elb.rotation.set(0, 0, 0);
-        if (this.bHead) this.bHead.rotation.set(0, 0, 0);
-      } else if (ed.id === 'floss') {
-        // arms swing side-to-side together, hips counter — THE dance
-        const s = Math.sin(t * 9);
-        const sw = s * 0.9;
-        if (aL.sh) { aL.sh.rotation.x = 0.35; aL.sh.rotation.z = 0.5 + sw * 0.75; }
-        if (aR.sh) { aR.sh.rotation.x = 0.35; aR.sh.rotation.z = -0.5 + sw * 0.75; }
-        if (aL.elb) aL.elb.rotation.x = 0.25;
-        if (aR.elb) aR.elb.rotation.x = 0.25;
-        if (this.bHips) this.bHips.rotation.z = -sw * 0.16;
-        if (this.bTorso) this.bTorso.rotation.z = sw * 0.22;
-        if (this.bHead) this.bHead.rotation.z = -sw * 0.12;
-      } else {
-        // 'wave' (and any unknown id): the classic big-arm hello
-        if (aL.sh) {
-          aL.sh.rotation.x = 2.7 + Math.sin(performance.now() * 0.012) * 0.45;
-          aL.sh.rotation.y = -0.2;
-        }
-        if (aL.elb) aL.elb.rotation.x = 0.4;
+      if (!this._emoteBones) {
+        this._emoteBones = { upL: this.bUpArmL, loL: this.bLoArmL, haL: this.bHandL,
+          upR: this.bUpArmR, loR: this.bLoArmR, haR: this.bHandR,
+          torso: this.bTorso, head: this.bHead, hips: this.bHips };
       }
+      emotePose(this._emoteBones, this.root, ed.id,
+        performance.now() * 0.001, this.facingYaw);
     }
 
     /* remote players don't tick weapon cooldowns locally — net fire events
@@ -742,6 +783,10 @@ SKY.Characters = (function () {
         : p._cannonT > 0 ? 'cannon'
         : p.weapon;
       this.setWeapon(held);   // guards internally on kind+finish (live skin equips)
+      // no gun in the hand mid-emote — dancing arms sweep it through the body
+      const holsterEmote = !!(p.emote && p.tauntT > 0);
+      if (this.gunHolder) this.gunHolder.visible = !holsterEmote;
+      if (this.proxyGunHolder) this.proxyGunHolder.visible = !holsterEmote;
 
       if (p.ragdoll) {
         if (!this.ragActive) this.startRagdoll();
@@ -780,7 +825,13 @@ SKY.Characters = (function () {
         root.rotation.z += p.tumbleVel.z * dt;
         root.rotation.y += p.tumbleVel.y * dt;
       } else {
-        const err = SKY.U.angDelta(this.facingYaw, p.yaw);
+        // emoting characters FREEZE their facing (the orbit cam spins the
+        // view; the dancer must not spin with it)
+        const emoteNow = p.emote && p.tauntT > 0;
+        if (emoteNow && this.emoteYaw === undefined) this.emoteYaw = this.facingYaw;
+        if (!emoteNow) this.emoteYaw = undefined;
+        const wantYaw = emoteNow ? this.emoteYaw : p.yaw;
+        const err = SKY.U.angDelta(this.facingYaw, wantYaw);
         this.facingVel += err * 55 * dt;
         this.facingVel -= this.facingVel * 7 * dt;
         this.facingYaw += this.facingVel * dt;
@@ -855,5 +906,6 @@ SKY.Characters = (function () {
     SKINS,
     init() { /* nothing to preload — characters are code-built */ },
     create(pawn, scene) { return new Avatar(pawn, scene); },
+    emotePoser,   // locker preview plays proc emotes with the same choreography
   };
 })();

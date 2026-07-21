@@ -93,6 +93,7 @@ SKY.Game = (function () {
         if (!locked) {
           if (api.lootOpen) return;              // reward picker owns the cursor
           if (api.loadoutOpen) return;           // DM loadout menu owns it too
+          if (api._tauntHold && api._tauntHold.wheel) return;  // emote wheel owns it
           if (SKY.Net.online) {
             // ONLINE never pauses. ESC while ALIVE opens the in-match menu
             // (quit/settings — the game keeps running behind it); everything
@@ -783,7 +784,11 @@ SKY.Game = (function () {
       p.zoomed = In.action('aim') && !p.ragdoll && !p.grapple;
 
       const Wd = SKY.Weapons.defOf(p);
-      if (Wd.charge) {
+      const wheelOpen = api._tauntHold && api._tauntHold.wheel;
+      if (wheelOpen) {
+        // the emote wheel owns the mouse — a sector click must not fire
+        In.actionPressed('fire');
+      } else if (Wd.charge) {
         // piston-style: hold to compress, release to launch
         if (In.action('fire')) SKY.Weapons.chargeTick(p, 1 / 120);
         else if (p.chargeT > 0) SKY.Weapons.releaseCharge(p);
@@ -1178,7 +1183,9 @@ SKY.Game = (function () {
         // EMOTE CAM: slow third-person orbit around the emoting character
         // (PUBG-style) — pulled in if a wall is in the way
         if (p.emote && p.tauntT > 0) {
-          api._emoteCamA = (api._emoteCamA || 0) + rdt * 0.55;
+          // p.yaw is FROZEN while emoting, so the mouse (Input.yaw) freely
+          // orbits the camera around the held pose + a slow idle drift
+          api._emoteCamA = (api._emoteCamA || 0) + rdt * 0.12;
           const ang = SKY.Input.yaw + Math.PI + api._emoteCamA;
           _eye.set(p.pos.x, p.pos.y + 1.1, p.pos.z);
           _v3a.set(Math.sin(ang) * 3.0, 1.1, Math.cos(ang) * 3.0);

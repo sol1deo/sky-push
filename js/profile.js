@@ -162,8 +162,15 @@ SKY.Profile = (function () {
     ownedSnd: [],           // KO sounds bought (store)
     koSnd: null,            // equipped KO sound id | null
     ownedEmotes: [],        // emote ids bought (price-0 implicitly owned)
-    emoteWheel: ['wave', null, null, null, null, null],   // T-wheel slots
+    emoteWheel: ['wave', null, null, null, null, null, null, null],   // T-wheel, 8 slots
   };
+  /* stored bundles from older builds may carry a shorter wheel — pad it */
+  function fixWheel(d) {
+    if (!Array.isArray(d.emoteWheel)) d.emoteWheel = [];
+    while (d.emoteWheel.length < 8) d.emoteWheel.push(null);
+    d.emoteWheel.length = 8;
+    return d;
+  }
 
   let data = load();
 
@@ -171,7 +178,7 @@ SKY.Profile = (function () {
     try {
       const raw = localStorage.getItem(storeKey);
       if (!raw) return JSON.parse(JSON.stringify(DEFAULTS));
-      return { ...JSON.parse(JSON.stringify(DEFAULTS)), ...JSON.parse(raw) };
+      return fixWheel({ ...JSON.parse(JSON.stringify(DEFAULTS)), ...JSON.parse(raw) });
     } catch (e) { return JSON.parse(JSON.stringify(DEFAULTS)); }
   }
   function save() {
@@ -669,7 +676,8 @@ SKY.Profile = (function () {
       return true;
     },
     setEmoteSlot(i, id) {   // id null = clear slot
-      if (i < 0 || i > 5) return false;
+      fixWheel(data);
+      if (i < 0 || i > 7) return false;
       if (id !== null && !api.ownsEmote(id)) return false;
       data.emoteWheel[i] = id;
       save();
@@ -732,7 +740,7 @@ SKY.Profile = (function () {
         if (sameUser && mirror._t && (!cloud._t || mirror._t > cloud._t)) {
           data = mirror;
         } else {
-          data = { ...JSON.parse(JSON.stringify(DEFAULTS)), ...cloud };
+          data = fixWheel({ ...JSON.parse(JSON.stringify(DEFAULTS)), ...cloud });
         }
       }
       save();                      // mirror locally + push (covers adoption)

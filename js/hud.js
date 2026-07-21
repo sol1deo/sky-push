@@ -496,14 +496,15 @@ SKY.HUD = (function () {
     },
 
     /* -------- EMOTE WHEEL (hold T) --------
-     * show=true builds the wheel from the profile's slots; mouse deltas
-     * (pointer-locked) aim a sector; show=false hides it and RETURNS the
-     * selected emote id (or null). */
+     * show=true: pointer UNLOCKS (real cursor, game look frozen), 8 radial
+     * sectors picked by cursor position from screen center. show=false:
+     * hides it, RE-LOCKS the pointer and returns the selected id (or null). */
     emoteWheel(show) {
       if (show) {
         if (ew.open) return null;
-        ew.open = true; ew.ax = 0; ew.ay = 0; ew.sel = -1;
-        const wheel = (SKY.Profile.data.emoteWheel || []).slice(0, 6);
+        ew.open = true; ew.sel = -1;
+        const wheel = (SKY.Profile.data.emoteWheel || []).slice(0, 8);
+        while (wheel.length < 8) wheel.push(null);
         ew.ids = wheel;
         if (!ew.root) {
           ew.root = document.createElement('div');
@@ -511,12 +512,13 @@ SKY.HUD = (function () {
           document.body.appendChild(ew.root);
           ew.move = (e) => {
             if (!ew.open) return;
-            ew.ax += e.movementX || 0; ew.ay += e.movementY || 0;
-            const m = Math.hypot(ew.ax, ew.ay);
-            ew.sel = m < 18 ? -1 :
-              ((Math.round(((Math.atan2(ew.ax, -ew.ay) + Math.PI * 2) %
-                (Math.PI * 2)) / (Math.PI / 3)) % 6));
-            for (let i = 0; i < ew.root.children.length; i++) {
+            const dx = e.clientX - window.innerWidth / 2;
+            const dy = e.clientY - window.innerHeight / 2;
+            const m = Math.hypot(dx, dy);
+            ew.sel = m < 46 ? -1 :
+              (Math.round(((Math.atan2(dx, -dy) + Math.PI * 2) %
+                (Math.PI * 2)) / (Math.PI / 4)) % 8);
+            for (let i = 0; i < 8 && i < ew.root.children.length; i++) {
               ew.root.children[i].classList.toggle('sel', i === ew.sel);
             }
           };
@@ -524,19 +526,22 @@ SKY.HUD = (function () {
         }
         ew.root.innerHTML = wheel.map((id, i) => {
           const d = id && SKY.Profile.emoteDef(id);
-          const a = i * 60 - 90;                    // sector centers, up first
-          const x = 50 + Math.cos(a * Math.PI / 180) * 21;
-          const y = 50 + Math.sin(a * Math.PI / 180) * 30;
+          const a = i * 45 - 90;                    // 8 sector centers, up first
+          const x = 50 + Math.cos(a * Math.PI / 180) * 22;
+          const y = 50 + Math.sin(a * Math.PI / 180) * 33;
           return `<div class="ew-slot r-${d ? d.rarity : 'none'}"
             style="left:${x}%;top:${y}%">
             <span class="ew-name">${d ? d.name : 'EMPTY'}</span></div>`;
-        }).join('') + '<div class="ew-hint">aim + release T</div>';
+        }).join('') + '<div class="ew-hint">point + release T</div>';
         ew.root.classList.remove('hidden');
+        try { document.exitPointerLock(); } catch (e) {}
         return null;
       }
       if (!ew.open) return null;
       ew.open = false;
       if (ew.root) ew.root.classList.add('hidden');
+      // back to gameplay: the release keyup is a user gesture, re-lock works
+      if (SKY.Input && SKY.Input.requestLock) SKY.Input.requestLock();
       const id = ew.sel >= 0 ? ew.ids[ew.sel] : null;
       return id && SKY.Profile.ownsEmote(id) ? id : null;
     },

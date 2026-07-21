@@ -169,7 +169,13 @@ window.SKY = window.SKY || {};
         }
       }
 
-      this.yaw = cmd.yaw; this.pitch = cmd.pitch;
+      // emoting: aim yaw FREEZES (mouse orbits the emote cam instead) —
+      // stored at tryTaunt; restored control the moment the emote ends
+      if (this.emote && this.tauntT > 0 && this.emoteYaw !== undefined) {
+        this.yaw = this.emoteYaw; this.pitch = 0;
+      } else {
+        this.yaw = cmd.yaw; this.pitch = cmd.pitch;
+      }
 
       // ---- water check (fx:sea volumes): mid-body submerged = swimming ----
       const wtr = SKY.World.waterAt
@@ -468,6 +474,7 @@ window.SKY = window.SKY || {};
       const def = (SKY.Profile && SKY.Profile.emoteDef(emoteId || 'wave')) || null;
       this.tauntT = (def && def.dur) || 1.25;
       this.emote = { id: (def && def.id) || 'wave' };
+      this.emoteYaw = this.yaw;   // the dancer holds this facing
       if (this.avatar) this.avatar.playEmote(def);
       SKY.SFX.taunt(this.sfxDist());
       return true;

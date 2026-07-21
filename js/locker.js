@@ -12,7 +12,7 @@ SKY.Locker = (function () {
   let selSkin = null;       // finish id open in the detail view (null = browsing)
   let showWeapon = null;    // browse-grid showcase gun (null = lobby weapon)
   let lkTab = 'weapons';    // weapons | char | style | emotes
-  let selEmoteSlot = 0;     // which T-wheel slot the next emote click fills
+  let selEmoteId = null;    // emote being previewed — next slot click places it
   const charThumbs = {};    // charId -> dataURL
 
   /* skin-first shop copy: the card sells the FANTASY, mythics list their FX */
@@ -190,6 +190,90 @@ SKY.Locker = (function () {
     pv.renderer.render(pv.scene, pv.cam);
   }
 
+  /* ---------------- live emote preview (locker EMOTES tab) ----------------
+     One persistent renderer; the equipped character performs the clicked
+     emote on loop — clip emotes via its own mixer, proc emotes via the
+     SAME world-space choreography the in-game avatars use. */
+  const epv = { renderer: null, canvas: null, scene: null, cam: null,
+    grp: null, mixer: null, idle: null, act: null, poser: null,
+    def: null, t0: 0, key: null, clip: null };
+  function ensureEmotePreview() {
+    if (epv.renderer) return true;
+    if (!window.THREE || !SKY.GFX || !SKY.GFX.charReady()) return false;
+    try {
+      epv.canvas = document.createElement('canvas');
+      epv.canvas.id = 'lk-epv-canvas';
+      epv.renderer = new THREE.WebGLRenderer({ canvas: epv.canvas, antialias: true, alpha: true });
+      epv.renderer.setSize(260, 260);
+      epv.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      epv.renderer.outputEncoding = THREE.sRGBEncoding;
+      epv.scene = new THREE.Scene();
+      epv.scene.add(new THREE.HemisphereLight(0xffffff, 0x505866, 1.05));
+      const key = new THREE.DirectionalLight(0xfff2d8, 1.2);
+      key.position.set(1.5, 2.4, 2);
+      epv.scene.add(key);
+      epv.cam = new THREE.PerspectiveCamera(30, 1, 0.01, 30);
+      return true;
+    } catch (e) { return false; }
+  }
+  function buildEmotePreview() {
+    const key = previewCharKey();
+    if (epv.grp && epv.key === key) return;
+    if (epv.grp) { epv.scene.remove(epv.grp); epv.grp = null; epv.mixer = null; }
+    const inst = SKY.GFX.charInstance(0, key);
+    if (!inst) return;
+    epv.key = key;
+    epv.clips = inst.clips;
+    epv.grp = new THREE.Group();
+    epv.grp.add(inst.root);
+    epv.scene.add(epv.grp);
+    epv.cam.position.set(0, inst.height * 0.6, inst.height * 2.2);
+    epv.cam.lookAt(0, inst.height * 0.45, 0);
+    epv.mixer = new THREE.AnimationMixer(inst.root);
+    const idle = inst.clips.find(c => c.name === 'Idle');
+    epv.idle = idle ? epv.mixer.clipAction(idle) : null;
+    if (epv.idle) epv.idle.play();
+    epv.poser = SKY.Characters.emotePoser(inst.root);
+    epv.act = null;
+    if (epv.def) startEmoteAct();   // re-apply after a char swap
+  }
+  function startEmoteAct() {
+    const def = epv.def;
+    if (epv.act) { epv.act.stop(); epv.act = null; }
+    if (def && def.kind === 'clip' && epv.mixer && epv.clips) {
+      const clip = epv.clips.find(c => c.name === def.clip);
+      if (clip) {
+        if (epv.idle) epv.idle.stop();
+        epv.act = epv.mixer.clipAction(clip);
+        epv.act.reset().play();
+        epv.act.timeScale = def.speed || 1;
+        if (def.loop) epv.act.setLoop(THREE.LoopRepeat);
+        else { epv.act.setLoop(THREE.LoopOnce); epv.act.clampWhenFinished = true; }
+        epv.clip = clip;
+      }
+    } else if (epv.idle) epv.idle.play();
+  }
+  function playEmotePreview(id) {
+    epv.def = SKY.Profile.emoteDef(id);
+    epv.t0 = performance.now();
+    if (epv.mixer) startEmoteAct();
+  }
+  function tickEmotePreview(dt) {
+    if (!epv.renderer || !epv.canvas.isConnected || !epv.grp) return;
+    if (epv.mixer) epv.mixer.update(dt);
+    const def = epv.def;
+    if (def) {
+      const t = (performance.now() - epv.t0) / 1000;
+      if (t > (def.dur || 2)) {        // loop the performance forever
+        epv.t0 = performance.now();
+        if (epv.act) epv.act.reset();
+      }
+      // preview char faces +Z (the camera) — that's yaw π in game space
+      if (def.kind === 'proc' && epv.poser) epv.poser.pose(def.id, t, Math.PI);
+    }
+    epv.renderer.render(epv.scene, epv.cam);
+  }
+
   /* ---------------- panel ---------------- */
   function coinsChip() {
     return `<div class="lk-coins">⬡ <b>${SKY.Profile.coins().toLocaleString()}</b></div>`;
@@ -208,35 +292,52 @@ SKY.Locker = (function () {
 
     let body = '';
     if (lkTab === 'emotes') {
-      // ---------- EMOTES: the T-wheel + your collection ----------
+      // ---------- EMOTES: the real T-wheel + a live dancing preview ----------
       const RARC = { common: '#9fb2c8', rare: '#40c8ff', epic: '#ff5db1',
         legendary: '#ffa733', mythic: '#ff5a2e' };
       const wheel = P.data.emoteWheel || [];
-      const slots = wheel.map((id, i) => {
+      const selDef = selEmoteId && P.emoteDef(selEmoteId);
+      const slots = [];
+      for (let i = 0; i < 8; i++) {
+        const id = wheel[i];
         const d = id && P.emoteDef(id);
-        return `<div class="lk-eslot ${i === selEmoteSlot ? 'sel' : ''}" data-eslot="${i}">
+        const a = i * 45 - 90;
+        const x = 50 + Math.cos(a * Math.PI / 180) * 40;
+        const y = 50 + Math.sin(a * Math.PI / 180) * 40;
+        slots.push(`<div class="lk-eslot r-${d ? d.rarity : 'none'}" data-eslot="${i}"
+            style="left:${x}%;top:${y}%">
           <span class="lk-esl-n">${i + 1}</span>
           <span class="lk-esl-name" ${d ? `style="color:${RARC[d.rarity]}"` : ''}>
             ${d ? d.name : 'EMPTY'}</span>
           ${id ? '<span class="lk-esl-x" data-eclear="' + i + '">×</span>' : ''}
-        </div>`;
-      }).join('');
+        </div>`);
+      }
       const cards = P.EMOTES.slice().sort((a, b) => a.price - b.price).map((em) => {
         const owned = P.ownsEmote(em.id);
         const slotIdx = wheel.indexOf(em.id);
-        return `<div class="lk-card lk-emote ${owned ? 'owned' : 'locked'}" data-emote="${em.id}"
+        return `<div class="lk-card lk-emote ${owned ? 'owned' : 'locked'}
+            ${selEmoteId === em.id ? 'equipped' : ''}" data-emote="${em.id}"
             style="--tierc:${RARC[em.rarity]}">
           <span class="lk-schip lk-schip-corner" style="background:${RARC[em.rarity]}">${em.rarity.toUpperCase()}</span>
           <div class="lk-ename">${em.name}</div>
           <div class="lk-edesc">${em.desc}</div>
           <div class="lk-tag">${slotIdx >= 0 ? 'ON WHEEL · ' + (slotIdx + 1)
-            : owned ? 'OWNED — CLICK TO SLOT' : '⬡ ' + em.price}</div>
+            : owned ? 'OWNED' : '⬡ ' + em.price}</div>
         </div>`;
       }).join('');
       body = `
-        <h4 class="lk-h">EMOTE WHEEL <small>hold T in a match — pick the slot, then click an emote below</small></h4>
-        <div class="lk-eslots">${slots}</div>
-        <h4 class="lk-h">YOUR EMOTES <small>tap T = slot 1 · dances and disrespect sold in the STORE</small></h4>
+        <div class="lk-erow">
+          <div class="lk-ewheel" id="lk-ewheel">${slots.join('')}
+            <div class="lk-ewc">${selDef
+              ? `<b style="color:${RARC[selDef.rarity]}">${selDef.name}</b><small>click a slot to place it</small>`
+              : '<b>THE WHEEL</b><small>hold T in-game</small>'}</div>
+          </div>
+          <div class="lk-epv">
+            <div id="lk-epv-wrap"></div>
+            <div class="lk-epv-cap">${selDef ? 'PREVIEW — ' + selDef.name : 'click an emote to preview'}</div>
+          </div>
+        </div>
+        <h4 class="lk-h">YOUR EMOTES <small>click = live preview · then click a wheel slot to place it · tap T in-game = slot 1</small></h4>
         <div class="lk-grid lk-egrid">${cards}</div>`;
     } else if (lkTab === 'char') {
       const charCards = P.CHARS.map((c) => {
@@ -381,6 +482,12 @@ SKY.Locker = (function () {
         mount.insertBefore(ins.canvas, mount.firstChild);
       }
     }
+    // emote tab: mount the persistent live emote-preview canvas
+    const emount = panel.querySelector('#lk-epv-wrap');
+    if (emount && ensureEmotePreview()) {
+      buildEmotePreview();
+      emount.appendChild(epv.canvas);
+    }
 
     panel.onclick = (e) => {
       const tab = e.target.closest('.lk-tab');
@@ -428,25 +535,31 @@ SKY.Locker = (function () {
       }
       const eClear = e.target.closest('[data-eclear]');
       if (eClear) {
+        e.stopPropagation();
         P.setEmoteSlot(+eClear.dataset.eclear, null);
         renderPanel();
         return;
       }
       const eSlot = e.target.closest('[data-eslot]');
-      if (eSlot) { selEmoteSlot = +eSlot.dataset.eslot; renderPanel(); return; }
+      if (eSlot) {
+        // a selected (previewed) emote lands in the clicked slot
+        if (selEmoteId && P.ownsEmote(selEmoteId)) {
+          P.setEmoteSlot(+eSlot.dataset.eslot, selEmoteId);
+          SKY.SFX.init(); SKY.SFX.pick();
+        }
+        renderPanel();
+        return;
+      }
       const eCard = e.target.closest('[data-emote]');
       if (eCard) {
         const id = eCard.dataset.emote;
-        if (P.ownsEmote(id)) { P.setEmoteSlot(selEmoteSlot, id); }
-        else if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
-        else if (P.buyEmote(id)) { P.setEmoteSlot(selEmoteSlot, id); SKY.SFX.init(); SKY.SFX.pick(); }
-        else { flashPoor(eCard); return; }
-        // auto-advance to the next empty slot — slotting a set feels fast
-        const wl = P.data.emoteWheel;
-        for (let i = 0; i < 6; i++) {
-          const j = (selEmoteSlot + 1 + i) % 6;
-          if (!wl[j]) { selEmoteSlot = j; break; }
+        if (!P.ownsEmote(id)) {
+          if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
+          if (!P.buyEmote(id)) { flashPoor(eCard); return; }
+          SKY.SFX.init(); SKY.SFX.cash();
         }
+        selEmoteId = id;
+        playEmotePreview(id);   // live preview: the character performs it
         renderPanel();
         return;
       }
@@ -555,7 +668,7 @@ SKY.Locker = (function () {
 
   return {
     renderPanel,
-    tick(dt) { tickPreview(dt); tickInspect(dt); },
+    tick(dt) { tickPreview(dt); tickInspect(dt); tickEmotePreview(dt); },
     refreshPreview() { rebuildPreview(); },
     skinDesc(id) { return SKIN_DESC[id] || ''; },
     /* store deep-link: jump straight to the emote wheel */

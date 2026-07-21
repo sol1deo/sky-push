@@ -241,6 +241,14 @@ SKY.Arms = (() => {
     if (cls === 'minigun') { r.fore = [0, 0.0, -L * 0.18]; r.mag = [0, -0.12, L * 0.12]; }
     if (cls === 'flamer') { r.mag = [0, 0.11, L * 0.16]; }   // tank valve on top
     if (cls === 'launcher') { r.mag = [0, -0.02, -L * 0.30]; }  // breech at front
+    // a mag socket the USER actually moved wins over auto-detected ones
+    // (a stored override that still equals the class default doesn't count —
+    // COPY JSON always writes the whole rig)
+    const ov = RIG_OVR[kind];
+    r._magTuned = !!(ov && ov.mag && (
+      Math.abs(ov.mag[0] - r.mag[0]) > 1e-4 ||
+      Math.abs(ov.mag[1] - r.mag[1]) > 1e-4 ||
+      Math.abs(ov.mag[2] - r.mag[2]) > 1e-4));
     // overrides go LAST or class branches clobber them (minigun fore bug)
     if (BAKED[kind]) Object.assign(r, BAKED[kind]);       // shipped hand-tune
     if (RIG_OVR[kind]) Object.assign(r, RIG_OVR[kind]);   // armlab overrides
@@ -316,16 +324,25 @@ SKY.Arms = (() => {
       { t: 0.96, lh: ['fore', 0, 0, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0] },
     ],
+    /* revolver, rebuilt from scratch: the drum IS the reload. Gun rolls
+       into the support hand, drum swings out, muzzle-up eject flick dumps
+       the shells, speedloader comes up from below, pressed straight into
+       the drum, wrist-flick snap shut. All hand targets ride the REAL
+       cylinder socket (attachMagRefs measures the kitbash 'cyl' node; the
+       armlab 'mag / drum' sliders override it). Position channels stay
+       tiny — the gun must never leave the hands. */
     reload_revolver: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on', cyl: 0 },
-      { t: 0.12, gun: [0.02, -0.01, 0.02, 0.20, 0.14, -0.40], lh: ['mag', 0.02, -0.02, 0], cyl: 0 },
-      { t: 0.22, gun: [0.02, -0.01, 0.02, 0.22, 0.16, -0.44], cyl: 1, ev: 'magout' },
-      { t: 0.34, gun: [0.03, 0.02, 0.03, 0.55, 0.18, -0.50], lh: ['mag', 0.03, -0.05, 0.03], ev: 'drop', cyl: 1 },
-      { t: 0.48, gun: [0.02, -0.01, 0.02, 0.20, 0.14, -0.42], lh: ['mag', 0.02, -0.20, 0.10], mag: 'hand', cyl: 1 },
-      { t: 0.62, lh: ['mag', 0.02, -0.02, 0.02], cyl: 1 },
-      { t: 0.70, lh: ['mag', 0.02, -0.01, 0], ev: 'magin', mag: 'off', cyl: 1 },
-      { t: 0.80, gun: [0.01, 0, 0.01, 0.10, 0.06, -0.16], lh: ['fore', 0, 0, 0], cyl: 0, ev: 'rack' },
-      { t: 1.00, gun: [0, 0, 0, 0, 0, 0], cyl: 0 },
+      { t: 0.10, gun: [0.008, -0.006, 0.006, 0.14, 0.10, -0.30], lh: ['mag', 0.03, -0.05, 0.02], cyl: 0 },
+      { t: 0.18, gun: [0.010, -0.008, 0.008, 0.18, 0.13, -0.38], lh: ['mag', 0.01, -0.015, 0.01], cyl: 1, ev: 'magout' },
+      { t: 0.30, gun: [0.012, 0.006, 0.010, 0.62, 0.16, -0.42], lh: ['mag', 0.015, -0.03, 0.02], cyl: 1, ev: 'drop' },
+      { t: 0.40, gun: [0.010, -0.004, 0.008, 0.30, 0.13, -0.38], lh: ['mag', 0.02, -0.16, 0.08], cyl: 1, mag: 'hand' },
+      { t: 0.52, gun: [0.008, -0.006, 0.008, 0.16, 0.12, -0.36], lh: ['mag', 0.01, -0.05, 0.03], cyl: 1 },
+      { t: 0.62, gun: [0.008, -0.006, 0.008, 0.14, 0.11, -0.34], lh: ['mag', 0, -0.005, 0.005], cyl: 1 },
+      { t: 0.70, gun: [0.010, -0.004, 0.010, 0.12, 0.10, -0.32], lh: ['mag', 0, 0, 0], cyl: 1, ev: 'magin', mag: 'off' },
+      { t: 0.80, gun: [0.006, 0.004, 0.006, 0.05, 0.04, -0.10], lh: ['mag', -0.015, -0.02, 0.015], cyl: 0, ev: 'rack' },
+      { t: 0.90, gun: [0.002, 0, 0.002, 0.01, 0.01, -0.03], lh: ['fore', 0, -0.01, 0] },
+      { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], cyl: 0 },
     ],
     reload_launcher: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on' },
@@ -762,7 +779,21 @@ SKY.Arms = (() => {
       }
       return;
     }
-    if (r.cls === 'revolver') { anim.magNode = vm.group.getObjectByName('cyl'); anim.magProcKind = 'revolver'; return; }
+    if (r.cls === 'revolver') {
+      anim.magNode = vm.group.getObjectByName('cyl');
+      anim.magProcKind = 'revolver';
+      // the REAL drum position beats any guessed socket — reload hands and
+      // the speedloader land exactly on the cylinder
+      if (anim.magNode) {
+        vm.group.updateWorldMatrix(true, true);
+        magBox.setFromObject(anim.magNode);
+        if (!magBox.isEmpty()) {
+          magBox.getCenter(vA);
+          anim.magSocket = vm.group.worldToLocal(vA).toArray();
+        }
+      }
+      return;
+    }
     anim.magProcKind = r.cls;
   }
 
@@ -1031,7 +1062,8 @@ SKY.Arms = (() => {
     return out.copy(o.quaternion);
   }
   function socketGun(r, s, out) {
-    const base = (s[0] === 'mag' && anim.magSocket) ? anim.magSocket
+    const base = (s[0] === 'mag' && anim.magSocket && !r._magTuned)
+      ? anim.magSocket
       : (r[s[0]] || r.grip);
     return out.set(base[0] + s[1], base[1] + s[2], base[2] + s[3]);
   }
