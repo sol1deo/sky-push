@@ -270,11 +270,33 @@ SKY.ArmLab = (function () {
       if (!cur[key]) cur[key] = [0, 0, 0];
       for (let i = 0; i < 3; i++) row(rigBox, r, key, i, lb + ' ' + 'XYZ'[i], mn, mx, 0.005, ovr);
     };
+    // per-weapon ARM direction (elbow hint override): where the arm comes
+    // FROM — e.g. swing the L elbow low for a palm-up under-barrel hold.
+    // Seeded from the global hints so sliders start at the current pose;
+    // setting one makes it authoritative for this weapon (follow disabled).
+    const vecSeed = (key, lb, seed) => {
+      const cur = r();
+      if (!cur[key] || (!cur[key][0] && !cur[key][1] && !cur[key][2])) {
+        cur[key] = seed.slice();
+      }
+      for (let i = 0; i < 3; i++) {
+        row(rigBox, r, key, i, lb + ' ' + 'XYZ'[i], -3.2, 3.2, 0.02, ovr);
+      }
+    };
     // ranges must cover LONG guns (mega len 0.6, longshot 0.72: an under-
     // barrel support hand needs z past -0.35) — the IK now stretches to reach
+    const sc0 = (key, lb) => {
+      const cur = r();
+      if (cur[key] === undefined) cur[key] = 0;
+      row(rigBox, r, key, null, lb, -3.2, 3.2, 0.02, ovr);
+    };
     vec('grip', 'grip', -0.5, 0.5);
     vec('gripRot', 'grip rot', -3.2, 3.2);
+    vecSeed('elbowL', 'L arm dir', A().CFG.elbowHintL);
+    sc0('armRollL', 'L arm roll');
     if (!PSEUDO[kind]) {
+      vecSeed('elbowR', 'R arm dir', A().CFG.elbowHintR);
+      sc0('armRollR', 'R arm roll');
       vec('fore', 'support', -0.65, 0.65);
       vec('foreRot', 'support rot', -3.2, 3.2);
       vec('bolt', 'bolt', -0.5, 0.5);

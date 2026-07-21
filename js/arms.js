@@ -906,7 +906,7 @@ SKY.Arms = (() => {
     qC.copy(qB).invert().multiply(qCorr).multiply(qB);
     boneObj.quaternion.premultiply(qC);
   }
-  function solveArm(side, targetPos, targetQuat) {
+  function solveArm(side, targetPos, targetQuat, hintOvr, roll) {
     const A = rig.arms[side];
     if (!A) return;
     A.up.quaternion.copy(A.bindUp);
@@ -943,12 +943,19 @@ SKY.Arms = (() => {
     const a = (L1 * L1 - L2 * L2 + d * d) / (2 * d);
     const h = Math.sqrt(Math.max(0.0001, L1 * L1 - a * a));
     camera.getWorldQuaternion(qA);
-    vH.fromArray(side === 'R' ? CFG.elbowHintR : CFG.elbowHintL).applyQuaternion(qA);
+    // per-weapon per-hand ARM DIRECTION (rig elbowR/elbowL) wins over the
+    // global hint — a palm-up under-barrel hold needs the elbow swung LOW,
+    // which no amount of hand rotation can express (supination is invisible
+    // to the bone axis). Zero-length override = unset.
+    const hasOvr = hintOvr && (hintOvr[0] || hintOvr[1] || hintOvr[2]);
+    vH.fromArray(hasOvr ? hintOvr
+      : side === 'R' ? CFG.elbowHintR : CFG.elbowHintL).applyQuaternion(qA);
     // the elbow FOLLOWS the hand: the forearm enters the wrist from the
     // fist's local -Y (bone axis), so a raked/rolled grip swings the whole
     // arm around instead of twisting the wrist against a fixed forearm
-    // (hint-only elbows made rotated hands read as broken wrists)
-    const ef = CFG.elbowFollow === undefined ? 0.65 : CFG.elbowFollow;
+    // (hint-only elbows made rotated hands read as broken wrists).
+    // An explicit per-weapon arm dir is authoritative — no follow blend.
+    const ef = hasOvr ? 0 : CFG.elbowFollow === undefined ? 0.65 : CFG.elbowFollow;
     if (ef > 0) {
       vC.set(0, -1, 0).applyQuaternion(targetQuat);
       vH.normalize().lerp(vC, ef);
@@ -963,6 +970,13 @@ SKY.Arms = (() => {
     A.lo.getWorldPosition(vB).sub(vS).normalize();
     qD.setFromUnitVectors(vB, vA);
     worldCorr(A.up, qD);
+    // per-weapon ARM ROLL, upper half: twist around the shoulder→elbow
+    // axis BEFORE the forearm aim (the elbow sits on this axis so it stays
+    // put; the forearm aim below re-plants the wrist afterwards)
+    if (roll) {
+      qD.setFromAxisAngle(vA, roll * 0.5);
+      worldCorr(A.up, qD);
+    }
     A.up.updateWorldMatrix(false, true);
     // forearm: aim elbow→wrist at the target
     A.lo.getWorldPosition(vB);
@@ -970,6 +984,14 @@ SKY.Arms = (() => {
     vA.subVectors(vT, vB).normalize();
     qD.setFromUnitVectors(vC, vA);
     worldCorr(A.lo, qD);
+    // forearm roll spins around its OWN elbow→wrist axis — wrist stays
+    // planted. On a fully-stretched reach the elbow-dir hint has zero
+    // leverage (straight arm); ROLL is how the arm itself rotates so a
+    // palm-up fist doesn't read as a broken wrist.
+    if (roll) {
+      qD.setFromAxisAngle(vA, roll);
+      worldCorr(A.lo, qD);
+    }
     A.lo.updateWorldMatrix(false, true);
     // fist: absolute world orientation
     A.lo.getWorldQuaternion(qB);
@@ -1266,7 +1288,15 @@ SKY.Arms = (() => {
       vm.root.localToWorld(wPos);
       qSpaceOf(vm, space, qSpace);
       wQuat.copy(qRootW).multiply(qSpace).multiply(H.quat);
-      solveArm(side, wPos, wQuat);
+      // per-weapon ARM DIRECTION + ROLL: rig elbowR/elbowL + armRollR/L
+      // (hook/cannon holds use their own pseudo-rigs) — lets a support
+      // hand cup a barrel palm-UP with the arm twisted to match
+      let hr = r;
+      if (side === 'L' && space === 'hook') hr = rigOf('hookgun');
+      else if (side === 'L' && space === 'cannon') hr = rigOf('cannon');
+      const hint = side === 'R' ? hr.elbowR : hr.elbowL;
+      const roll = (side === 'R' ? hr.armRollR : hr.armRollL) || 0;
+      solveArm(side, wPos, wQuat, hint, roll);
     }
   }
 
