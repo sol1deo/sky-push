@@ -1156,8 +1156,12 @@ SKY.Game = (function () {
       // no gun / crosshair / combat HUD while in menus, dead or spectating
       const combat = !spectating && !!p && p.alive;
       SKY.Effects.speedLines(rdt, combat ? p.speed3() : 0, !combat || p.grounded);
+      // scoped-in = looking THROUGH the rifle's optic: the gun+arms hide
+      // (they filled the bottom-right of a magnified view) and shots read
+      // from the crosshair
+      const scoped = combat && p.zoomed && SKY.Weapons.defOf(p).scope;
       // bare hands (IT runners): no gun viewmodel — hook arm still shows
-      SKY.Effects.setViewmodelVisible(combat && !!(p.weapon || p.grapple));
+      SKY.Effects.setViewmodelVisible(combat && !scoped && !!(p.weapon || p.grapple));
       if (!combat) SKY.Effects.setHands(false);
       SKY.HUD.combat(combat);
       if (!combat) { SKY.Input.sensMult = 1; SKY.HUD.scope(false); }

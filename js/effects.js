@@ -1687,6 +1687,7 @@ SKY.Effects = (function () {
         if (SKY.Arms && SKY.Arms.fireKick) {
           const rk = vm.kind ? SKY.Arms.rigOf(vm.kind) : null;
           SKY.Arms.fireKick(k * (rk && rk.kickBody !== undefined ? rk.kickBody : 1));
+          if (vm.kind) SKY.Arms.fireCycle(vm.kind);   // sniper bolt rack
         }
         fovKick = (k >= 1.4 ? 2.6 : 1.5) * Math.min(k, 2.2);
         if (k >= 1.4) shakeAmp = Math.min(shakeAmp + k * 0.35, 3);

@@ -146,7 +146,12 @@ SKY.Weapons = (function () {
     // eye-ray aim point, so shots still land exactly on the crosshair.
     _muzzle.copy(_eye).addScaledVector(_dir, 0.55);
     _muzzle.y -= 0.1;                              // fallback: near-eye
-    const tip = pawn.isLocal ? SKY.Effects.viewmodelTip()
+    // scoped-in: the viewmodel is HIDDEN (you look through the optic), so
+    // shots trace straight out of the crosshair, not a hidden gun tip
+    const scoped = pawn.isLocal && pawn.zoomed && W.scope;
+    if (scoped) _muzzle.copy(_eye).addScaledVector(_dir, 0.6);   // dead-center
+    const tip = scoped ? null
+      : pawn.isLocal ? SKY.Effects.viewmodelTip()
       : pawn.avatar ? pawn.avatar.gunTipWorld(_tip) : null;
     const wallHit = SKY.World.raycast(_eye, _dir, W.range);
     let aimDist = wallHit ? wallHit.t : W.range;
@@ -161,10 +166,11 @@ SKY.Weapons = (function () {
       _muzzle.copy(tip);
       _aim.copy(_eye).addScaledVector(_dir, aimDist);
       _dir.copy(_aim).sub(_muzzle).normalize();
-    } else if (pawn.isLocal && SKY.Effects.muzzleAnchor) {
+    } else if (pawn.isLocal && !scoped && SKY.Effects.muzzleAnchor) {
       // fallback anchored at the gun's screen corner, NOT the eye — center
       // spawns read as "bullets coming out of my head" whenever this branch
-      // held (point-blank aim, viewmodel tip clipped into a wall, …)
+      // held (point-blank aim, viewmodel tip clipped into a wall, …).
+      // Scoped shots SKIP this: center-of-screen is exactly right there.
       const mf = SKY.Effects.muzzleAnchor(_tip);
       if (mf && SKY.World.los(_eye, mf)) {
         _muzzle.copy(mf);

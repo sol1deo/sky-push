@@ -370,7 +370,11 @@ SKY.Assets = (function () {
         fan.add(holder);
       }
       const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.24, 10), dark);
-      hub.onBeforeRender = () => { fan.rotation.y += 0.32; };   // self-spinning
+      // driver mesh must NEVER be culled (a culled hub froze the spin while
+      // the blades stayed visible) + wall-clock rotation (frame-increment
+      // spun slower at low fps and stopped whenever callbacks skipped)
+      hub.frustumCulled = false;
+      hub.onBeforeRender = () => { fan.rotation.y = performance.now() * 0.0192; };
       fan.add(hub);
       g.add(fan);
       // grate bars over the fan
@@ -1071,7 +1075,14 @@ SKY.Assets = (function () {
       }
       g.add(tail);
       const hub = sh(new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 6), darkM));
-      hub.onBeforeRender = () => { rotor.rotation.y += 0.42; tail.rotation.x += 0.6; };
+      // never culled + wall-clock spin — the tiny hub driving the rotation
+      // got frustum-culled in matches and the rotors froze mid-air
+      hub.frustumCulled = false;
+      hub.onBeforeRender = () => {
+        const t = performance.now();
+        rotor.rotation.y = t * 0.0252;
+        tail.rotation.x = t * 0.036;
+      };
       rotor.add(hub);
     } else if (name === 'jet') {
       cyl(1.1, 1.1, 12, bodyM, 0, 2.5, 0, true);                    // fuselage
@@ -1241,7 +1252,8 @@ SKY.Assets = (function () {
 
     if (!wreck) {
       const hub = shadowed(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.1, 8), darkM));
-      hub.onBeforeRender = () => { prop.rotation.z += 0.55; };          // idle prop spin
+      hub.frustumCulled = false;   // culled driver = frozen prop (see heli)
+      hub.onBeforeRender = () => { prop.rotation.z = performance.now() * 0.033; };
       prop.add(hub);
       return;
     }

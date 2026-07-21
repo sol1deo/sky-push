@@ -36,6 +36,10 @@ SKY.Arms = (() => {
     elbowFollow: 0.65,           // elbow chases the hand's rotation (0..1)
     fistRotR: [-1.5708, 0, -0.6],   // knuckles up, fingers forward, rolled out
     fistRotL: [-1.5708, 0, 0.6],
+    // per-axis fist bone scale (Y = along the hand): the stock mitt is FLAT
+    // and reads as a thin pancake once a grip is rotated edge-on — fatten
+    // the two cross axes (armlab: fist size X/Y/Z)
+    fistScale: [1.2, 1, 1.2],
     magGrip: [0, -0.03, 0.02],   // hand-mag offset in WORLD units (fist space)
     handDamp: 34,                // hand target chase speed
     joltScale: 1,                // global contact-jolt strength
@@ -426,6 +430,16 @@ SKY.Arms = (() => {
       { t: 0.34, gun: [0.015, -0.07, 0.02, 0.32, 0.05, 0.24], lh: ['fore', 0, -0.02, 0.01] },
       { t: 0.52, gun: [0, 0.02, -0.004, -0.12, 0, -0.10], ev: 'rack' },
       { t: 0.68, gun: [0, -0.006, 0, 0.04, 0, 0.03], lh: ['fore', 0, -0.01, 0] },
+      { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
+    ],
+    /* post-shot bolt cycle (sniper): the support hand leaves the fore-end,
+       racks the bolt back and returns — plays after EVERY longshot shot */
+    draw_sniperbolt: [
+      { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
+      { t: 0.22, gun: [0.01, -0.004, 0.01, 0.05, 0.05, -0.10], lh: ['bolt', 0, 0.01, -0.02] },
+      { t: 0.42, gun: [0.012, -0.004, 0.012, 0.07, 0.06, -0.12], lh: ['bolt', 0, 0.005, 0.10], ev: 'rack' },
+      { t: 0.60, gun: [0.008, 0, 0.008, 0.04, 0.03, -0.06], lh: ['bolt', 0, 0.005, 0.02] },
+      { t: 0.85, lh: ['fore', 0, -0.01, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     draw_shotgun: [
@@ -900,6 +914,8 @@ SKY.Arms = (() => {
     A.fi.quaternion.copy(A.bindFi);
     A.lo.position.copy(A.baseLo);
     A.fi.position.copy(A.baseFi);
+    const FS = CFG.fistScale;
+    if (FS) A.fi.scale.set(FS[0], FS[1], FS[2]);
     A.anchor.updateWorldMatrix(true, true);
     A.up.getWorldPosition(vS);
     A.lo.getWorldPosition(vE);
@@ -1007,6 +1023,14 @@ SKY.Arms = (() => {
      back/up and recovers on the spring wave. This is where heavy-gun IMPACT
      lives now that the gun-local kick is capped at the camera plane —
      velocity sells the punch, not sustained displacement. */
+  /* post-shot gesture: bolt-action rifles cycle the bolt after every shot
+     (piggybacks the draw machinery; skipped mid-reload) */
+  function fireCycle(kind) {
+    if ((CLS_OF[kind] || 'rifle') !== 'sniper') return;
+    if (anim.lastU !== -1) return;
+    anim.draw = { t: 0, dur: 0.62, cls: 'sniperbolt' };
+    anim.lastDrawU = 0;
+  }
   function fireKick(f) {
     const s = f * (SWAY.fireFeed === undefined ? 1 : SWAY.fireFeed);
     swayState.rx.v += s * 0.9;
@@ -1051,8 +1075,10 @@ SKY.Arms = (() => {
     // arm ends/cut showed at the bottom of the frame. The shoulders (and
     // the sleeve cut with them) ride lower and wider as fov grows — hands
     // are IK-glued to the gun sockets, so weapon placement is untouched.
-    const fovK = Math.min(1.75,
-      Math.tan((camera.fov || 75) * Math.PI / 360) / 0.7673);
+    // clamped ≥1: zoom/scope DROPS the fov — scaling below baseline pulled
+    // the shoulders up INTO the frame ("shoulders fill the screen on RMB")
+    const fovK = Math.min(1.75, Math.max(1,
+      Math.tan((camera.fov || 75) * Math.PI / 360) / 0.7673));
     for (const side of ['R', 'L']) {
       const AS = rig.arms[side];
       if (!AS) continue;
@@ -1245,7 +1271,7 @@ SKY.Arms = (() => {
   }
 
   return {
-    init, update, refresh, startDraw, applyCfg, swayTick, fireKick,
+    init, update, refresh, startDraw, applyCfg, swayTick, fireKick, fireCycle,
     CFG, SWAY, RIG, RIG_OVR, TL, DRAW_DUR, CLS_OF, rigOf, LAB_KEY,
     _rig: rig, _anim: anim, _sway: swayState,   // for CDP + armlab tuning
   };
