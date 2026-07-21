@@ -151,10 +151,11 @@ SKY.Assets = (function () {
   ];
   /* per-type option defaults (merged with the prop's fx settings) */
   const FX_OPTS = {
-    pointlight: { color: '#ffd9a0', power: 1.3, range: 15 },
-    spot:       { color: '#fff2cc', power: 1.8, range: 20 },
-    lamp:       { color: '#ffe0b0', power: 1.15, range: 13 },
-    neonbar:    { color: '#40c8ff', power: 0.9, range: 10 },
+    // flicker 0-1: 0 = steady, 1 = dying-tube stutter (all light types)
+    pointlight: { color: '#ffd9a0', power: 1.3, range: 15, flicker: 0 },
+    spot:       { color: '#fff2cc', power: 1.8, range: 20, flicker: 0 },
+    lamp:       { color: '#ffe0b0', power: 1.15, range: 13, flicker: 0 },
+    neonbar:    { color: '#40c8ff', power: 0.9, range: 10, flicker: 0 },
     godray:     { color: '#fff2cc', alpha: 0.16, width: 3.5, height: 12 },
     shaft:      { color: '#fff2cc', alpha: 0.09, width: 3, height: 16 },
     groundfog:  { color: '#cfd8e6', alpha: 0.16, size: 10 },
@@ -252,12 +253,34 @@ SKY.Assets = (function () {
       return m;
     };
 
+    /* light FLICKER (fx dial 0-1): drives intensity like a failing tube /
+       campfire — layered sines + random sputter dropouts. Driver mesh is
+       never culled and runs on the wall clock (the propeller rules). */
+    const addFlicker = (light, driver, emissiveMesh) => {
+      const fl = Math.max(0, Math.min(1, o.flicker || 0));
+      if (!fl || !light) return;
+      const base = light.intensity;
+      const seed = Math.random() * 100;
+      const em = emissiveMesh && emissiveMesh.material &&
+        emissiveMesh.material.emissive ? emissiveMesh.material.emissive.clone() : null;
+      driver.frustumCulled = false;
+      driver.onBeforeRender = () => {
+        const t = performance.now() * 0.001;
+        let k = 0.74 + Math.sin(t * 11 + seed) * 0.13 +
+          Math.sin(t * 23 + seed * 2) * 0.08 + Math.sin(t * 5.3 + seed) * 0.05;
+        if (Math.sin(t * 2.3 + seed) > 0.982) k *= 0.2;   // sputter blackout
+        const m = 1 - fl + fl * k;
+        light.intensity = base * m;
+        if (em) emissiveMesh.material.emissive.copy(em).multiplyScalar(m);
+      };
+    };
     if (name === 'pointlight') {
       const light = new THREE.PointLight(col, o.power, o.range);
       light.position.y = 0.5;
       const mk = marker(new THREE.SphereGeometry(0.3, 8, 6), col);
       mk.position.y = 0.5;
       g.add(light, mk);
+      addFlicker(light, mk);
     } else if (name === 'spot') {
       // aims down its local -Y: rotate the prop to steer the beam
       const light = new THREE.SpotLight(col, o.power, o.range, 0.55, 0.6);
@@ -268,6 +291,7 @@ SKY.Assets = (function () {
       const mk = marker(new THREE.ConeGeometry(0.35, 0.7, 8), col);
       mk.position.y = 0.4;
       g.add(light, tgt, mk);
+      addFlicker(light, mk);
     } else if (name === 'lamp') {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 3.2, 8), lam(0x2c3140));
       pole.position.y = 1.6;
@@ -279,6 +303,7 @@ SKY.Assets = (function () {
       const light = new THREE.PointLight(col, o.power, o.range);
       light.position.copy(bulb.position);
       g.add(pole, arm, bulb, light);
+      addFlicker(light, bulb, bulb);
     } else if (name === 'neonbar') {
       const bar = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.09, 0.09),
         lam(col, col.clone().multiplyScalar(0.75)));
@@ -286,6 +311,7 @@ SKY.Assets = (function () {
       const light = new THREE.PointLight(col, o.power, o.range);
       light.position.y = 0.4;
       g.add(bar, light);
+      addFlicker(light, bar, bar);
     } else if (name === 'godray') {
       // dreamy volumetric fake: soft cone + crossed WIDE soft planes + pool
       const w = o.width, h = o.height;
@@ -1163,24 +1189,30 @@ SKY.Assets = (function () {
           Math.cos(a) * H * 0.34, 0.15, Math.sin(a) * H * 0.34);  // anchor stub
       }
       box(0.7, 0.5, 0.7, warn, 0.8, 0.25, 0);              // valve skid
-      // FLAME: emissive cone + additive glow, flickering on wall clock
-      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.7, 8),
-        new THREE.MeshBasicMaterial({ color: 0xffa640, transparent: true, opacity: 0.9 }));
-      flame.position.set(0, H + 1.2, 0);
-      g.add(flame);
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: SKY.U.blobTexture(), color: 0xff9435, transparent: true,
-        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.7 }));
-      glow.scale.set(2.6, 2.6, 1);
-      glow.position.set(0, H + 1.4, 0);
-      g.add(glow);
-      flame.frustumCulled = false;
+      // FLAME: layered soft billboard glows (no hard cone geometry) — a
+      // stretched hot core inside a bigger orange bloom, both licking on
+      // the wall clock
+      const mkGlow = (c, sx, sy, opac, y) => {
+        const s2 = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: SKY.U.blobTexture(), color: c, transparent: true,
+          blending: THREE.AdditiveBlending, depthWrite: false, opacity: opac }));
+        s2.scale.set(sx, sy, 1);
+        s2.position.set(0, y, 0);
+        g.add(s2);
+        return s2;
+      };
+      const core = mkGlow(0xffe9b0, 0.7, 1.6, 0.95, H + 1.0);
+      const body = mkGlow(0xff9435, 1.5, 2.6, 0.75, H + 1.25);
+      const halo = mkGlow(0xff6a20, 3.2, 3.2, 0.4, H + 1.4);
+      core.frustumCulled = false;
       const fspd = (o.power || 1);
-      flame.onBeforeRender = () => {
+      core.onBeforeRender = () => {
         const t = performance.now() * 0.011 * fspd;
-        const f = 0.75 + Math.sin(t) * 0.14 + Math.sin(t * 2.7) * 0.11;
-        flame.scale.set(f, 0.8 + f * 0.5, f);
-        glow.material.opacity = 0.4 + f * 0.35;
+        const f = 0.78 + Math.sin(t) * 0.12 + Math.sin(t * 2.7) * 0.1;
+        core.scale.set(0.7 * f, 1.3 + f * 0.55, 1);
+        body.scale.set(1.5 * f, 2.0 + f * 0.8, 1);
+        body.material.opacity = 0.5 + f * 0.3;
+        halo.material.opacity = 0.22 + f * 0.24;
       };
     } else if (name === 'oiltank') {
       const R = o.size || 3.4, H = o.range || 4.6;
