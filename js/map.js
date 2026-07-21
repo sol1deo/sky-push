@@ -1265,7 +1265,7 @@ SKY.Map = (function () {
     const single = () => {
       if (b.ptex && b.ptex[0] === '#') return flatPaint(b.ptex);   // painted flat color
       if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
-        return new THREE.MeshLambertMaterial({ map: blockTex(b, b.ptex) });
+        return SKY.U.blockSurface(blockTex(b, b.ptex), b, b.ptex);
       }
       const pal = SKY.MapData.PALETTES[b.pal];
       if (pal) return mat(pal, 1);
@@ -1278,7 +1278,7 @@ SKY.Map = (function () {
         const pf = b.ptexF[f];
         mats.push(pf && pf[0] === '#' ? flatPaint(pf)
           : pf && SKY.U.PROC_TEX[pf]
-          ? new THREE.MeshLambertMaterial({ map: blockTex(b, pf) })
+          ? SKY.U.blockSurface(blockTex(b, pf), b, pf)
           : single());
       }
       return mats;

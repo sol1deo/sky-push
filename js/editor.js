@@ -83,7 +83,7 @@ SKY.Editor = (function () {
     const single = () => {
       if (b.ptex && b.ptex[0] === '#') return flatPaint(b.ptex);
       if (b.ptex && SKY.U.PROC_TEX[b.ptex]) {
-        return new THREE.MeshLambertMaterial({ map: edBlockTex(b, b.ptex) });
+        return SKY.U.blockSurface(edBlockTex(b, b.ptex), b, b.ptex);
       }
       const pal = SKY.MapData.PALETTES[b.pal];
       if (pal) {
@@ -100,7 +100,7 @@ SKY.Editor = (function () {
         mats.push(pf && pf[0] === '#'
           ? flatPaint(pf)
           : pf && SKY.U.PROC_TEX[pf]
-          ? new THREE.MeshLambertMaterial({ map: edBlockTex(b, pf) })
+          ? SKY.U.blockSurface(edBlockTex(b, pf), b, pf)
           : single());
       }
       return mats;
@@ -1662,6 +1662,9 @@ SKY.Editor = (function () {
           <input type="color" data-k="ptcol" value="${curPt && curPt[0] === '#' ? curPt : '#b8b4a6'}">
           <button class="ed-mini${pipette ? ' sel' : ''}" data-k="ptpick">PIPETTE</button></span></div>`;
       h += numRow('Tiling', d.rep || 0, 'rep', 1);
+      // surface feel: bump = grayscale-of-the-texture relief, shine = specular
+      h += numRow('Depth 0-1', d.bump || 0, 'bump', 0.05);
+      h += numRow('Metallic 0-1', d.shine || 0, 'shine', 0.05);
       h += `<div class="ed-row"><span>Viewport paint</span>
         <button class="ed-mini${facePaint ? ' sel' : ''}" data-k="fpaint">${facePaint ? 'PAINTING… (ESC)' : 'PAINT FACES'}</button></div>`;
       if (!d.shape || d.shape === 'box') {
@@ -2237,6 +2240,8 @@ SKY.Editor = (function () {
       return;
     }
     else if (k === 'rep') { d.rep = Math.max(0, Math.round(num)) || null; o.mesh.material = blockMaterial(d); }
+    else if (k === 'bump') { d.bump = Math.max(0, Math.min(1, num)) || undefined; o.mesh.material = blockMaterial(d); }
+    else if (k === 'shine') { d.shine = Math.max(0, Math.min(1, num)) || undefined; o.mesh.material = blockMaterial(d); }
     else if (k === 'crumble') d.crumble = e.target.checked;
     else if (k === 'shape') {
       d.shape = e.target.value === 'box' ? null : e.target.value;

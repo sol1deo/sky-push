@@ -49,7 +49,9 @@ SKY.GFX = (function () {
     'dirt', 'sand', 'stone', 'rock', 'brick', 'planks', 'tiles', 'snow', 'lava', 'grid',
     'crane', 'plywood', 'leather', 'balloon', 'marble', 'carpet', 'circuit', 'camo',
     'gravel', 'cliff', 'scree', 'mossrock',
-    'glass', 'office', 'windows', 'facade'];
+    'glass', 'office', 'windows', 'facade',
+    // abandoned / apocalypse set (AI-painted tileables, build 90)
+    'rust', 'rustpanel', 'grime', 'overgrown', 'ivy', 'mossbrick', 'weeds'];
   const PROP_NAMES = ['Prop_Crate', 'Prop_Crate_Large', 'Prop_Crate_Tarp', 'Prop_Barrel1',
     'Prop_Barrel2_Closed', 'Prop_Locker', 'Prop_SatelliteDish', 'Prop_Shelves_WideTall',
     'Prop_Shelves_ThinTall', 'Prop_Mine', 'Prop_HealthPack', 'Prop_Ammo_Closed', 'Prop_Chest'];

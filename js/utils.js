@@ -502,6 +502,42 @@ SKY.U = {
         g.bezierCurveTo(s * 0.3, Math.random() * s, s * 0.7, Math.random() * s,
           s, 30 + Math.random() * 60); g.stroke();
       },
+      /* file:// fallbacks for the painted apocalypse set (assets/tex jpgs
+         are the real ones) */
+      overgrown(g, s) {
+        g.fillStyle = '#8d9297'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(50,54,58,0.5)'; g.lineWidth = 2;
+        for (let i = 0; i < 8; i++) {
+          g.beginPath(); g.moveTo(Math.random() * s, 0);
+          g.lineTo(Math.random() * s, s); g.stroke();
+        }
+        speck(g, s, 60, ['rgba(96,140,80,0.6)', 'rgba(120,160,96,0.5)'], 4, 12);
+      },
+      ivy(g, s) {
+        g.fillStyle = '#4d7a44'; g.fillRect(0, 0, s, s);
+        speck(g, s, 160, ['rgba(120,168,96,0.6)', 'rgba(56,92,50,0.6)',
+          'rgba(150,190,110,0.4)'], 4, 10);
+      },
+      mossbrick(g, s) {
+        g.fillStyle = '#8a6a58'; g.fillRect(0, 0, s, s);
+        g.fillStyle = '#5f8a52';
+        for (let y = 0; y < 4; y++) g.fillRect(0, y * 32 - 2, s, 5);
+        for (let y = 0; y < 4; y++) for (let x = 0; x < 2; x++) {
+          g.fillStyle = ['#93715c', '#82634f', '#8d6d59'][(x + y) % 3];
+          g.fillRect(((x * 64) + (y % 2) * 32) % s + 2, y * 32 + 3, 60, 26);
+        }
+        speck(g, s, 40, ['rgba(96,140,80,0.55)'], 3, 8);
+      },
+      weeds(g, s) {
+        g.fillStyle = '#66686c'; g.fillRect(0, 0, s, s);
+        g.strokeStyle = 'rgba(40,42,46,0.6)'; g.lineWidth = 3;
+        for (let i = 0; i < 6; i++) {
+          g.beginPath(); g.moveTo(Math.random() * s, 0);
+          g.bezierCurveTo(Math.random() * s, s * 0.4, Math.random() * s, s * 0.6,
+            Math.random() * s, s); g.stroke();
+        }
+        speck(g, s, 40, ['rgba(104,150,84,0.7)', 'rgba(130,170,100,0.6)'], 3, 7);
+      },
     };
   })(),
 
@@ -531,6 +567,49 @@ SKY.U = {
     SKY.U._proc[key] = tex;
     return tex;
   },
+  /* textured block SURFACE material: plain Lambert normally; the per-block
+     `bump` dial (0-1, relief from a grayscale of the texture itself) and
+     `shine` dial (0-1, specular metallic look) upgrade it to Phong. Both
+     are stored as plain numbers on the block def — maps stay tiny. */
+  blockSurface(map, b, name) {
+    const bump = Math.max(0, Math.min(1, b.bump || 0));
+    const shine = Math.max(0, Math.min(1, b.shine || 0));
+    if (!bump && !shine) return new THREE.MeshLambertMaterial({ map });
+    const m = new THREE.MeshPhongMaterial({
+      map,
+      specular: new THREE.Color().setScalar(0.04 + shine * 0.5),
+      shininess: 6 + shine * 74,
+    });
+    if (bump && name) {
+      SKY.U._grayCv = SKY.U._grayCv || {};
+      let cv = SKY.U._grayCv[name];
+      if (!cv) {
+        let src = SKY.GFX && SKY.GFX.texImage ? SKY.GFX.texImage(name) : null;
+        if (!src) {
+          SKY.U.procTexture(name, 1);   // ensures the fallback canvas exists
+          src = SKY.U._procCanvas && SKY.U._procCanvas[name];
+        }
+        if (src) {
+          cv = document.createElement('canvas');
+          cv.width = cv.height = 256;
+          const g = cv.getContext('2d');
+          try { g.filter = 'grayscale(1)'; } catch (e) {}
+          g.drawImage(src, 0, 0, 256, 256);
+          SKY.U._grayCv[name] = cv;
+        }
+      }
+      if (cv) {
+        const bt = new THREE.CanvasTexture(cv);
+        bt.wrapS = bt.wrapT = THREE.RepeatWrapping;
+        bt.repeat.copy(map.repeat);
+        bt.offset.copy(map.offset);
+        m.bumpMap = bt;
+        m.bumpScale = bump * 0.4;
+      }
+    }
+    return m;
+  },
+
   procThumb(id) {
     if (SKY.GFX && SKY.GFX.texImage(id)) return 'assets/tex/' + id + '.jpg';
     SKY.U._procThumbs = SKY.U._procThumbs || {};

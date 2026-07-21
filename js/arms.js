@@ -335,7 +335,7 @@ SKY.Arms = (() => {
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0], mag: 'on', cyl: 0 },
       { t: 0.10, gun: [0.008, -0.006, 0.006, 0.14, 0.10, -0.30], lh: ['mag', 0.03, -0.05, 0.02], cyl: 0 },
       { t: 0.18, gun: [0.010, -0.008, 0.008, 0.18, 0.13, -0.38], lh: ['mag', 0.01, -0.015, 0.01], cyl: 1, ev: 'magout' },
-      { t: 0.30, gun: [0.012, 0.006, 0.010, 0.62, 0.16, -0.42], lh: ['mag', 0.015, -0.03, 0.02], cyl: 1, ev: 'drop' },
+      { t: 0.30, gun: [0.012, 0.006, 0.010, 0.45, 0.16, -0.42], lh: ['mag', 0.015, -0.03, 0.02], cyl: 1, ev: 'drop' },
       { t: 0.40, gun: [0.010, -0.004, 0.008, 0.30, 0.13, -0.38], lh: ['mag', 0.02, -0.16, 0.08], cyl: 1, mag: 'hand' },
       { t: 0.52, gun: [0.008, -0.006, 0.008, 0.16, 0.12, -0.36], lh: ['mag', 0.01, -0.05, 0.03], cyl: 1 },
       { t: 0.62, gun: [0.008, -0.006, 0.008, 0.14, 0.11, -0.34], lh: ['mag', 0, -0.005, 0.005], cyl: 1 },
@@ -1206,21 +1206,15 @@ SKY.Arms = (() => {
     /* -------- gun offset channel (mythic timelines own the gun too) ------ */
     if (keys) {
       sampleChan(keys, u, 'gun', gunOff);
-      // pivot the choreography rotation about the PALM CONTACT (~6cm past
-      // the wrist along the fist bone). Pivoting at the grip socket kept
-      // the WRIST world-static (the fist bone origin IS the wrist), so the
-      // forearm never swung with the gun and the receiver swept through it
-      // — with the palm as the fixed point the wrist ORBITS it and the IK
-      // arm follows every tilt
+      // pivot the choreography rotation about the PALM CONTACT — a small
+      // CONSTANT offset from the grip socket in GUN SPACE (up + slightly
+      // back = where a palm wraps a grip). Deriving it from gripRot broke
+      // on heavily raked grips (magnum gripRot y 2.64): the pivot landed
+      // far from the visual palm and the gun slid backwards through the
+      // hand. Pivoting at the socket itself would freeze the wrist (fist
+      // bone origin IS the wrist) and the forearm would never swing.
       eA.set(gunOff[3], gunOff[4], gunOff[5]);
-      fistEulR.set(CFG.fistRotR[0], CFG.fistRotR[1], CFG.fistRotR[2]);
-      qA.setFromEuler(fistEulR);
-      if (r.gripRot) {
-        qA.multiply(qB.setFromEuler(
-          fistEulR.set(r.gripRot[0], r.gripRot[1], r.gripRot[2])));
-      }
-      vC.set(0, 0.06, 0).applyQuaternion(qA);   // wrist -> palm, bone axis
-      vA.set(r.grip[0] + vC.x, r.grip[1] + vC.y, r.grip[2] + vC.z);
+      vA.set(r.grip[0], r.grip[1] + 0.05, r.grip[2] + 0.02);
       vB.copy(vA).applyEuler(eA);
       vm.group.position.x += gunOff[0] + (vA.x - vB.x);
       vm.group.position.y += gunOff[1] + (vA.y - vB.y);

@@ -746,8 +746,18 @@ SKY.Characters = (function () {
       if (def.kind === 'clip' && this.mixer && this.instClips) {
         const clip = this.instClips.find(c => c.name === def.clip);
         if (clip) {
-          if (this.acts.emote) this.acts.emote.setEffectiveWeight(0);
-          const a = this.mixer.clipAction(clip);
+          if (this.acts.emote) {
+            // release the previous emote's private action + clip copy
+            this.acts.emote.stop();
+            this.mixer.uncacheClip(this.acts.emote.getClip());
+          }
+          // CLONE the clip: mixer.clipAction() caches per clip, so reusing
+          // SitDown/Roll handed back the crouch/slide ACTIONS — whose
+          // hold-at-frame clamps froze the emote solid (and the emote's
+          // loop config corrupted crouch/slide in return)
+          const priv = clip.clone();
+          priv.name = '__emote_' + clip.name;
+          const a = this.mixer.clipAction(priv);
           a.reset().play();
           a.setEffectiveWeight(0);
           a.timeScale = def.speed || 1;
