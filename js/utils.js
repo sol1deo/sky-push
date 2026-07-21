@@ -449,6 +449,59 @@ SKY.U = {
         speck(g, s, 40, ['rgba(0,0,0,0.1)', 'rgba(255,255,255,0.06)'], 4, 12);
         speck(g, s, 60, ['rgba(84,140,72,0.55)', 'rgba(110,168,90,0.45)'], 3, 10);
       },
+
+      /* --- oil rig / abandoned set: corroded metal for rusty maps --- */
+      rust(g, s) {
+        // streaky oxidised sheet: orange-brown blotches + drip runs
+        g.fillStyle = '#7c4a2a'; g.fillRect(0, 0, s, s);
+        speck(g, s, 140, ['rgba(140,74,32,0.55)', 'rgba(96,52,26,0.6)',
+          'rgba(178,104,44,0.45)', 'rgba(62,38,22,0.5)'], 3, 14);
+        for (let i = 0; i < 22; i++) {              // vertical drip streaks
+          const x = Math.random() * s, w = 1 + Math.random() * 3;
+          const grad = g.createLinearGradient(0, 0, 0, s);
+          grad.addColorStop(0, 'rgba(60,34,18,0)');
+          grad.addColorStop(0.4 + Math.random() * 0.3, 'rgba(60,34,18,0.4)');
+          grad.addColorStop(1, 'rgba(45,26,14,0.55)');
+          g.fillStyle = grad;
+          g.fillRect(x, Math.random() * s * 0.4, w, s);
+        }
+        speck(g, s, 40, ['rgba(214,140,60,0.4)'], 1, 3);   // fresh oxide pops
+      },
+      rustpanel(g, s) {
+        // riveted rusty plating: panel seams + bolt heads + corrosion bloom
+        g.fillStyle = '#6d5a4a'; g.fillRect(0, 0, s, s);
+        speck(g, s, 70, ['rgba(120,72,36,0.4)', 'rgba(84,58,40,0.5)'], 4, 12);
+        g.strokeStyle = 'rgba(40,32,26,0.75)'; g.lineWidth = 3;
+        for (let i = 0; i <= 2; i++) {
+          g.beginPath(); g.moveTo(0, i * 64); g.lineTo(s, i * 64); g.stroke();
+          g.beginPath(); g.moveTo(i * 64, 0); g.lineTo(i * 64, s); g.stroke();
+        }
+        for (let py = 0; py < 2; py++) for (let px = 0; px < 2; px++) {
+          for (let i = 0; i < 4; i++) {             // rivets along panel edges
+            const bx = px * 64 + 10 + i * 15, by = py * 64 + 8;
+            g.fillStyle = '#4a3e33';
+            g.beginPath(); g.arc(bx, by, 3, 0, Math.PI * 2); g.fill();
+            g.beginPath(); g.arc(bx, by + 48, 3, 0, Math.PI * 2); g.fill();
+          }
+        }
+        speck(g, s, 30, ['rgba(178,104,44,0.5)'], 2, 6);   // rust blooming out
+      },
+      grime(g, s) {
+        // oil-stained concrete: dark splats + tyre-ish smears
+        g.fillStyle = '#6f6b63'; g.fillRect(0, 0, s, s);
+        speck(g, s, 90, ['rgba(30,28,26,0.35)', 'rgba(50,46,40,0.4)',
+          'rgba(90,84,74,0.4)'], 3, 12);
+        for (let i = 0; i < 6; i++) {               // oil puddle splats
+          const x = Math.random() * s, y = Math.random() * s;
+          g.fillStyle = 'rgba(22,20,20,0.55)';
+          g.beginPath(); g.ellipse(x, y, 8 + Math.random() * 14,
+            5 + Math.random() * 8, Math.random() * 3, 0, Math.PI * 2); g.fill();
+        }
+        g.strokeStyle = 'rgba(34,32,30,0.4)'; g.lineWidth = 5;
+        g.beginPath(); g.moveTo(0, 30 + Math.random() * 60);
+        g.bezierCurveTo(s * 0.3, Math.random() * s, s * 0.7, Math.random() * s,
+          s, 30 + Math.random() * 60); g.stroke();
+      },
     };
   })(),
 

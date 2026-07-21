@@ -136,6 +136,10 @@ SKY.Assets = (function () {
     { id: 'fx:kelp',       name: 'kelp (sways)', folder: 'sea decor' },
     { id: 'fx:seagrass',   name: 'seagrass patch', folder: 'sea decor' },
     { id: 'fx:rope',       name: 'hanging rope', folder: 'gadgets' },
+    { id: 'fx:pumpjack',   name: 'oil pump (nodding)', folder: 'oil rig' },
+    { id: 'fx:derrick',    name: 'drill derrick tower', folder: 'oil rig' },
+    { id: 'fx:flare',      name: 'gas flare stack (burns)', folder: 'oil rig' },
+    { id: 'fx:oiltank',    name: 'rusty storage tank', folder: 'oil rig' },
     { id: 'fx:plane',      name: 'prop plane', folder: 'aviation' },
     { id: 'fx:planewreck', name: 'crashed plane', folder: 'aviation' },
     { id: 'fx:heli',       name: 'helicopter (rotors spin)', folder: 'aviation' },
@@ -220,6 +224,12 @@ SKY.Assets = (function () {
     rope:       { color: '#d8c49a', range: 8, sway: 1 },   // range = length (m); sway 0 = dead straight
     plane:      { color: '#d0483e' },
     planewreck: { color: '#8a92a0' },
+    // oil rig: power = animation speed (pumpjack) / flame flicker (flare),
+    // range = tower/stack height, size = tank radius
+    pumpjack:   { color: '#8a4f2c', power: 1 },
+    derrick:    { color: '#6d5142', range: 14 },
+    flare:      { color: '#7c6a58', range: 11, power: 1 },
+    oiltank:    { color: '#7c4a2a', size: 3.4, range: 4.6 },
     heli:       { color: '#d0483e' },
     jet:        { color: '#f2f4f6' },
     helipad:    { color: '#2c3140', size: 4.5 },           // size = pad radius
@@ -682,6 +692,9 @@ SKY.Assets = (function () {
     } else if (name === 'heli' || name === 'jet' || name === 'helipad' ||
                name === 'runway' || name === 'tower' || name === 'hangar') {
       buildAviation(name, g, col.clone().convertSRGBToLinear(), o);
+    } else if (name === 'pumpjack' || name === 'derrick' || name === 'flare' ||
+               name === 'oiltank') {
+      buildOilRig(name, g, col.clone().convertSRGBToLinear(), o);
     } else if (name === 'school' || name === 'sharkpatrol' || name === 'monster' ||
                name === 'whale' || name === 'dolphin' || name === 'manta') {
       buildSeaLife(name, g, col.clone().convertSRGBToLinear(), o, marker);
@@ -1016,6 +1029,181 @@ SKY.Assets = (function () {
         sw.f.rotation.x = -Math.cos(bobP) * sw.bobA * sw.bobF * 0.12;
       }
     };
+  }
+
+  /* oil rig set — rusted, half-abandoned hardware. The pumpjack NODS on
+     its own (wall-clock + cull-proof driver, same rules as the heli). */
+  function buildOilRig(name, g, col, o) {
+    const lam = (c, e) => new THREE.MeshLambertMaterial({ color: c, emissive: e || 0x000000 });
+    const rustD = lam(0x54341e);                   // deep corroded brown
+    const rustM = lam(col);                        // main rust tone (tintable)
+    const rustL = lam(0xa3612e);                   // fresh oxide orange
+    const steel = lam(0x63686f);                   // grimy steel
+    const warn = lam(0x8f7c34);                    // faded warning yellow
+    const sh = (m) => { m.castShadow = true; m.receiveShadow = true; return m; };
+    const box = (w, h, d, mat, x, y, z, parent) => {
+      const q = sh(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat));
+      q.position.set(x, y, z);
+      (parent || g).add(q);
+      return q;
+    };
+    const cyl = (r0, r1, l, mat, x, y, z, alongZ, parent) => {
+      const q = sh(new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, l, 12), mat));
+      if (alongZ) q.rotation.x = Math.PI / 2;
+      q.position.set(x, y, z);
+      (parent || g).add(q);
+      return q;
+    };
+
+    if (name === 'pumpjack') {
+      // skid + wellhead
+      box(2.0, 0.3, 6.8, rustD, 0, 0.15, 0);
+      cyl(0.22, 0.26, 0.9, steel, 0, 0.7, -2.9);           // wellhead stub
+      // samson post (A-frame) to the beam pivot at (0, 3.1, 0.3)
+      for (const sx of [-0.75, 0.75]) {
+        const leg = box(0.24, 3.4, 0.24, rustM, sx * 0.5, 1.75, 0.3);
+        leg.rotation.z = sx > 0 ? 0.22 : -0.22;
+      }
+      box(1.4, 0.2, 0.34, rustD, 0, 3.0, 0.3);             // post cap
+      // WALKING BEAM group (pivots at the post top) + horsehead at -Z
+      const beam = new THREE.Group();
+      beam.position.set(0, 3.15, 0.3);
+      g.add(beam);
+      box(0.34, 0.42, 6.2, rustM, 0, 0, -0.4, beam);
+      const head = sh(new THREE.Mesh(
+        new THREE.CylinderGeometry(1.05, 1.05, 0.4, 14, 1, false, -0.6, 2.1), rustL));
+      head.rotation.z = Math.PI / 2;
+      head.rotation.y = Math.PI / 2;
+      head.position.set(0, -0.1, -3.4);
+      beam.add(head);
+      box(0.3, 0.9, 0.26, warn, 0, -0.2, 2.4, beam);       // rear stand-off
+      // CRANK + counterweights at the rear (spins), pitman arms to the beam
+      const crank = new THREE.Group();
+      crank.position.set(0, 1.15, 2.7);
+      g.add(crank);
+      for (const sx of [-0.62, 0.62]) {
+        cyl(0.72, 0.72, 0.14, rustD, sx, 0, 0, true, crank);
+        box(0.7, 0.55, 0.18, steel, sx, -0.45, 0, crank);  // counterweight lump
+      }
+      box(0.16, 0.16, 1.5, steel, 0, 0.45, 0, crank);      // crank pin
+      box(1.1, 1.0, 1.5, rustM, 0, 0.6, 2.75);             // gearbox
+      box(0.9, 0.8, 1.1, steel, 1.3, 0.55, 2.6);           // motor
+      // driver: never culled, wall-clock — beam nods, crank spins in sync
+      const hub = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 4), rustD);
+      hub.frustumCulled = false;
+      hub.position.set(0, 1.15, 2.7);
+      g.add(hub);
+      const spd = (o.power || 1) * 0.0016;
+      hub.onBeforeRender = () => {
+        const a = performance.now() * spd;
+        crank.rotation.x = a;
+        beam.rotation.x = Math.sin(a) * 0.16;
+      };
+    } else if (name === 'derrick') {
+      const H = o.range || 14;
+      const b0 = 2.4, b1 = 0.75;                           // base/top half-width
+      const hw = (y) => b0 + (b1 - b0) * (y / H);          // half-width at height
+      // exact point-to-point strut — no tilt-angle sign bugs
+      const seg = (ax, ay, az, bx, by, bz, r, mat) => {
+        const va = new THREE.Vector3(ax, ay, az);
+        const vb = new THREE.Vector3(bx, by, bz);
+        const m = sh(new THREE.Mesh(
+          new THREE.CylinderGeometry(r, r, va.distanceTo(vb), 6), mat));
+        m.position.copy(va).add(vb).multiplyScalar(0.5);
+        m.lookAt(vb);
+        m.rotateX(Math.PI / 2);
+        g.add(m);
+        return m;
+      };
+      const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+      for (const [sx, sz] of corners) {                    // 4 tapering legs
+        seg(sx * b0, 0, sz * b0, sx * b1, H, sz * b1, 0.12, rustM);
+      }
+      const levels = [0, H * 0.3, H * 0.6, H * 0.88];
+      for (let li = 1; li < levels.length; li++) {         // girt rings
+        const y = levels[li], w = hw(y);
+        for (let i = 0; i < 4; i++) {
+          const [ax, az] = corners[i], [bx, bz] = corners[(i + 1) % 4];
+          seg(ax * w, y, az * w, bx * w, y, bz * w, 0.07, rustD);
+        }
+      }
+      for (let li = 0; li < levels.length - 1; li++) {     // X-braces per face
+        const y0 = levels[li], y1 = levels[li + 1];
+        const w0 = hw(y0), w1 = hw(y1);
+        for (let i = 0; i < 4; i++) {
+          const [ax, az] = corners[i], [bx, bz] = corners[(i + 1) % 4];
+          seg(ax * w0, y0, az * w0, bx * w1, y1, bz * w1, 0.055, rustL);
+          seg(bx * w0, y0, bz * w0, ax * w1, y1, az * w1, 0.055, rustL);
+        }
+      }
+      box(b1 * 2.6, 0.22, b1 * 2.6, rustD, 0, H, 0);       // crown platform
+      box(0.5, 0.7, 0.5, steel, 0, H + 0.45, 0);           // crown block
+      cyl(0.1, 0.1, H * 0.92, steel, 0, H * 0.46, 0);      // drill string
+      box(1.6, 1.2, 1.6, rustL, 1.9, 0.6, 1.9);            // doghouse shack
+    } else if (name === 'flare') {
+      const H = o.range || 11;
+      const seg = (ax, ay, az, bx, by, bz, r, mat) => {
+        const va = new THREE.Vector3(ax, ay, az);
+        const vb = new THREE.Vector3(bx, by, bz);
+        const m = sh(new THREE.Mesh(
+          new THREE.CylinderGeometry(r, r, va.distanceTo(vb), 6), mat));
+        m.position.copy(va).add(vb).multiplyScalar(0.5);
+        m.lookAt(vb);
+        m.rotateX(Math.PI / 2);
+        g.add(m);
+        return m;
+      };
+      cyl(0.2, 0.26, H, rustM, 0, H / 2, 0);
+      cyl(0.3, 0.3, 0.5, rustD, 0, H + 0.2, 0);            // burner tip
+      for (let i = 0; i < 3; i++) {                        // guy wires, anchored
+        const a = i * Math.PI * 2 / 3 + 0.4;
+        seg(Math.cos(a) * H * 0.34, 0, Math.sin(a) * H * 0.34,
+          0, H * 0.7, 0, 0.025, steel);
+        cyl(0.09, 0.12, 0.3, rustD,
+          Math.cos(a) * H * 0.34, 0.15, Math.sin(a) * H * 0.34);  // anchor stub
+      }
+      box(0.7, 0.5, 0.7, warn, 0.8, 0.25, 0);              // valve skid
+      // FLAME: emissive cone + additive glow, flickering on wall clock
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.7, 8),
+        new THREE.MeshBasicMaterial({ color: 0xffa640, transparent: true, opacity: 0.9 }));
+      flame.position.set(0, H + 1.2, 0);
+      g.add(flame);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: SKY.U.blobTexture(), color: 0xff9435, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.7 }));
+      glow.scale.set(2.6, 2.6, 1);
+      glow.position.set(0, H + 1.4, 0);
+      g.add(glow);
+      flame.frustumCulled = false;
+      const fspd = (o.power || 1);
+      flame.onBeforeRender = () => {
+        const t = performance.now() * 0.011 * fspd;
+        const f = 0.75 + Math.sin(t) * 0.14 + Math.sin(t * 2.7) * 0.11;
+        flame.scale.set(f, 0.8 + f * 0.5, f);
+        glow.material.opacity = 0.4 + f * 0.35;
+      };
+    } else if (name === 'oiltank') {
+      const R = o.size || 3.4, H = o.range || 4.6;
+      cyl(R, R, H, rustM, 0, H / 2, 0);
+      cyl(R * 1.01, R * 1.01, H * 0.18, rustD, 0, H * 0.12, 0);  // corroded base band
+      cyl(R * 0.99, R * 1.005, H * 0.16, rustL, 0, H * 0.72, 0); // oxide streak band
+      cyl(R + 0.05, R * 0.4, 0.6, rustD, 0, H + 0.28, 0);        // conical cap
+      // top railing ring + ladder
+      const rail = sh(new THREE.Mesh(new THREE.TorusGeometry(R * 0.9, 0.05, 6, 24), steel));
+      rail.rotation.x = Math.PI / 2;
+      rail.position.y = H + 0.9;
+      g.add(rail);
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4;
+        box(0.06, 0.8, 0.06, steel, Math.cos(a) * R * 0.9, H + 0.5, Math.sin(a) * R * 0.9);
+      }
+      for (let i = 0; i < 6; i++) {                        // ladder rungs
+        box(0.5, 0.07, 0.07, warn, 0, 0.5 + i * (H - 0.6) / 5, R + 0.06);
+      }
+      box(0.09, H, 0.09, steel, -0.28, H / 2, R + 0.04);
+      box(0.09, H, 0.09, steel, 0.28, H / 2, R + 0.04);
+      cyl(0.16, 0.16, R * 1.4, steel, R * 0.7, 0.35, R * 0.7, true); // outflow pipe
+    }
   }
 
   /* airport set — same flat-color toon style as the packs. Helicopter and
