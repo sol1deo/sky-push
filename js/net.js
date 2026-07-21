@@ -958,7 +958,11 @@ SKY.Net = (function () {
   }
   function onTaunt(m) {
     const pawn = SKY.Game.pawns.find(p => p.netId === m.id);
-    if (pawn && pawn.avatar) { pawn.tauntT = 1.25; pawn.avatar.playEmote(); }
+    if (!pawn || !pawn.avatar) return;
+    const def = SKY.Profile ? SKY.Profile.emoteDef(m.e || 'wave') : null;
+    pawn.tauntT = (def && def.dur) || 1.25;
+    pawn.emote = { id: (def && def.id) || 'wave' };
+    pawn.avatar.playEmote(def);
   }
   /* a remote player's air-cannon blast — visual + sound + cannon-in-hands */
   function onCannonFx(m) {
@@ -1522,7 +1526,9 @@ SKY.Net = (function () {
       if (api.role === 'host') routeHit(m);
       else send(m);
     },
-    sendTaunt() { if (api.online) send({ t: 'taunt', id: api.myId }); },
+    sendTaunt(emoteId) {
+      if (api.online) send({ t: 'taunt', id: api.myId, e: emoteId || 'wave' });
+    },
     sendDoor(i, o) { if (api.online) send({ t: 'door', i, o }); },
     /* ---------- text chat ---------- */
     sendChat(text) {

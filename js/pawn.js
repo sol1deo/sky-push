@@ -145,6 +145,17 @@ window.SKY = window.SKY || {};
       this.padLockT = Math.max(0, this.padLockT - dt);
       this.dashCd = Math.max(0, this.dashCd - dt);
       this.tauntT = Math.max(0, this.tauntT - dt);
+      // emotes end on their timer or the moment you move / jump / get
+      // launched — with a short airborne grace so grounded-flicker on
+      // ramps/uneven floors doesn't eat the emote instantly
+      if (this.emote) {
+        const cmd = this.cmd || {};
+        this._emoteAirT = this.grounded ? 0 : (this._emoteAirT || 0) + dt;
+        if (this.tauntT <= 0 || this.ragdoll || this._emoteAirT > 0.18 ||
+            Math.abs(cmd.mx || 0) + Math.abs(cmd.mz || 0) > 0.2 || cmd.jump) {
+          this.cancelEmote();
+        }
+      }
       this.drawT = Math.max(0, this.drawT - dt);
       this._uwHitT = Math.max(0, this._uwHitT - dt);
       this.timeSinceJump += dt;
@@ -450,13 +461,22 @@ window.SKY = window.SKY || {};
       return true;
     }
 
-    /* TAUNT (T): pure disrespect. Can't fire while taunting. */
-    tryTaunt() {
+    /* TAUNT / EMOTE (T tap = wheel slot 1, T hold = wheel). Can't fire
+       while emoting; moving or jumping cancels it (PUBG-style). */
+    tryTaunt(emoteId) {
       if (!this.alive || !this.grounded || this.tauntT > 0 || this.ragdoll) return false;
-      this.tauntT = 1.25;
-      if (this.avatar) this.avatar.playEmote();
+      const def = (SKY.Profile && SKY.Profile.emoteDef(emoteId || 'wave')) || null;
+      this.tauntT = (def && def.dur) || 1.25;
+      this.emote = { id: (def && def.id) || 'wave' };
+      if (this.avatar) this.avatar.playEmote(def);
       SKY.SFX.taunt(this.sfxDist());
       return true;
+    }
+    cancelEmote() {
+      if (!this.emote) return;
+      this.emote = null;
+      this.tauntT = 0;
+      if (this.avatar) this.avatar.stopEmote();
     }
 
     /* GROUND POUND landing shockwave */

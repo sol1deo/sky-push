@@ -433,13 +433,16 @@ SKY.Arms = (() => {
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     /* post-shot bolt cycle (sniper): the support hand leaves the fore-end,
-       racks the bolt back and returns — plays after EVERY longshot shot */
+       racks the bolt back and returns. Starts DELAYED (negative t in
+       fireCycle — the shot kick reads first) and unhurried: gentle tilt,
+       a real pause on the handle before the pull. */
     draw_sniperbolt: [
       { t: 0.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
-      { t: 0.22, gun: [0.01, -0.004, 0.01, 0.05, 0.05, -0.10], lh: ['bolt', 0, 0.01, -0.02] },
-      { t: 0.42, gun: [0.012, -0.004, 0.012, 0.07, 0.06, -0.12], lh: ['bolt', 0, 0.005, 0.10], ev: 'rack' },
-      { t: 0.60, gun: [0.008, 0, 0.008, 0.04, 0.03, -0.06], lh: ['bolt', 0, 0.005, 0.02] },
-      { t: 0.85, lh: ['fore', 0, -0.01, 0] },
+      { t: 0.20, gun: [0.006, -0.003, 0.006, 0.03, 0.03, -0.06], lh: ['bolt', 0, 0.015, -0.03] },
+      { t: 0.36, gun: [0.009, -0.004, 0.009, 0.05, 0.04, -0.09], lh: ['bolt', 0, 0.005, -0.005] },
+      { t: 0.54, gun: [0.010, -0.004, 0.010, 0.06, 0.05, -0.10], lh: ['bolt', 0, 0.005, 0.085], ev: 'rack' },
+      { t: 0.68, gun: [0.007, -0.002, 0.007, 0.04, 0.03, -0.07], lh: ['bolt', 0, 0.005, 0.01] },
+      { t: 0.88, gun: [0.002, 0, 0.002, 0.01, 0.01, -0.02], lh: ['fore', 0, -0.01, 0] },
       { t: 1.00, gun: [0, 0, 0, 0, 0, 0], lh: ['fore', 0, 0, 0] },
     ],
     draw_shotgun: [
@@ -1050,7 +1053,9 @@ SKY.Arms = (() => {
   function fireCycle(kind) {
     if ((CLS_OF[kind] || 'rifle') !== 'sniper') return;
     if (anim.lastU !== -1) return;
-    anim.draw = { t: 0, dur: 0.62, cls: 'sniperbolt' };
+    // t starts NEGATIVE = delay before the gesture (the kick lands first);
+    // 0.28 + 0.95 ≈ 1.23s, comfortably inside the 1.45s cooldown
+    anim.draw = { t: -0.28, dur: 0.95, cls: 'sniperbolt' };
     anim.lastDrawU = 0;
   }
   function fireKick(f) {
@@ -1130,9 +1135,10 @@ SKY.Arms = (() => {
       }
     } else if (anim.draw) {
       anim.draw.t += dt;
-      u = Math.min(1, anim.draw.t / anim.draw.dur);
+      // negative t = pre-gesture delay: hold the first key, no sampling wobble
+      u = Math.min(1, Math.max(0, anim.draw.t / anim.draw.dur));
       keys = TL['draw_' + anim.draw.cls] || TL.draw_rifle;
-      if (u >= 1) anim.draw = null;
+      if (anim.draw.t / anim.draw.dur >= 1) anim.draw = null;
     }
 
     /* -------- reload bookkeeping (mag + events) -------- */

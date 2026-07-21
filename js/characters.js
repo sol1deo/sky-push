@@ -278,6 +278,11 @@ SKY.Characters = (function () {
       this.bHandR = bone('Fist.R');
       this.bUpArmR = bone('UpperArm.R');
       this.bLoArmR = bone('LowerArm.R');
+      this.bHandL = bone('Fist.L');
+      this.bUpArmL = bone('UpperArm.L');
+      this.bLoArmL = bone('LowerArm.L');
+      this.bHips = bone('Hips');
+      this.instClips = inst.clips;   // for on-demand emote clip actions
 
       // third-person gun in the right fist (orientation measured on the rig)
       this.gunHolder = new THREE.Group();
@@ -350,7 +355,11 @@ SKY.Characters = (function () {
       // pick the dominant locomotion state
       const swim = (p.inWater || p._netSwim) && !p.grounded;
       let want = 'idle';
-      if (this.emoteT > 0) { this.emoteT -= dt; want = 'dance'; }
+      if (this.emoteT > 0) {
+        this.emoteT -= dt;
+        const ed = this.emoteDef;
+        want = ed && ed.kind === 'clip' && this.acts.emote ? 'emote' : 'idle';
+      }
       else if (p.sliding) want = 'slide';
       else if (swim) want = (spd + Math.abs(p.vel.y)) > 1.2 ? 'run' : 'idle';  // paddle
       else if (!p.grounded) want = 'air';
@@ -373,15 +382,74 @@ SKY.Characters = (function () {
       if (A.air && A.air.time > this.airApex && !p.grounded) A.air.time = this.airApex;
       if (A.slide && A.slide.time > this.slideTuck) A.slide.time = this.slideTuck;
       if (A.crouch && A.crouch.time > this.crouchHold) A.crouch.time = this.crouchHold;
+      // hold-at-frame emotes (sit stays seated, play-dead stays dead)
+      if (A.emote && this.emoteClamp && A.emote.time > this.emoteClamp) {
+        A.emote.time = this.emoteClamp;
+      }
 
       this.mixer.update(dt);
 
-      // aim pitch layered on top of whatever the mixer posed
-      const pitch = SKY.U.clamp(p.pitch, -1.2, 1.2);
-      if (this.bTorso) this.bTorso.rotation.x += pitch * 0.4;
-      if (this.bHead) this.bHead.rotation.x += pitch * 0.35;
+      const emoting = this.emoteT > 0;
+      // aim pitch layered on top of whatever the mixer posed (not mid-emote —
+      // the choreography owns the spine)
+      if (!emoting) {
+        const pitch = SKY.U.clamp(p.pitch, -1.2, 1.2);
+        if (this.bTorso) this.bTorso.rotation.x += pitch * 0.4;
+        if (this.bHead) this.bHead.rotation.x += pitch * 0.35;
+      }
+      if (emoting) this._procEmote(dt);
 
       this._armAim(dt);
+    }
+
+    /* procedural emote choreography — drives bones AFTER the mixer, same
+       layering trick as _armAim. Each is a loop over wall-clock time. */
+    _procEmote(dt) {
+      const ed = this.emoteDef || {};
+      const t = performance.now() * 0.001;
+      const aL = { sh: this.bUpArmL, elb: this.bLoArmL };
+      const aR = { sh: this.bUpArmR, elb: this.bLoArmR };
+      // emote FX: mythic despair sets the ground on fire around the pawn
+      if (ed.fx === 'flame' && Math.random() < dt * 8 && SKY.Effects.flame) {
+        const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.9;
+        _ad.set(this.pawn.pos.x + Math.cos(a) * r, this.pawn.pos.y + 0.05,
+          this.pawn.pos.z + Math.sin(a) * r);
+        SKY.Effects.flame(_ad, 0.9);
+      }
+      if (ed.kind !== 'proc') return;
+      if (ed.id === 'clap') {
+        // slow condescending clap: forearms meet in front, small beat
+        const k = Math.sin(t * 7) * 0.5 + 0.5;
+        if (aL.sh) { aL.sh.rotation.x = 1.5; aL.sh.rotation.z = 0.55 - k * 0.28; }
+        if (aR.sh) { aR.sh.rotation.x = 1.5; aR.sh.rotation.z = -0.55 + k * 0.28; }
+        if (aL.elb) aL.elb.rotation.x = 0.5;
+        if (aR.elb) aR.elb.rotation.x = 0.5;
+      } else if (ed.id === 'tpose') {
+        // rigid, unblinking, perfectly still. peak disrespect
+        if (aL.sh) { aL.sh.rotation.set(0, 0, 1.5708); }
+        if (aR.sh) { aR.sh.rotation.set(0, 0, -1.5708); }
+        if (aL.elb) aL.elb.rotation.set(0, 0, 0);
+        if (aR.elb) aR.elb.rotation.set(0, 0, 0);
+        if (this.bHead) this.bHead.rotation.set(0, 0, 0);
+      } else if (ed.id === 'floss') {
+        // arms swing side-to-side together, hips counter — THE dance
+        const s = Math.sin(t * 9);
+        const sw = s * 0.9;
+        if (aL.sh) { aL.sh.rotation.x = 0.35; aL.sh.rotation.z = 0.5 + sw * 0.75; }
+        if (aR.sh) { aR.sh.rotation.x = 0.35; aR.sh.rotation.z = -0.5 + sw * 0.75; }
+        if (aL.elb) aL.elb.rotation.x = 0.25;
+        if (aR.elb) aR.elb.rotation.x = 0.25;
+        if (this.bHips) this.bHips.rotation.z = -sw * 0.16;
+        if (this.bTorso) this.bTorso.rotation.z = sw * 0.22;
+        if (this.bHead) this.bHead.rotation.z = -sw * 0.12;
+      } else {
+        // 'wave' (and any unknown id): the classic big-arm hello
+        if (aL.sh) {
+          aL.sh.rotation.x = 2.7 + Math.sin(performance.now() * 0.012) * 0.45;
+          aL.sh.rotation.y = -0.2;
+        }
+        if (aL.elb) aL.elb.rotation.x = 0.4;
+      }
     }
 
     /* remote players don't tick weapon cooldowns locally — net fire events
@@ -627,7 +695,29 @@ SKY.Characters = (function () {
     }
 
     /* ==================== per-frame ==================== */
-    playEmote() { this.emoteT = 1.25; }
+    /* def = a SKY.Profile emote def (or nothing = the classic wave).
+     * clip emotes get their action created on demand from the rig's own
+     * clip set; proc emotes drive bones after the mixer (like _armAim). */
+    playEmote(def) {
+      def = def || { id: 'wave', kind: 'proc', dur: 1.25 };
+      this.emoteT = def.dur || 1.25;
+      this.emoteDef = def;
+      if (def.kind === 'clip' && this.mixer && this.instClips) {
+        const clip = this.instClips.find(c => c.name === def.clip);
+        if (clip) {
+          if (this.acts.emote) this.acts.emote.setEffectiveWeight(0);
+          const a = this.mixer.clipAction(clip);
+          a.reset().play();
+          a.setEffectiveWeight(0);
+          a.timeScale = def.speed || 1;
+          if (def.loop) a.setLoop(THREE.LoopRepeat);
+          else { a.setLoop(THREE.LoopOnce); a.clampWhenFinished = true; }
+          this.emoteClamp = def.clampAt ? clip.duration * def.clampAt : 0;
+          this.acts.emote = a;
+        } else { this.emoteDef = { id: 'wave', kind: 'proc', dur: def.dur }; }
+      }
+    }
+    stopEmote() { this.emoteT = 0; }
 
     update(dt) {
       const p = this.pawn;
@@ -659,7 +749,13 @@ SKY.Characters = (function () {
         return;
       }
       if (this.ragActive) this.endRagdoll();
-      if (p.isLocal) return;
+      // the LOCAL avatar shows itself only while emoting (third-person
+      // orbit cam) — otherwise stays hidden as always in first person
+      if (p.isLocal && !(p.emote && p.tauntT > 0)) {
+        this.root.visible = false;
+        this.emoteT = 0;
+        return;
+      }
       this.root.visible = true;
 
       const root = this.root;

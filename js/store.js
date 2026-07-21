@@ -161,6 +161,22 @@ SKY.Store = (function () {
       </div>`;
     }).join('');
 
+    /* ---- EMOTES: dances + disrespect, played on the T wheel ---- */
+    const RARC = { common: '#9fb2c8', rare: '#40c8ff', epic: '#ff5db1',
+      legendary: '#ffa733', mythic: '#ff5a2e' };
+    const emoteCards = P.EMOTES.filter(em => em.price > 0)
+      .slice().sort((a, b) => a.price - b.price).map((em) => {
+      const owned = P.ownsEmote(em.id);
+      return `<div class="st-emote${em.rarity === 'mythic' ? ' st-myth' : ''}"
+          style="--tierc:${RARC[em.rarity]}">
+        <span class="st-echip" style="background:${RARC[em.rarity]}">${em.rarity.toUpperCase()}</span>
+        <div class="st-fxinfo"><b>${em.name}</b><small>${em.desc}</small></div>
+        <button class="lk-buy st-act" data-emote-act="${em.id}">
+          ${owned ? 'OWNED — SLOT IN LOCKER' : '⬡ ' + fmtCoins(em.price)}
+        </button>
+      </div>`;
+    }).join('');
+
     panel.innerHTML = `
       <div class="st-head">
         <div><h3>STORE</h3></div>
@@ -170,6 +186,8 @@ SKY.Store = (function () {
       ${dropHtml}
       <h4 class="lk-h">FEATURED TODAY <small>rotates daily — tap to try it on in the locker</small></h4>
       <div class="st-featrow">${featHtml}</div>
+      <h4 class="lk-h">EMOTES <small>dances + disrespect — hold T in a match to play them</small></h4>
+      <div class="st-fxgrid">${emoteCards}</div>
       <h4 class="lk-h">TRACER EFFECTS <small>your bullets wear these on every weapon</small></h4>
       <div class="st-fxgrid">${fxCards}</div>
       <h4 class="lk-h">KO SOUNDS <small>the noise your victims make — ▶ to audition</small></h4>
@@ -203,6 +221,20 @@ SKY.Store = (function () {
         else if (P2.purchasesLocked()) { needAccount(); return; }
         else if (P2.buyFx(id)) { P2.equipFx(id); SKY.SFX.init(); SKY.SFX.cash(); }
         else { flashPoor(fxa.closest('.st-fx2')); return; }
+        renderPanel();
+        return;
+      }
+      const ema = e.target.closest('[data-emote-act]');
+      if (ema) {
+        const id = ema.dataset.emoteAct;
+        if (P2.ownsEmote(id)) {
+          // owned: jump to the locker's emote wheel to slot it
+          if (SKY.Locker && SKY.Locker.openEmotes) SKY.Locker.openEmotes();
+          return;
+        }
+        if (P2.purchasesLocked()) { needAccount(); return; }
+        if (P2.buyEmote(id)) { SKY.SFX.init(); SKY.SFX.cash(); }
+        else { flashPoor(ema.closest('.st-emote')); return; }
         renderPanel();
         return;
       }

@@ -11,7 +11,8 @@ SKY.Locker = (function () {
   let selWeapon = 'pistol';
   let selSkin = null;       // finish id open in the detail view (null = browsing)
   let showWeapon = null;    // browse-grid showcase gun (null = lobby weapon)
-  let lkTab = 'weapons';    // weapons | char | style — skins are the storefront
+  let lkTab = 'weapons';    // weapons | char | style | emotes
+  let selEmoteSlot = 0;     // which T-wheel slot the next emote click fills
   const charThumbs = {};    // charId -> dataURL
 
   /* skin-first shop copy: the card sells the FANTASY, mythics list their FX */
@@ -201,12 +202,43 @@ SKY.Locker = (function () {
     const ready = SKY.GFX && SKY.GFX.charReady();
 
     const tabs = `<div class="lk-tabs">
-      ${[['weapons', 'Weapons'], ['char', 'Character'], ['style', 'Colors']].map(([id, label]) =>
+      ${[['weapons', 'Weapons'], ['char', 'Character'], ['style', 'Colors'], ['emotes', 'Emotes']].map(([id, label]) =>
         `<button class="lk-tab ${lkTab === id ? 'sel' : ''}" data-tab="${id}">${label}</button>`).join('')}
     </div>`;
 
     let body = '';
-    if (lkTab === 'char') {
+    if (lkTab === 'emotes') {
+      // ---------- EMOTES: the T-wheel + your collection ----------
+      const RARC = { common: '#9fb2c8', rare: '#40c8ff', epic: '#ff5db1',
+        legendary: '#ffa733', mythic: '#ff5a2e' };
+      const wheel = P.data.emoteWheel || [];
+      const slots = wheel.map((id, i) => {
+        const d = id && P.emoteDef(id);
+        return `<div class="lk-eslot ${i === selEmoteSlot ? 'sel' : ''}" data-eslot="${i}">
+          <span class="lk-esl-n">${i + 1}</span>
+          <span class="lk-esl-name" ${d ? `style="color:${RARC[d.rarity]}"` : ''}>
+            ${d ? d.name : 'EMPTY'}</span>
+          ${id ? '<span class="lk-esl-x" data-eclear="' + i + '">×</span>' : ''}
+        </div>`;
+      }).join('');
+      const cards = P.EMOTES.slice().sort((a, b) => a.price - b.price).map((em) => {
+        const owned = P.ownsEmote(em.id);
+        const slotIdx = wheel.indexOf(em.id);
+        return `<div class="lk-card lk-emote ${owned ? 'owned' : 'locked'}" data-emote="${em.id}"
+            style="--tierc:${RARC[em.rarity]}">
+          <span class="lk-schip lk-schip-corner" style="background:${RARC[em.rarity]}">${em.rarity.toUpperCase()}</span>
+          <div class="lk-ename">${em.name}</div>
+          <div class="lk-edesc">${em.desc}</div>
+          <div class="lk-tag">${slotIdx >= 0 ? 'ON WHEEL · ' + (slotIdx + 1)
+            : owned ? 'OWNED — CLICK TO SLOT' : '⬡ ' + em.price}</div>
+        </div>`;
+      }).join('');
+      body = `
+        <h4 class="lk-h">EMOTE WHEEL <small>hold T in a match — pick the slot, then click an emote below</small></h4>
+        <div class="lk-eslots">${slots}</div>
+        <h4 class="lk-h">YOUR EMOTES <small>tap T = slot 1 · dances and disrespect sold in the STORE</small></h4>
+        <div class="lk-grid lk-egrid">${cards}</div>`;
+    } else if (lkTab === 'char') {
       const charCards = P.CHARS.map((c) => {
         const owned = P.ownsChar(c.id);
         const equipped = P.data.char === c.id;
@@ -394,6 +426,30 @@ SKY.Locker = (function () {
         renderPanel(); rebuildPreview();
         return;
       }
+      const eClear = e.target.closest('[data-eclear]');
+      if (eClear) {
+        P.setEmoteSlot(+eClear.dataset.eclear, null);
+        renderPanel();
+        return;
+      }
+      const eSlot = e.target.closest('[data-eslot]');
+      if (eSlot) { selEmoteSlot = +eSlot.dataset.eslot; renderPanel(); return; }
+      const eCard = e.target.closest('[data-emote]');
+      if (eCard) {
+        const id = eCard.dataset.emote;
+        if (P.ownsEmote(id)) { P.setEmoteSlot(selEmoteSlot, id); }
+        else if (P.purchasesLocked && P.purchasesLocked()) { needAccount(); return; }
+        else if (P.buyEmote(id)) { P.setEmoteSlot(selEmoteSlot, id); SKY.SFX.init(); SKY.SFX.pick(); }
+        else { flashPoor(eCard); return; }
+        // auto-advance to the next empty slot — slotting a set feels fast
+        const wl = P.data.emoteWheel;
+        for (let i = 0; i < 6; i++) {
+          const j = (selEmoteSlot + 1 + i) % 6;
+          if (!wl[j]) { selEmoteSlot = j; break; }
+        }
+        renderPanel();
+        return;
+      }
       const cCard = e.target.closest('[data-char]');
       const skCard = e.target.closest('[data-sk]');
       const loBtn = e.target.closest('[data-show]');
@@ -502,6 +558,14 @@ SKY.Locker = (function () {
     tick(dt) { tickPreview(dt); tickInspect(dt); },
     refreshPreview() { rebuildPreview(); },
     skinDesc(id) { return SKIN_DESC[id] || ''; },
+    /* store deep-link: jump straight to the emote wheel */
+    openEmotes() {
+      lkTab = 'emotes';
+      selSkin = null;
+      const tab = document.getElementById('tab-locker');
+      if (tab) tab.click();
+      renderPanel();
+    },
     /* store deep-link: jump straight to a skin's detail page */
     openSkin(id) {
       lkTab = 'weapons';

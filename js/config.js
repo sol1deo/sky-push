@@ -119,7 +119,7 @@ SKY.TUNING = {
     longshot: {
       label: 'LONGSHOT', short: 'SNIPER', icon: '🎯', rarity: 'rare', color: '#ff5db1',
       desc: 'Scoped cannon. Near-instant bolt; no-scopes fly wild.',
-      cooldown: 1.6, auto: false, mag: 4, reloadTime: 2.2, range: 200,
+      cooldown: 1.45, auto: false, mag: 4, reloadTime: 2.2, range: 200,
       projSpeed: 160, projGravity: 0,
       pellets: 1, spreadDeg: 5.5, zoomSpreadDeg: 0.03, zoomFov: 26, scope: true,
       baseKnockback: 17, speedMult: 1.4, airborneBonus: 1.35, slideBonus: 1.35,

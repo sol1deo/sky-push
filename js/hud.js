@@ -9,6 +9,7 @@ window.SKY = window.SKY || {};
 SKY.HUD = (function () {
   const $ = (id) => document.getElementById(id);
   let el = {};
+  const ew = {};   // emote wheel state (root, open, aim vector, selection)
   let hitT = 0, centerT = 0, subT = 0, sbRefreshT = 0;
   let dmgT = 0, dmgMax = 1;
   let lastTier = -1, lastWeapon = '';
@@ -492,6 +493,52 @@ SKY.HUD = (function () {
     scope(on) {
       el.scope.classList.toggle('hidden', !on);
       el.crosshair.classList.toggle('hidden', on);
+    },
+
+    /* -------- EMOTE WHEEL (hold T) --------
+     * show=true builds the wheel from the profile's slots; mouse deltas
+     * (pointer-locked) aim a sector; show=false hides it and RETURNS the
+     * selected emote id (or null). */
+    emoteWheel(show) {
+      if (show) {
+        if (ew.open) return null;
+        ew.open = true; ew.ax = 0; ew.ay = 0; ew.sel = -1;
+        const wheel = (SKY.Profile.data.emoteWheel || []).slice(0, 6);
+        ew.ids = wheel;
+        if (!ew.root) {
+          ew.root = document.createElement('div');
+          ew.root.id = 'emote-wheel';
+          document.body.appendChild(ew.root);
+          ew.move = (e) => {
+            if (!ew.open) return;
+            ew.ax += e.movementX || 0; ew.ay += e.movementY || 0;
+            const m = Math.hypot(ew.ax, ew.ay);
+            ew.sel = m < 18 ? -1 :
+              ((Math.round(((Math.atan2(ew.ax, -ew.ay) + Math.PI * 2) %
+                (Math.PI * 2)) / (Math.PI / 3)) % 6));
+            for (let i = 0; i < ew.root.children.length; i++) {
+              ew.root.children[i].classList.toggle('sel', i === ew.sel);
+            }
+          };
+          document.addEventListener('mousemove', ew.move);
+        }
+        ew.root.innerHTML = wheel.map((id, i) => {
+          const d = id && SKY.Profile.emoteDef(id);
+          const a = i * 60 - 90;                    // sector centers, up first
+          const x = 50 + Math.cos(a * Math.PI / 180) * 21;
+          const y = 50 + Math.sin(a * Math.PI / 180) * 30;
+          return `<div class="ew-slot r-${d ? d.rarity : 'none'}"
+            style="left:${x}%;top:${y}%">
+            <span class="ew-name">${d ? d.name : 'EMPTY'}</span></div>`;
+        }).join('') + '<div class="ew-hint">aim + release T</div>';
+        ew.root.classList.remove('hidden');
+        return null;
+      }
+      if (!ew.open) return null;
+      ew.open = false;
+      if (ew.root) ew.root.classList.add('hidden');
+      const id = ew.sel >= 0 ? ew.ids[ew.sel] : null;
+      return id && SKY.Profile.ownsEmote(id) ? id : null;
     },
 
     showRespawn(text) {

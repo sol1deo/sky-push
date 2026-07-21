@@ -11,6 +11,7 @@ window.SKY = window.SKY || {};
 
 SKY.Game = (function () {
   const _eye = new THREE.Vector3();
+  const _v3a = new THREE.Vector3();   // emote-cam scratch
   const _v = new THREE.Vector3();
   const CENTER = new THREE.Vector3(0, 2, 0);
 
@@ -797,7 +798,29 @@ SKY.Game = (function () {
       if (In.actionPressed('grenade')) SKY.Grenades.throwNade(p);
       if (In.actionPressed('loadout')) this.toggleLoadout();
       if (In.actionPressed('dash')) p.tryDash();
-      if (In.actionPressed('taunt') && p.tryTaunt()) SKY.Net.sendTaunt();
+      // T: tap = wheel slot 1, hold ≥0.25s = the EMOTE WHEEL (mouse picks a
+      // sector, release plays it). Wheel state lives on the api for the
+      // frame loop (HUD overlay + selection readout).
+      if (In.action('taunt')) {
+        if (!api._tauntHold) api._tauntHold = { t0: performance.now(), wheel: false };
+        if (performance.now() - api._tauntHold.t0 >= 250 && !api._tauntHold.wheel &&
+            p.alive && !p.emote) {
+          api._tauntHold.wheel = true;
+          SKY.HUD.emoteWheel(true);
+        }
+      } else if (api._tauntHold) {
+        const hold = api._tauntHold;
+        api._tauntHold = null;
+        In.actionPressed('taunt');   // eat the buffered press
+        let id = null;
+        if (hold.wheel) {
+          id = SKY.HUD.emoteWheel(false);   // returns the selected id
+        } else {
+          const wheel = SKY.Profile.data.emoteWheel || [];
+          id = wheel[0] || 'wave';
+        }
+        if (id && p.tryTaunt(id)) SKY.Net.sendTaunt(id);
+      }
       if (In.actionPressed('reload')) SKY.Weapons.tryReload(p);
       if (In.actionPressed('reset')) {
         const s = SKY.World.spawnPoints[0];
@@ -1152,6 +1175,20 @@ SKY.Game = (function () {
         const reloadFrac = p.reloadT > 0
           ? 1 - p.reloadT / (wDef.reloadTime * p.mods.cdMult) : -1;
         SKY.Effects.viewmodelMotion(rdt, spd, p.grounded, p.vel.y, p.sliding, reloadFrac);
+        // EMOTE CAM: slow third-person orbit around the emoting character
+        // (PUBG-style) — pulled in if a wall is in the way
+        if (p.emote && p.tauntT > 0) {
+          api._emoteCamA = (api._emoteCamA || 0) + rdt * 0.55;
+          const ang = SKY.Input.yaw + Math.PI + api._emoteCamA;
+          _eye.set(p.pos.x, p.pos.y + 1.1, p.pos.z);
+          _v3a.set(Math.sin(ang) * 3.0, 1.1, Math.cos(ang) * 3.0);
+          let dist = _v3a.length();
+          const hit = SKY.World.raycast(_eye, _v3a.clone().normalize(), dist + 0.3);
+          if (hit && hit.t < dist) dist = Math.max(0.6, hit.t - 0.3);
+          _v3a.normalize().multiplyScalar(dist);
+          camera.position.copy(_eye).add(_v3a);
+          camera.lookAt(_eye);
+        } else api._emoteCamA = 0;
       }
       // no gun / crosshair / combat HUD while in menus, dead or spectating
       const combat = !spectating && !!p && p.alive;
@@ -1160,8 +1197,10 @@ SKY.Game = (function () {
       // (they filled the bottom-right of a magnified view) and shots read
       // from the crosshair
       const scoped = combat && p.zoomed && SKY.Weapons.defOf(p).scope;
+      const emoting = combat && p.emote && p.tauntT > 0;
       // bare hands (IT runners): no gun viewmodel — hook arm still shows
-      SKY.Effects.setViewmodelVisible(combat && !scoped && !!(p.weapon || p.grapple));
+      SKY.Effects.setViewmodelVisible(combat && !scoped && !emoting &&
+        !!(p.weapon || p.grapple));
       if (!combat) SKY.Effects.setHands(false);
       SKY.HUD.combat(combat);
       if (!combat) { SKY.Input.sensMult = 1; SKY.HUD.scope(false); }

@@ -876,6 +876,59 @@
   .loot-sub { margin-top:16px; font-size:10px; font-weight:500; letter-spacing:.24em;
     text-transform:uppercase; color:var(--faint); text-shadow:0 1px 3px rgba(0,0,0,.5); }
 
+  /* ---------- emote wheel (hold T) ---------- */
+  #emote-wheel { position:fixed; inset:0; z-index:26; pointer-events:none; }
+  #emote-wheel.hidden { display:none; }
+  #emote-wheel::before { content:''; position:absolute; left:50%; top:50%;
+    width:420px; height:420px; transform:translate(-50%,-50%); border-radius:50%;
+    background:radial-gradient(circle, rgba(9,13,20,0) 26%, rgba(9,13,20,.78) 55%, rgba(9,13,20,0) 72%); }
+  .ew-slot { position:absolute; transform:translate(-50%,-50%); padding:7px 13px;
+    border:1px solid rgba(159,178,200,.35); border-radius:20px;
+    background:rgba(13,17,26,.85); transition:transform .08s, box-shadow .08s;
+    white-space:nowrap; }
+  .ew-slot .ew-name { font-size:11px; font-weight:800; letter-spacing:.14em;
+    color:#dfe7f5; }
+  .ew-slot.r-none { opacity:.35; }
+  .ew-slot.r-rare { border-color:rgba(64,200,255,.6); }
+  .ew-slot.r-epic { border-color:rgba(255,93,177,.65); }
+  .ew-slot.r-legendary { border-color:rgba(255,167,51,.8); }
+  .ew-slot.r-mythic { border-color:rgba(255,90,46,.85);
+    box-shadow:0 0 18px rgba(255,90,46,.25); }
+  .ew-slot.sel { transform:translate(-50%,-50%) scale(1.18);
+    box-shadow:0 0 22px rgba(255,211,77,.35); border-color:#ffd34d; }
+  .ew-slot.sel .ew-name { color:#ffd34d; }
+  .ew-hint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    font-size:9.5px; font-weight:600; letter-spacing:.22em; text-transform:uppercase;
+    color:#8f9bb0; }
+
+  /* ---------- store: emote cards ---------- */
+  .st-emote { position:relative; border:1px solid var(--line);
+    border-left:3px solid var(--tierc,#9fb2c8); border-radius:10px;
+    padding:14px 12px 12px; background:rgba(13,17,26,.6);
+    display:flex; flex-direction:column; gap:10px; }
+  .st-emote.st-myth { box-shadow:0 0 22px rgba(255,90,46,.14); }
+  .st-echip { align-self:flex-start; font-size:8.5px; font-weight:800;
+    letter-spacing:.24em; text-indent:.24em; padding:2px 7px;
+    border-radius:4px; color:#0b0e14; }
+
+  /* ---------- locker: emote wheel management ---------- */
+  .lk-eslots { display:flex; gap:8px; margin:6px 0 14px; flex-wrap:wrap; }
+  .lk-eslot { display:flex; align-items:center; gap:7px; padding:8px 12px;
+    border:1px solid var(--line); border-radius:9px; cursor:pointer;
+    background:rgba(13,17,26,.6); }
+  .lk-eslot.sel { border-color:#ffd34d; box-shadow:0 0 14px rgba(255,211,77,.18); }
+  .lk-esl-n { font-size:10px; color:var(--dim); border:1px solid var(--line);
+    border-radius:4px; width:16px; height:16px; line-height:14px; text-align:center; }
+  .lk-esl-name { font-size:11px; font-weight:800; letter-spacing:.08em; }
+  .lk-esl-x { color:var(--dim); font-size:13px; padding:0 3px; }
+  .lk-esl-x:hover { color:#ff6a5e; }
+  .lk-emote { text-align:left; padding:12px; min-height:104px; }
+  .lk-emote .lk-ename { font-size:13px; font-weight:800; letter-spacing:.05em;
+    margin-top:10px; }
+  .lk-emote .lk-edesc { font-size:10.5px; color:var(--dim); line-height:1.4;
+    margin:4px 0 8px; }
+  .lk-emote.locked { opacity:.78; }
+
   /* ---------- scoreboard (Tab) ---------- */
   #scoreboard { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     background:var(--bg); backdrop-filter:blur(18px); border:1px solid var(--line);
@@ -1740,7 +1793,7 @@
       <div class="rail-coins">⬡ <b id="rail-coins-n">0</b></div>
     </div>
   </div>
-  <div id="build-foot" class="rail-foot">prototype · build 85</div>
+  <div id="build-foot" class="rail-foot">prototype · build 86</div>
 
   <!-- ---------- PLAY hub: hero landing + drawer + fullscreen lobby ---------- -->
   <div id="panel-offline">
@@ -2099,45 +2152,45 @@
 <script src="lib/SkeletonUtils.js"></script>
 <script src="lib/peerjs.min.js"></script>
 <script src="lib/supabase.min.js"></script>
-<script src="js/config.js?v=85"></script>
-<script src="js/profile.js?v=85"></script>
-<script src="js/account.js?v=85"></script>
-<script src="js/accountui.js?v=85"></script>
-<script src="js/utils.js?v=85"></script>
-<script src="js/gfx.js?v=85"></script>
-<script src="js/mapdata.js?v=85"></script>
-<script src="js/audio.js?v=85"></script>
-<script src="js/sfxlab.js?v=85"></script>
-<script src="js/voice.js?v=85"></script>
-<script src="js/settings.js?v=85"></script>
-<script src="js/input.js?v=85"></script>
-<script src="js/world.js?v=85"></script>
-<script src="js/effects.js?v=85"></script>
-<script src="js/arms.js?v=85"></script>
-<script src="js/armlab.js?v=85"></script>
-<script src="js/map.js?v=85"></script>
-<script src="js/characters.js?v=85"></script>
-<script src="js/pawn.js?v=85"></script>
-<script src="js/weapons.js?v=85"></script>
-<script src="js/loot.js?v=85"></script>
-<script src="js/pickups.js?v=85"></script>
-<script src="js/sparks.js?v=85"></script>
-<script src="js/grenades.js?v=85"></script>
-<script src="js/grapple.js?v=85"></script>
-<script src="js/bots.js?v=85"></script>
-<script src="js/hud.js?v=85"></script>
-<script src="js/game.js?v=85"></script>
-<script src="js/attract.js?v=85"></script>
-<script src="js/net.js?v=85"></script>
-<script src="js/dof.js?v=85"></script>
+<script src="js/config.js?v=86"></script>
+<script src="js/profile.js?v=86"></script>
+<script src="js/account.js?v=86"></script>
+<script src="js/accountui.js?v=86"></script>
+<script src="js/utils.js?v=86"></script>
+<script src="js/gfx.js?v=86"></script>
+<script src="js/mapdata.js?v=86"></script>
+<script src="js/audio.js?v=86"></script>
+<script src="js/sfxlab.js?v=86"></script>
+<script src="js/voice.js?v=86"></script>
+<script src="js/settings.js?v=86"></script>
+<script src="js/input.js?v=86"></script>
+<script src="js/world.js?v=86"></script>
+<script src="js/effects.js?v=86"></script>
+<script src="js/arms.js?v=86"></script>
+<script src="js/armlab.js?v=86"></script>
+<script src="js/map.js?v=86"></script>
+<script src="js/characters.js?v=86"></script>
+<script src="js/pawn.js?v=86"></script>
+<script src="js/weapons.js?v=86"></script>
+<script src="js/loot.js?v=86"></script>
+<script src="js/pickups.js?v=86"></script>
+<script src="js/sparks.js?v=86"></script>
+<script src="js/grenades.js?v=86"></script>
+<script src="js/grapple.js?v=86"></script>
+<script src="js/bots.js?v=86"></script>
+<script src="js/hud.js?v=86"></script>
+<script src="js/game.js?v=86"></script>
+<script src="js/attract.js?v=86"></script>
+<script src="js/net.js?v=86"></script>
+<script src="js/dof.js?v=86"></script>
 <script src="lib/webm-muxer.js"></script>
-<script src="js/replay.js?v=85"></script>
-<script src="js/vidrender.js?v=85"></script>
-<script src="js/demos.js?v=85"></script>
-<script src="js/locker.js?v=85"></script>
-<script src="js/store.js?v=85"></script>
-<script src="js/assets.js?v=85"></script>
-<script src="js/editor.js?v=85"></script>
-<script src="js/main.js?v=85"></script>
+<script src="js/replay.js?v=86"></script>
+<script src="js/vidrender.js?v=86"></script>
+<script src="js/demos.js?v=86"></script>
+<script src="js/locker.js?v=86"></script>
+<script src="js/store.js?v=86"></script>
+<script src="js/assets.js?v=86"></script>
+<script src="js/editor.js?v=86"></script>
+<script src="js/main.js?v=86"></script>
 </body>
 </html>

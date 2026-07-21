@@ -110,6 +110,35 @@ SKY.Profile = (function () {
     { id: 'blood', name: 'BLOOD TRAIL',   price: 950, color: '#ff2e4a', trail: 'blood',
       desc: 'crimson drops mark your line of fire' },
   ];
+  /* EMOTES: dances, disrespect and pure nonsense. Played via the T wheel;
+     built from the character pack's own clips + procedural choreography.
+     kind 'clip' plays a rig animation, 'proc' drives bones in code. */
+  const EMOTES = [
+    { id: 'wave', name: 'HEY!', rarity: 'common', price: 0, kind: 'proc',
+      dur: 1.6, icon: '👋', desc: 'the classic big-arm hello' },
+    { id: 'clap', name: 'GOLF CLAP', rarity: 'common', price: 350, kind: 'proc',
+      dur: 2.6, icon: '👏', desc: 'slow. condescending. perfect' },
+    { id: 'sit', name: 'TAKE A SEAT', rarity: 'common', price: 350, kind: 'clip',
+      clip: 'SitDown', dur: 3.5, clampAt: 0.95, icon: '🪑', desc: 'sit down mid-match. why not' },
+    { id: 'point', name: 'FINGER GUNS', rarity: 'rare', price: 900, kind: 'clip',
+      clip: 'Shoot_OneHanded', dur: 2.4, loop: true, speed: 1.15, icon: '🫵', desc: 'pew pew. no ammo needed' },
+    { id: 'punch', name: 'SHADOWBOX', rarity: 'rare', price: 900, kind: 'clip',
+      clip: 'Punch', dur: 2.6, loop: true, speed: 1.35, icon: '🥊', desc: 'fight the air. win' },
+    { id: 'slash', name: 'AIR KATANA', rarity: 'rare', price: 900, kind: 'clip',
+      clip: 'SwordSlash', dur: 2.4, loop: true, icon: '⚔', desc: 'invisible blade technique' },
+    { id: 'tpose', name: 'T-POSE', rarity: 'epic', price: 1800, kind: 'proc',
+      dur: 4, icon: '✝', desc: 'assert dominance. rage bait 101' },
+    { id: 'playdead', name: 'PLAY DEAD', rarity: 'epic', price: 1800, kind: 'clip',
+      clip: 'Death', dur: 4, clampAt: 0.97, icon: '💀', desc: 'flop over. wait. confuse everyone' },
+    { id: 'breakspin', name: 'BREAKSPIN', rarity: 'epic', price: 1800, kind: 'clip',
+      clip: 'Roll', dur: 3.2, loop: true, speed: 1.5, icon: '🌀', desc: 'ground spin. technically breakdancing' },
+    { id: 'victory', name: 'CHAMPION', rarity: 'legendary', price: 3200, kind: 'clip',
+      clip: 'Victory', dur: 3.8, loop: true, icon: '🏆', desc: 'the full podium celebration, on demand' },
+    { id: 'floss', name: 'FLOSS', rarity: 'legendary', price: 3200, kind: 'proc',
+      dur: 4, icon: '🦷', desc: 'the dance that refuses to die' },
+    { id: 'meltdown', name: 'MELTDOWN', rarity: 'mythic', price: 6000, kind: 'clip',
+      clip: 'Defeat', dur: 3.6, loop: true, fx: 'flame', icon: '🔥', desc: 'despair so hard the ground catches fire' },
+  ];
   /* KO SOUNDS (store-only): the noise YOUR victims make when you knock them
      out — everyone in the match hears your signature */
   const KO_SOUNDS = [
@@ -132,6 +161,8 @@ SKY.Profile = (function () {
     fxTracer: null,         // equipped tracer FX id | null
     ownedSnd: [],           // KO sounds bought (store)
     koSnd: null,            // equipped KO sound id | null
+    ownedEmotes: [],        // emote ids bought (price-0 implicitly owned)
+    emoteWheel: ['wave', null, null, null, null, null],   // T-wheel slots
   };
 
   let data = load();
@@ -622,6 +653,29 @@ SKY.Profile = (function () {
     /* -------- store-only cosmetics: universal tracers + KO sounds -------- */
     fxDef(id) { return TRACERS.find(t => t.id === id) || null; },
     sndDef(id) { return KO_SOUNDS.find(s => s.id === id) || null; },
+    EMOTES,
+    emoteDef(id) { return EMOTES.find(e => e.id === id) || null; },
+    ownsEmote(id) {
+      const def = api.emoteDef(id);
+      return !!def && (def.price === 0 || data.ownedEmotes.includes(id));
+    },
+    buyEmote(id) {
+      const def = api.emoteDef(id);
+      if (purchasesLocked() || !def || api.ownsEmote(id) || data.coins < def.price) return false;
+      data.coins -= def.price;
+      data.ownedEmotes.push(id);
+      save();
+      if (api.onChange) api.onChange();
+      return true;
+    },
+    setEmoteSlot(i, id) {   // id null = clear slot
+      if (i < 0 || i > 5) return false;
+      if (id !== null && !api.ownsEmote(id)) return false;
+      data.emoteWheel[i] = id;
+      save();
+      if (api.onChange) api.onChange();
+      return true;
+    },
     ownsFx(id) { return data.ownedFx.includes(id); },
     ownsSnd(id) { return data.ownedSnd.includes(id); },
     buyFx(id) {
